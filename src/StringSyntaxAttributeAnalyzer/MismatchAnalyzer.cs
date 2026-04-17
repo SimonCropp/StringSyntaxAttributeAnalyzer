@@ -50,16 +50,16 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             start.RegisterOperationAction(
-                ctx => AnalyzeArgument(ctx, stringSyntaxType),
+                _ => AnalyzeArgument(_, stringSyntaxType),
                 OperationKind.Argument);
             start.RegisterOperationAction(
-                ctx => AnalyzeSimpleAssignment(ctx, stringSyntaxType),
+                _ => AnalyzeSimpleAssignment(_, stringSyntaxType),
                 OperationKind.SimpleAssignment);
             start.RegisterOperationAction(
-                ctx => AnalyzePropertyInitializer(ctx, stringSyntaxType),
+                _ => AnalyzePropertyInitializer(_, stringSyntaxType),
                 OperationKind.PropertyInitializer);
             start.RegisterOperationAction(
-                ctx => AnalyzeFieldInitializer(ctx, stringSyntaxType),
+                _ => AnalyzeFieldInitializer(_, stringSyntaxType),
                 OperationKind.FieldInitializer);
         });
     }
@@ -221,7 +221,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (source.State == SyntaxState.NotPresent && target.State == SyntaxState.Present)
+        if (source.State == SyntaxState.NotPresent &&
+            target.State == SyntaxState.Present)
         {
             // Fix site is the source symbol's declaration (add StringSyntax matching target).
             context.ReportDiagnostic(CreateFixableDiagnostic(
@@ -232,7 +233,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (source.State == SyntaxState.Present && target.State == SyntaxState.NotPresent)
+        if (source.State == SyntaxState.Present &&
+            target.State == SyntaxState.NotPresent)
         {
             // Fix site is the target symbol's declaration (add StringSyntax matching source).
             context.ReportDiagnostic(CreateFixableDiagnostic(
@@ -283,9 +285,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         string? value)
     {
         var declaration = fixTarget?.DeclaringSyntaxReferences.FirstOrDefault();
-        var additionalLocations = declaration is null
-            ? ImmutableArray<Location>.Empty
-            : [Location.Create(declaration.SyntaxTree, declaration.Span)];
+        ImmutableArray<Location> additionalLocations;
+        if (declaration is null)
+        {
+            additionalLocations = ImmutableArray<Location>.Empty;
+        }
+        else
+        {
+            additionalLocations = [Location.Create(declaration.SyntaxTree, declaration.Span)];
+        }
 
         var properties = ImmutableDictionary<string, string?>.Empty
             .Add(ValueKey, value);
