@@ -174,12 +174,12 @@ public class AddStringSyntaxCodeFixProviderTests
             document,
             diagnostic,
             (action, _) => actions.Add(action),
-            CancellationToken.None);
+            Cancel.None);
 
         await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
 
         var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(CancellationToken.None);
+        var operations = await action.GetOperationsAsync(Cancel.None);
         var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
 
         var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
@@ -196,7 +196,7 @@ public class AddStringSyntaxCodeFixProviderTests
             document,
             diagnostic,
             (action, _) => actions.Add(action),
-            CancellationToken.None);
+            Cancel.None);
 
         await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
         return actions.ToImmutable();
