@@ -282,28 +282,23 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         DiagnosticDescriptor rule,
         Location location,
         ISymbol? fixTarget,
-        string? value)
-    {
-        var declaration = fixTarget?.DeclaringSyntaxReferences.FirstOrDefault();
-        ImmutableArray<Location> additionalLocations;
-        if (declaration is null)
-        {
-            additionalLocations = ImmutableArray<Location>.Empty;
-        }
-        else
-        {
-            additionalLocations = [Location.Create(declaration.SyntaxTree, declaration.Span)];
-        }
-
-        var properties = ImmutableDictionary<string, string?>.Empty
-            .Add(ValueKey, value);
-
-        return Diagnostic.Create(
+        string? value) =>
+        Diagnostic.Create(
             rule,
             location,
-            additionalLocations: additionalLocations,
-            properties: properties,
+            additionalLocations: GetAdditionalLocations(fixTarget),
+            properties: ImmutableDictionary<string, string?>.Empty.Add(ValueKey, value),
             messageArgs: value ?? "");
+
+    static Location[]? GetAdditionalLocations(ISymbol? fixTarget)
+    {
+        var declaration = fixTarget?.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declaration is null)
+        {
+            return null;
+        }
+
+        return [Location.Create(declaration.SyntaxTree, declaration.Span)];
     }
 
     enum SyntaxState
