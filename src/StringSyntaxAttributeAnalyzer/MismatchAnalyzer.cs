@@ -197,7 +197,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (source.State == SyntaxState.Present &&
             target.State == SyntaxState.Present)
         {
-            if (!string.Equals(source.Value, target.Value, StringComparison.Ordinal))
+            if (!ValuesMatch(source.Value, target.Value))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     FormatMismatchRule,
@@ -229,6 +229,39 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 targetSymbol,
                 source.Value));
         }
+    }
+
+    // Only the first character is compared case-insensitively — the BCL constants
+    // (Regex, Json, Xml, DateTimeFormat, ...) are PascalCase, and we want "json" and
+    // "Json" to be treated as the same format. "jSon" vs "json" is still a mismatch.
+    static bool ValuesMatch(string? a, string? b)
+    {
+        if (ReferenceEquals(a, b))
+        {
+            return true;
+        }
+
+        if (a is null || b is null)
+        {
+            return false;
+        }
+
+        if (a.Length != b.Length)
+        {
+            return false;
+        }
+
+        if (a.Length == 0)
+        {
+            return true;
+        }
+
+        if (char.ToLowerInvariant(a[0]) != char.ToLowerInvariant(b[0]))
+        {
+            return false;
+        }
+
+        return string.CompareOrdinal(a, 1, b, 1, a.Length - 1) == 0;
     }
 
     static Diagnostic CreateFixableDiagnostic(

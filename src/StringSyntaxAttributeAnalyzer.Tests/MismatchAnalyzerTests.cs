@@ -329,6 +329,57 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void FirstCharCaseInsensitive_NoDiagnostic()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Target
+            {
+                public void Consume([StringSyntax("json")] string value) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Json")]
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void MidStringCaseDifference_StillMismatch()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Target
+            {
+                public void Consume([StringSyntax("json")] string value) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntax("jSon")]
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
+    [Test]
     public void FieldSource_Mismatch()
     {
         var source = """
