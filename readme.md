@@ -5,8 +5,6 @@
 
 Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.codeanalysis.stringsyntaxattribute) values when a string flows from one annotated member to another.
 
-Inspired by [Steven Giesel's post on the topic](https://steven-giesel.com/blogPost/d2b2fc18-ca4c-4879-b87f-a1d36f435805).
-
 **See [Milestones](../../milestones?state=closed) for release notes.**
 
 
