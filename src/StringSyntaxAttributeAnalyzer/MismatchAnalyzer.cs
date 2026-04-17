@@ -37,13 +37,34 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.EnableConcurrentExecution();
 
-        context.RegisterOperationAction(AnalyzeArgument, OperationKind.Argument);
-        context.RegisterOperationAction(AnalyzeSimpleAssignment, OperationKind.SimpleAssignment);
-        context.RegisterOperationAction(AnalyzePropertyInitializer, OperationKind.PropertyInitializer);
-        context.RegisterOperationAction(AnalyzeFieldInitializer, OperationKind.FieldInitializer);
+        context.RegisterCompilationStartAction(start =>
+        {
+            // Resolve StringSyntaxAttribute once per compilation. If the consumer doesn't
+            // reference System.Diagnostics.CodeAnalysis.StringSyntaxAttribute at all, this
+            // returns null and the analyzer stays dormant for this compilation.
+            var stringSyntaxType = start.Compilation
+                .GetTypeByMetadataName("System.Diagnostics.CodeAnalysis.StringSyntaxAttribute");
+            if (stringSyntaxType is null)
+            {
+                return;
+            }
+
+            start.RegisterOperationAction(
+                ctx => AnalyzeArgument(ctx, stringSyntaxType),
+                OperationKind.Argument);
+            start.RegisterOperationAction(
+                ctx => AnalyzeSimpleAssignment(ctx, stringSyntaxType),
+                OperationKind.SimpleAssignment);
+            start.RegisterOperationAction(
+                ctx => AnalyzePropertyInitializer(ctx, stringSyntaxType),
+                OperationKind.PropertyInitializer);
+            start.RegisterOperationAction(
+                ctx => AnalyzeFieldInitializer(ctx, stringSyntaxType),
+                OperationKind.FieldInitializer);
+        });
     }
 
-    static void AnalyzeArgument(OperationAnalysisContext context)
+    static void AnalyzeArgument(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
     {
         var argument = (IArgumentOperation)context.Operation;
         var parameter = argument.Parameter;
@@ -52,9 +73,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes());
+        var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), stringSyntaxType);
         var sourceSymbol = GetSymbol(argument.Value);
-        var sourceInfo = GetSyntax(sourceSymbol);
+        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
         Report(
             context,
             argument.Value.Syntax.GetLocation(),
@@ -64,7 +85,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             targetInfo);
     }
 
-    static void AnalyzeSimpleAssignment(OperationAnalysisContext context)
+    static void AnalyzeSimpleAssignment(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
     {
         var assignment = (ISimpleAssignmentOperation)context.Operation;
         var targetSymbol = GetSymbol(assignment.Target);
@@ -73,9 +94,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var targetInfo = GetSyntax(targetSymbol);
+        var targetInfo = GetSyntax(targetSymbol, stringSyntaxType);
         var sourceSymbol = GetSymbol(assignment.Value);
-        var sourceInfo = GetSyntax(sourceSymbol);
+        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
         Report(
             context,
             assignment.Value.Syntax.GetLocation(),
@@ -85,14 +106,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             targetInfo);
     }
 
-    static void AnalyzePropertyInitializer(OperationAnalysisContext context)
+    static void AnalyzePropertyInitializer(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol);
+        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
         foreach (var property in init.InitializedProperties)
         {
-            var targetInfo = GetSyntaxFromAttributes(property.GetAttributes());
+            var targetInfo = GetSyntaxFromAttributes(property.GetAttributes(), stringSyntaxType);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -103,14 +124,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    static void AnalyzeFieldInitializer(OperationAnalysisContext context)
+    static void AnalyzeFieldInitializer(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
     {
         var init = (IFieldInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol);
+        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
         foreach (var field in init.InitializedFields)
         {
-            var targetInfo = GetSyntaxFromAttributes(field.GetAttributes());
+            var targetInfo = GetSyntaxFromAttributes(field.GetAttributes(), stringSyntaxType);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -133,10 +154,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         };
     }
 
-    static SyntaxInfo GetSyntax(ISymbol? symbol) =>
+    static SyntaxInfo GetSyntax(ISymbol? symbol, INamedTypeSymbol stringSyntaxType) =>
         symbol is null
             ? SyntaxInfo.Unknown
-            : GetSyntaxFromAttributes(symbol.GetAttributes());
+            : GetSyntaxFromAttributes(symbol.GetAttributes(), stringSyntaxType);
 
     static IOperation UnwrapConversions(IOperation operation)
     {
@@ -147,22 +168,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return operation;
     }
 
-    static SyntaxInfo GetSyntaxFromAttributes(ImmutableArray<AttributeData> attributes)
+    static SyntaxInfo GetSyntaxFromAttributes(
+        ImmutableArray<AttributeData> attributes,
+        INamedTypeSymbol stringSyntaxType)
     {
         foreach (var attribute in attributes)
         {
-            var attrClass = attribute.AttributeClass;
-            if (attrClass is null)
-            {
-                continue;
-            }
-
-            if (attrClass.Name != "StringSyntaxAttribute")
-            {
-                continue;
-            }
-
-            if (attrClass.ContainingNamespace?.ToDisplayString() != "System.Diagnostics.CodeAnalysis")
+            if (!SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, stringSyntaxType))
             {
                 continue;
             }
