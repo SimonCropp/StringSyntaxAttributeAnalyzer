@@ -143,3 +143,8 @@ public void LiteralCall() =>
 ```
 <sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L69-L74' title='Snippet source file'>snippet source</a> | <a href='#snippet-LiteralSource' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
+
+
+## Icon
+
+[Pattern](https://thenounproject.com/icon/pattern-8046712/) from [The Noun Project](https://thenounproject.com).
