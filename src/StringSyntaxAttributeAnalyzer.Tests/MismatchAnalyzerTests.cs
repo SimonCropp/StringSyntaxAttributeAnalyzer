@@ -1,6 +1,3 @@
-using System.Collections.Immutable;
-using Microsoft.CodeAnalysis.Diagnostics;
-
 [TestFixture]
 public class MismatchAnalyzerTests
 {
@@ -369,7 +366,7 @@ public class MismatchAnalyzerTests
             trustedAssemblies,
             new(OutputKind.DynamicallyLinkedLibrary));
 
-        var analyzer = new StringSyntaxAttributeAnalyzer.MismatchAnalyzer();
+        var analyzer = new MismatchAnalyzer();
 
         return compilation
             .WithAnalyzers([analyzer])

@@ -25,9 +25,19 @@
     <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
+  <PropertyGroup>
+    <CodeFixesDll>$(MSBuildThisFileDirectory)..\StringSyntaxAttributeAnalyzer.CodeFixes\bin\$(Configuration)\netstandard2.0\StringSyntaxAttributeAnalyzer.CodeFixes.dll</CodeFixesDll>
+  </PropertyGroup>
+  <Target Name="BuildCodeFixes" BeforeTargets="Build">
+    <MSBuild Projects="..\StringSyntaxAttributeAnalyzer.CodeFixes\StringSyntaxAttributeAnalyzer.CodeFixes.csproj"
+             Properties="Configuration=$(Configuration)"
+             Targets="Build" />
+  </Target>
   <Target Name="PackAnalyzer">
     <ItemGroup>
       <TfmSpecificPackageFile Include="$(OutputPath)$(AssemblyName).dll"
+                              PackagePath="analyzers\dotnet\cs" />
+      <TfmSpecificPackageFile Include="$(CodeFixesDll)"
                               PackagePath="analyzers\dotnet\cs" />
     </ItemGroup>
   </Target>

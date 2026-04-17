@@ -3,6 +3,8 @@ namespace StringSyntaxAttributeAnalyzer;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class MismatchAnalyzer : DiagnosticAnalyzer
 {
+    public const string ValueKey = "StringSyntaxValue";
+
     public static readonly DiagnosticDescriptor FormatMismatchRule = new(
         id: "SSA001",
         title: "StringSyntax format mismatch",
@@ -50,69 +52,91 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var target = GetSyntaxFromAttributes(parameter.GetAttributes());
-        var source = GetSourceSyntax(argument.Value);
-        Report(context, argument.Value.Syntax.GetLocation(), source, target);
+        var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes());
+        var sourceSymbol = GetSymbol(argument.Value);
+        var sourceInfo = GetSyntax(sourceSymbol);
+        Report(
+            context,
+            argument.Value.Syntax.GetLocation(),
+            sourceSymbol,
+            sourceInfo,
+            parameter,
+            targetInfo);
     }
 
     static void AnalyzeSimpleAssignment(OperationAnalysisContext context)
     {
         var assignment = (ISimpleAssignmentOperation)context.Operation;
-        var target = GetTargetSyntax(assignment.Target);
-        if (target.State == SyntaxState.Unknown)
+        var targetSymbol = GetSymbol(assignment.Target);
+        if (targetSymbol is null)
         {
             return;
         }
 
-        var source = GetSourceSyntax(assignment.Value);
-        Report(context, assignment.Value.Syntax.GetLocation(), source, target);
+        var targetInfo = GetSyntax(targetSymbol);
+        var sourceSymbol = GetSymbol(assignment.Value);
+        var sourceInfo = GetSyntax(sourceSymbol);
+        Report(
+            context,
+            assignment.Value.Syntax.GetLocation(),
+            sourceSymbol,
+            sourceInfo,
+            targetSymbol,
+            targetInfo);
     }
 
     static void AnalyzePropertyInitializer(OperationAnalysisContext context)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
-        var source = GetSourceSyntax(init.Value);
+        var sourceSymbol = GetSymbol(init.Value);
+        var sourceInfo = GetSyntax(sourceSymbol);
         foreach (var property in init.InitializedProperties)
         {
-            var target = GetSyntaxFromAttributes(property.GetAttributes());
-            Report(context, init.Value.Syntax.GetLocation(), source, target);
+            var targetInfo = GetSyntaxFromAttributes(property.GetAttributes());
+            Report(
+                context,
+                init.Value.Syntax.GetLocation(),
+                sourceSymbol,
+                sourceInfo,
+                property,
+                targetInfo);
         }
     }
 
     static void AnalyzeFieldInitializer(OperationAnalysisContext context)
     {
         var init = (IFieldInitializerOperation)context.Operation;
-        var source = GetSourceSyntax(init.Value);
+        var sourceSymbol = GetSymbol(init.Value);
+        var sourceInfo = GetSyntax(sourceSymbol);
         foreach (var field in init.InitializedFields)
         {
-            var target = GetSyntaxFromAttributes(field.GetAttributes());
-            Report(context, init.Value.Syntax.GetLocation(), source, target);
+            var targetInfo = GetSyntaxFromAttributes(field.GetAttributes());
+            Report(
+                context,
+                init.Value.Syntax.GetLocation(),
+                sourceSymbol,
+                sourceInfo,
+                field,
+                targetInfo);
         }
     }
 
-    static SyntaxInfo GetTargetSyntax(IOperation target)
+    static ISymbol? GetSymbol(IOperation operation)
     {
-        target = UnwrapConversions(target);
-        return target switch
+        operation = UnwrapConversions(operation);
+        return operation switch
         {
-            IPropertyReferenceOperation prop => GetSyntaxFromAttributes(prop.Property.GetAttributes()),
-            IFieldReferenceOperation field => GetSyntaxFromAttributes(field.Field.GetAttributes()),
-            IParameterReferenceOperation param => GetSyntaxFromAttributes(param.Parameter.GetAttributes()),
-            _ => SyntaxInfo.Unknown
+            IPropertyReferenceOperation prop => prop.Property,
+            IFieldReferenceOperation field => field.Field,
+            IParameterReferenceOperation param => param.Parameter,
+            _ => null
         };
     }
 
-    static SyntaxInfo GetSourceSyntax(IOperation value)
-    {
-        value = UnwrapConversions(value);
-        return value switch
-        {
-            IPropertyReferenceOperation prop => GetSyntaxFromAttributes(prop.Property.GetAttributes()),
-            IFieldReferenceOperation field => GetSyntaxFromAttributes(field.Field.GetAttributes()),
-            IParameterReferenceOperation param => GetSyntaxFromAttributes(param.Parameter.GetAttributes()),
-            _ => SyntaxInfo.Unknown
-        };
-    }
+    static SyntaxInfo GetSyntax(ISymbol? symbol) =>
+        symbol is null
+            ? SyntaxInfo.Unknown
+            : GetSyntaxFromAttributes(symbol.GetAttributes());
 
     static IOperation UnwrapConversions(IOperation operation)
     {
@@ -159,7 +183,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void Report(
         OperationAnalysisContext context,
         Location location,
+        ISymbol? sourceSymbol,
         SyntaxInfo source,
+        ISymbol targetSymbol,
         SyntaxInfo target)
     {
         if (source.State == SyntaxState.Unknown ||
@@ -185,20 +211,46 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         if (source.State == SyntaxState.NotPresent && target.State == SyntaxState.Present)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            // Fix site is the source symbol's declaration (add StringSyntax matching target).
+            context.ReportDiagnostic(CreateFixableDiagnostic(
                 MissingSourceFormatRule,
                 location,
-                target.Value ?? ""));
+                sourceSymbol,
+                target.Value));
             return;
         }
 
         if (source.State == SyntaxState.Present && target.State == SyntaxState.NotPresent)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            // Fix site is the target symbol's declaration (add StringSyntax matching source).
+            context.ReportDiagnostic(CreateFixableDiagnostic(
                 DroppedFormatRule,
                 location,
-                source.Value ?? ""));
+                targetSymbol,
+                source.Value));
         }
+    }
+
+    static Diagnostic CreateFixableDiagnostic(
+        DiagnosticDescriptor rule,
+        Location location,
+        ISymbol? fixTarget,
+        string? value)
+    {
+        var declaration = fixTarget?.DeclaringSyntaxReferences.FirstOrDefault();
+        var additionalLocations = declaration is null
+            ? ImmutableArray<Location>.Empty
+            : [Location.Create(declaration.SyntaxTree, declaration.Span)];
+
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add(ValueKey, value);
+
+        return Diagnostic.Create(
+            rule,
+            location,
+            additionalLocations: additionalLocations,
+            properties: properties,
+            messageArgs: value ?? "");
     }
 
     enum SyntaxState

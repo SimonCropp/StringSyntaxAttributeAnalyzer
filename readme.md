@@ -12,11 +12,13 @@ Inspired by [Steven Giesel's post on the topic](https://steven-giesel.com/blogPo
 
 ## Diagnostics
 
-| ID     | Severity | Description                                                       |
-|--------|----------|-------------------------------------------------------------------|
-| SSA001 | Warning  | Format mismatch — both sides have `StringSyntax` but values differ |
-| SSA002 | Warning  | Source has no `StringSyntax` while the target requires one         |
-| SSA003 | Warning  | Source has `StringSyntax` while the target has none                |
+| ID     | Severity | Code fix | Description                                                       |
+|--------|----------|----------|-------------------------------------------------------------------|
+| SSA001 | Warning  | —        | Format mismatch — both sides have `StringSyntax` but values differ |
+| SSA002 | Warning  | Yes      | Source has no `StringSyntax` while the target requires one         |
+| SSA003 | Warning  | Yes      | Source has `StringSyntax` while the target has none                |
+
+SSA002 and SSA003 ship a code fix that adds `[StringSyntax("<value>")]` to the relevant declaration — the source symbol for SSA002, the target symbol for SSA003. SSA001 has no fix because picking which side to change requires human judgement.
 
 
 ## Analyzed Sites
