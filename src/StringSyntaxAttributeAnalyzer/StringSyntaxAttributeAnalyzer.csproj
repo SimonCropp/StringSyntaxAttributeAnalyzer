@@ -13,11 +13,6 @@
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
     <NoWarn>$(NoWarn);RS1041;NU5128</NoWarn>
   </PropertyGroup>
-  <Target Name="ClearPackageIcon" BeforeTargets="GenerateNuspec">
-    <PropertyGroup>
-      <PackageIcon></PackageIcon>
-    </PropertyGroup>
-  </Target>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
