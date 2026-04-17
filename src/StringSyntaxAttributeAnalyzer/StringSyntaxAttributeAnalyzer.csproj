@@ -4,12 +4,10 @@
     <IsRoslynComponent>true</IsRoslynComponent>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsPackable>true</IsPackable>
-    <IsPackageProject>false</IsPackageProject>
-    <SignAssembly>false</SignAssembly>
+    <IsPackageProject>true</IsPackageProject>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <DevelopmentDependency>true</DevelopmentDependency>
-    <PackageOutputPath>$(MSBuildThisFileDirectory)..\..\nugets</PackageOutputPath>
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackAnalyzer</TargetsForTfmSpecificContentInPackage>
     <NoWarn>$(NoWarn);RS1041;NU5128</NoWarn>
     <CodeFixesDll>$(MSBuildThisFileDirectory)..\StringSyntaxAttributeAnalyzer.CodeFixes\bin\$(Configuration)\netstandard2.0\StringSyntaxAttributeAnalyzer.CodeFixes.dll</CodeFixesDll>
@@ -21,11 +19,6 @@
     <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
-  <Target Name="ClearPackageIcon" BeforeTargets="GenerateNuspec">
-    <PropertyGroup>
-      <PackageIcon></PackageIcon>
-    </PropertyGroup>
-  </Target>
   <Target Name="BuildCodeFixes" BeforeTargets="Build">
     <MSBuild Projects="..\StringSyntaxAttributeAnalyzer.CodeFixes\StringSyntaxAttributeAnalyzer.CodeFixes.csproj"
              Properties="Configuration=$(Configuration)"
