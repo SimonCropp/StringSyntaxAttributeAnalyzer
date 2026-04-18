@@ -3,17 +3,17 @@ namespace StringSyntaxAttributeAnalyzer;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class MismatchAnalyzer : DiagnosticAnalyzer
 {
-    public const string ValueKey = "StringSyntaxValue";
+    const string valueKey = "StringSyntaxValue";
 
     // EditorConfig knob: comma-separated namespace patterns whose types, when they
     // appear as the *target* of a format-dropping flow, should be ignored. Defaults
     // cover the BCL since its APIs can't be attributed retroactively. Patterns support
     // a trailing `*` wildcard (prefix match). Example override:
     //   stringsyntax.suppressed_target_namespaces = System*,Microsoft*,MyCompany.Legacy*
-    const string SuppressedNamespacesKey = "stringsyntax.suppressed_target_namespaces";
-    const string DefaultSuppressedNamespaces = "System*,Microsoft*";
+    const string suppressedNamespacesKey = "stringsyntax.suppressed_target_namespaces";
+    const string defaultSuppressedNamespaces = "System*,Microsoft*";
 
-    public static readonly DiagnosticDescriptor FormatMismatchRule = new(
+    static readonly DiagnosticDescriptor formatMismatchRule = new(
         id: "SSA001",
         title: "StringSyntax format mismatch",
         messageFormat: "Value with StringSyntax \"{0}\" is assigned to a target with StringSyntax \"{1}\"",
@@ -21,7 +21,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor MissingSourceFormatRule = new(
+    static readonly DiagnosticDescriptor missingSourceFormatRule = new(
         id: "SSA002",
         title: "Source has no StringSyntax while target requires one",
         messageFormat: "Value has no StringSyntax attribute but is assigned to a target with StringSyntax \"{0}\"",
@@ -29,7 +29,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor DroppedFormatRule = new(
+    static readonly DiagnosticDescriptor droppedFormatRule = new(
         id: "SSA003",
         title: "Source has StringSyntax while target has none",
         messageFormat: "Value with StringSyntax \"{0}\" is assigned to a target without a StringSyntax attribute",
@@ -37,7 +37,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor EqualityMismatchRule = new(
+    static readonly DiagnosticDescriptor equalityMismatchRule = new(
         id: "SSA004",
         title: "Equality comparison between mismatched StringSyntax values",
         messageFormat: "Comparing a value with StringSyntax \"{0}\" to a value with StringSyntax \"{1}\"",
@@ -45,7 +45,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor EqualityMissingFormatRule = new(
+    static readonly DiagnosticDescriptor equalityMissingFormatRule = new(
         id: "SSA005",
         title: "Equality comparison with an unattributed value",
         messageFormat: "Comparing a value with StringSyntax \"{0}\" to a value without a StringSyntax attribute",
@@ -53,7 +53,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor SingletonUnionRule = new(
+    static readonly DiagnosticDescriptor singletonUnionRule = new(
         id: "SSA006",
         title: "UnionSyntax with a single option should be StringSyntax",
         messageFormat: "[UnionSyntax(\"{0}\")] has only one option; use [StringSyntax(\"{0}\")] instead",
@@ -63,12 +63,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
     [
-        FormatMismatchRule,
-        MissingSourceFormatRule,
-        DroppedFormatRule,
-        EqualityMismatchRule,
-        EqualityMissingFormatRule,
-        SingletonUnionRule
+        formatMismatchRule,
+        missingSourceFormatRule,
+        droppedFormatRule,
+        equalityMismatchRule,
+        equalityMissingFormatRule,
+        singletonUnionRule
     ];
 
     public override void Initialize(AnalysisContext context)
@@ -125,9 +125,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static string[] ReadSuppressedNamespaces(AnalyzerOptions options)
     {
         var raw = options.AnalyzerConfigOptionsProvider.GlobalOptions
-            .TryGetValue(SuppressedNamespacesKey, out var configured)
+            .TryGetValue(suppressedNamespacesKey, out var configured)
             ? configured
-            : DefaultSuppressedNamespaces;
+            : defaultSuppressedNamespaces;
 
         return raw
             .Split(',')
@@ -254,9 +254,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             var singleValue = options.Length == 1 ? options[0] : "";
-            var properties = ImmutableDictionary<string, string?>.Empty.Add(ValueKey, singleValue);
+            var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, singleValue);
             context.ReportDiagnostic(Diagnostic.Create(
-                SingletonUnionRule,
+                singletonUnionRule,
                 location,
                 properties: properties,
                 messageArgs: singleValue));
@@ -282,7 +282,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         // Unknown side (literal, local, invocation) — suppress. Comparing to a literal is
         // common and fine; the analyzer can't infer intent from an opaque expression.
-        if (leftInfo.State == SyntaxState.Unknown || rightInfo.State == SyntaxState.Unknown)
+        if (leftInfo.State == SyntaxState.Unknown ||
+            rightInfo.State == SyntaxState.Unknown)
         {
             return;
         }
@@ -297,7 +298,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // Both sides have attributes, values differ — no codefix (picking which side
             // is wrong requires judgement, same reasoning as SSA001).
             context.ReportDiagnostic(Diagnostic.Create(
-                EqualityMismatchRule,
+                equalityMismatchRule,
                 binary.Syntax.GetLocation(),
                 FormatValues(leftInfo.Values),
                 FormatValues(rightInfo.Values)));
@@ -316,12 +317,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             context.ReportDiagnostic(CreateFixableDiagnostic(
-                EqualityMissingFormatRule,
+                equalityMissingFormatRule,
                 binary.Syntax.GetLocation(),
                 rightSymbol,
                 leftInfo.PrimaryValue));
         }
-        else if (rightInfo.State == SyntaxState.Present && leftInfo.State == SyntaxState.NotPresent)
+        else if (rightInfo.State == SyntaxState.Present &&
+                 leftInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(leftSymbol!)) ||
                 IsInSuppressedNamespace(leftSymbol, suppressedNamespaces))
@@ -330,7 +332,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             context.ReportDiagnostic(CreateFixableDiagnostic(
-                EqualityMissingFormatRule,
+                equalityMissingFormatRule,
                 binary.Syntax.GetLocation(),
                 leftSymbol,
                 rightInfo.PrimaryValue));
@@ -515,7 +517,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             if (!ValuesMatch(source.Values, target.Values))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
-                    FormatMismatchRule,
+                    formatMismatchRule,
                     location,
                     FormatValues(source.Values),
                     FormatValues(target.Values)));
@@ -528,11 +530,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             target.State == SyntaxState.Present)
         {
             // Fix site is the source symbol's declaration (add StringSyntax matching target).
-            context.ReportDiagnostic(CreateFixableDiagnostic(
-                MissingSourceFormatRule,
-                location,
-                sourceSymbol,
-                target.PrimaryValue));
+            context.ReportDiagnostic(
+                CreateFixableDiagnostic(
+                    missingSourceFormatRule,
+                    location,
+                    sourceSymbol,
+                    target.PrimaryValue));
             return;
         }
 
@@ -548,7 +551,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             // Fix site is the target symbol's declaration (add StringSyntax matching source).
             context.ReportDiagnostic(CreateFixableDiagnostic(
-                DroppedFormatRule,
+                droppedFormatRule,
                 location,
                 targetSymbol,
                 source.PrimaryValue));
@@ -662,7 +665,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             rule,
             location,
             additionalLocations: GetAdditionalLocations(fixTarget),
-            properties: ImmutableDictionary<string, string?>.Empty.Add(ValueKey, value),
+            properties: ImmutableDictionary<string, string?>.Empty.Add(valueKey, value),
             messageArgs: value ?? "");
 
     static Location[]? GetAdditionalLocations(ISymbol? fixTarget)

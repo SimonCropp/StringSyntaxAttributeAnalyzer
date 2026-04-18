@@ -7,5 +7,5 @@
   </Folder>
   <Project Path="StringSyntaxAttributeAnalyzer/StringSyntaxAttributeAnalyzer.csproj" />
   <Project Path="StringSyntaxAttributeAnalyzer.CodeFixes/StringSyntaxAttributeAnalyzer.CodeFixes.csproj" />
-  <Project Path="StringSyntaxAttributeAnalyzer.Tests/StringSyntaxAttributeAnalyzer.Tests.csproj" />
+  <Project Path="Tests/Tests.csproj" />
 </Solution>

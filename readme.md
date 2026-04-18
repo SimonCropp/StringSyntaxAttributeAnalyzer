@@ -96,7 +96,7 @@ public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string P
 public void RecordCall(PatternRecord record) =>
     ConsumeRegexStrict(record.Pattern); // no diagnostic — attribute flows to property
 ```
-<sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L74-L81' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L74-L81' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 An explicit `[property: StringSyntax(...)]` on the property still wins — if both targets are attributed, the property's own attribute is used.
@@ -140,7 +140,7 @@ public void ConsumeRegex([StringSyntax(StringSyntaxAttribute.Regex)] string patt
 public void FormatMismatchCall(MismatchHolder holder) =>
     ConsumeRegex(holder.Format); // SSA001
 ```
-<sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L10-L25' title='Snippet source file'>snippet source</a> | <a href='#snippet-FormatMismatch' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L10-L25' title='Snippet source file'>snippet source</a> | <a href='#snippet-FormatMismatch' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -163,7 +163,7 @@ public void ConsumeRegexStrict([StringSyntax(StringSyntaxAttribute.Regex)] strin
 public void MissingSourceCall(UntypedHolder holder) =>
     ConsumeRegexStrict(holder.Value); // SSA002
 ```
-<sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L27-L41' title='Snippet source file'>snippet source</a> | <a href='#snippet-MissingSourceFormat' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L27-L41' title='Snippet source file'>snippet source</a> | <a href='#snippet-MissingSourceFormat' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 SSA002 is the strongest signal — it catches unvalidated strings flowing into format-typed slots. It is the most likely of the three to surface real bugs.
@@ -189,7 +189,7 @@ public void ConsumeAnyString(string value)
 public void DroppedFormatCall(RegexHolder holder) =>
     ConsumeAnyString(holder.Pattern); // SSA003
 ```
-<sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L43-L58' title='Snippet source file'>snippet source</a> | <a href='#snippet-DroppedFormat' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L43-L58' title='Snippet source file'>snippet source</a> | <a href='#snippet-DroppedFormat' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 SSA003 is the weakest signal — discarding format metadata is usually benign. Consider disabling it in projects where it produces noise.
@@ -203,7 +203,7 @@ SSA003 is the weakest signal — discarding format metadata is usually benign. C
 public void MatchingCall(RegexHolder holder) =>
     ConsumeRegexStrict(holder.Pattern); // no diagnostic
 ```
-<sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L60-L65' title='Snippet source file'>snippet source</a> | <a href='#snippet-MatchingFormat' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L60-L65' title='Snippet source file'>snippet source</a> | <a href='#snippet-MatchingFormat' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -217,7 +217,7 @@ String literals, local variables, method invocations, and other expressions with
 public void LiteralCall() =>
     ConsumeRegexStrict("[a-z]+"); // no diagnostic — literal is Unknown
 ```
-<sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L67-L72' title='Snippet source file'>snippet source</a> | <a href='#snippet-LiteralSource' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L67-L72' title='Snippet source file'>snippet source</a> | <a href='#snippet-LiteralSource' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
