@@ -90,22 +90,22 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 .GetTypeByMetadataName("StringSyntaxAttributeAnalyzer.ReturnSyntaxAttribute");
             var types = new SyntaxTypes(stringSyntaxType, unionSyntaxType, returnSyntaxType);
 
-            var suppressedNamespaces = NamespaceSuppression.ReadPatterns(start.Options);
+            var suppression = new NamespaceSuppression(start.Options);
 
             start.RegisterOperationAction(
-                _ => AnalyzeArgument(_, types, suppressedNamespaces),
+                _ => AnalyzeArgument(_, types, suppression),
                 OperationKind.Argument);
             start.RegisterOperationAction(
-                _ => AnalyzeSimpleAssignment(_, types, suppressedNamespaces),
+                _ => AnalyzeSimpleAssignment(_, types, suppression),
                 OperationKind.SimpleAssignment);
             start.RegisterOperationAction(
-                _ => AnalyzePropertyInitializer(_, types, suppressedNamespaces),
+                _ => AnalyzePropertyInitializer(_, types, suppression),
                 OperationKind.PropertyInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeFieldInitializer(_, types, suppressedNamespaces),
+                _ => AnalyzeFieldInitializer(_, types, suppression),
                 OperationKind.FieldInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeBinaryOperator(_, types, suppressedNamespaces),
+                _ => AnalyzeBinaryOperator(_, types, suppression),
                 OperationKind.BinaryOperator);
             if (unionSyntaxType is not null)
             {
@@ -121,7 +121,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzeArgument(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        string[] suppressedNamespaces)
+        NamespaceSuppression suppression)
     {
         var argument = (IArgumentOperation)context.Operation;
         var parameter = argument.Parameter;
@@ -140,13 +140,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             sourceInfo,
             parameter,
             targetInfo,
-            suppressedNamespaces);
+            suppression.GetPatterns(context.Operation.Syntax.SyntaxTree));
     }
 
     static void AnalyzeSimpleAssignment(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        string[] suppressedNamespaces)
+        NamespaceSuppression suppression)
     {
         var assignment = (ISimpleAssignmentOperation)context.Operation;
         var targetSymbol = GetSymbol(assignment.Target);
@@ -165,17 +165,18 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             sourceInfo,
             targetSymbol,
             targetInfo,
-            suppressedNamespaces);
+            suppression.GetPatterns(context.Operation.Syntax.SyntaxTree));
     }
 
     static void AnalyzePropertyInitializer(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        string[] suppressedNamespaces)
+        NamespaceSuppression suppression)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
         var sourceInfo = GetSyntax(sourceSymbol, types);
+        var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var property in init.InitializedProperties)
         {
             var targetInfo = GetSyntax(property, types);
@@ -186,18 +187,19 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 sourceInfo,
                 property,
                 targetInfo,
-                suppressedNamespaces);
+                patterns);
         }
     }
 
     static void AnalyzeFieldInitializer(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        string[] suppressedNamespaces)
+        NamespaceSuppression suppression)
     {
         var init = (IFieldInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
         var sourceInfo = GetSyntax(sourceSymbol, types);
+        var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var field in init.InitializedFields)
         {
             var targetInfo = GetSyntaxFromAttributes(field.GetAttributes(), types);
@@ -208,7 +210,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 sourceInfo,
                 field,
                 targetInfo,
-                suppressedNamespaces);
+                patterns);
         }
     }
 
@@ -249,13 +251,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzeBinaryOperator(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        string[] suppressedNamespaces)
+        NamespaceSuppression suppression)
     {
         var binary = (IBinaryOperation)context.Operation;
         if (binary.OperatorKind is not (BinaryOperatorKind.Equals or BinaryOperatorKind.NotEquals))
         {
             return;
         }
+
+        var suppressedNamespaces = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
 
         var leftSymbol = GetSymbol(binary.LeftOperand);
         var rightSymbol = GetSymbol(binary.RightOperand);

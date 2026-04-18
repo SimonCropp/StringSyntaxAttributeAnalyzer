@@ -4,18 +4,50 @@
 // (`System*,Microsoft*`), since its APIs can't be retroactively annotated.
 // Patterns support a trailing `*` wildcard (prefix match). Example override:
 //   stringsyntax.suppressed_target_namespaces = System*,Microsoft*,MyCompany.Legacy*
-static class NamespaceSuppression
+//
+// Per-tree resolution: patterns are read from the file-scoped options first
+// (`.editorconfig` `[*.cs]`), falling back to GlobalOptions (`.globalconfig` /
+// `is_global = true`), then the BCL default. Per-tree results are cached.
+sealed class NamespaceSuppression
 {
     const string optionsKey = "stringsyntax.suppressed_target_namespaces";
     const string defaultPatterns = "System*,Microsoft*";
 
-    public static string[] ReadPatterns(AnalyzerOptions options)
-    {
-        var raw = options.AnalyzerConfigOptionsProvider.GlobalOptions
-            .TryGetValue(optionsKey, out var configured)
-            ? configured
-            : defaultPatterns;
+    readonly AnalyzerOptions options;
+    readonly string[] globalPatterns;
+    readonly ConcurrentDictionary<SyntaxTree, string[]> perTreeCache = new();
 
+    public NamespaceSuppression(AnalyzerOptions options)
+    {
+        this.options = options;
+        globalPatterns = Parse(
+            options.AnalyzerConfigOptionsProvider.GlobalOptions
+                .TryGetValue(optionsKey, out var configured)
+                ? configured
+                : null);
+    }
+
+    public string[] GetPatterns(SyntaxTree? tree)
+    {
+        if (tree is null)
+        {
+            return globalPatterns;
+        }
+
+        return perTreeCache.GetOrAdd(tree, t =>
+        {
+            var fileOptions = options.AnalyzerConfigOptionsProvider.GetOptions(t);
+            if (fileOptions.TryGetValue(optionsKey, out var configured))
+            {
+                return Parse(configured);
+            }
+            return globalPatterns;
+        });
+    }
+
+    static string[] Parse(string? raw)
+    {
+        raw ??= defaultPatterns;
         return raw
             .Split(',')
             .Select(_ => _.Trim())

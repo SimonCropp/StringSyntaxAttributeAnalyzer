@@ -659,6 +659,41 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void DroppedFormat_PerTreeEditorConfig_Honoured()
+    {
+        // Real `.editorconfig` `[*.cs]` keys land in GetOptions(tree), not
+        // GlobalOptions. This test uses a provider that ONLY exposes the
+        // suppression option per-tree, to guard against a regression where the
+        // analyzer reads from GlobalOptions only (which would force consumers to
+        // use `.globalconfig`).
+        var source =
+            """
+            namespace MyLegacy
+            {
+                public class Target
+                {
+                    public static void Consume(string value) { }
+                }
+            }
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public void Use() => MyLegacy.Target.Consume(Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(
+            source,
+            editorConfig: "stringsyntax.suppressed_target_namespaces = MyLegacy*",
+            perTreeOnly: true);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
     public void UnionSyntax_OverlappingSets_NoDiagnostic()
     {
         var source =
@@ -1102,7 +1137,10 @@ public class MismatchAnalyzerTests
         AreEqual(0, diagnostics.Length);
     }
 
-    static ImmutableArray<Diagnostic> GetDiagnostics(string source, string? editorConfig = null)
+    static ImmutableArray<Diagnostic> GetDiagnostics(
+        string source,
+        string? editorConfig = null,
+        bool perTreeOnly = false)
     {
         // Run the package's own source generator so test compilations see what real
         // consumers do: the `global using System.Diagnostics.CodeAnalysis;`, the
@@ -1125,11 +1163,15 @@ public class MismatchAnalyzerTests
         driver.RunGeneratorsAndUpdateCompilation(baseCompilation, out var compilation, out _);
 
         var analyzer = new MismatchAnalyzer();
-        var analyzerOptions = editorConfig is null
-            ? null
-            : new AnalyzerOptions(
-                additionalFiles: [],
-                optionsProvider: new TestConfigOptionsProvider(ParseEditorConfig(editorConfig)));
+        AnalyzerOptions? analyzerOptions = null;
+        if (editorConfig is not null)
+        {
+            var parsed = ParseEditorConfig(editorConfig);
+            AnalyzerConfigOptionsProvider provider = perTreeOnly
+                ? new PerTreeConfigOptionsProvider(parsed)
+                : new TestConfigOptionsProvider(parsed);
+            analyzerOptions = new AnalyzerOptions(additionalFiles: [], optionsProvider: provider);
+        }
 
         return compilation
             .WithAnalyzers([analyzer], analyzerOptions)
