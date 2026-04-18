@@ -1,4 +1,4 @@
-# StringSyntaxAttributeAnalyzer
+# <img src="/src/icon.png" height="30px"> StringSyntaxAttributeAnalyzer
 
 [![Build status](https://img.shields.io/appveyor/build/SimonCropp/StringSyntaxAttributeAnalyzer)](https://ci.appveyor.com/project/SimonCropp/StringSyntaxAttributeAnalyzer)
 [![NuGet Status](https://img.shields.io/nuget/v/StringSyntaxAttributeAnalyzer.svg?label=StringSyntaxAttributeAnalyzer)](https://www.nuget.org/packages/StringSyntaxAttributeAnalyzer/)
@@ -10,8 +10,8 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 
 ## Diagnostics
 
-| ID     | Severity | Code fix | Description                                                       |
-|--------|----------|----------|-------------------------------------------------------------------|
+| ID     | Severity | Code fix | Description                                                        |
+|--------|----------|----------|--------------------------------------------------------------------|
 | SSA001 | Warning  | —        | Format mismatch — both sides have `StringSyntax` but values differ |
 | SSA002 | Warning  | Yes      | Source has no `StringSyntax` while the target requires one         |
 | SSA003 | Warning  | Yes      | Source has `StringSyntax` while the target has none                |
