@@ -71,8 +71,8 @@ public class CodeFixConsumeTests
         var analyzerAsm = Assembly.LoadFrom(analyzerPath);
         var codeFixAsm = Assembly.LoadFrom(codeFixPath);
 
-        var analyzerType = analyzerAsm.GetType("StringSyntaxAttributeAnalyzer.MismatchAnalyzer");
-        var codeFixType = codeFixAsm.GetType("StringSyntaxAttributeAnalyzer.AddStringSyntaxCodeFixProvider");
+        var analyzerType = analyzerAsm.GetType("MismatchAnalyzer");
+        var codeFixType = codeFixAsm.GetType("AddStringSyntaxCodeFixProvider");
 
         IsNotNull(analyzerType);
         IsNotNull(codeFixType);
