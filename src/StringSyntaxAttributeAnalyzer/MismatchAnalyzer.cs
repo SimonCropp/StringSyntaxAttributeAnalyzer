@@ -5,6 +5,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 {
     public const string ValueKey = "StringSyntaxValue";
 
+    // EditorConfig knob: comma-separated namespace patterns whose types, when they
+    // appear as the *target* of a format-dropping flow, should be ignored. Defaults
+    // cover the BCL since its APIs can't be attributed retroactively. Patterns support
+    // a trailing `*` wildcard (prefix match). Example override:
+    //   stringsyntax.suppressed_target_namespaces = System*,Microsoft*,MyCompany.Legacy*
+    const string SuppressedNamespacesKey = "stringsyntax.suppressed_target_namespaces";
+    const string DefaultSuppressedNamespaces = "System*,Microsoft*";
+
     public static readonly DiagnosticDescriptor FormatMismatchRule = new(
         id: "SSA001",
         title: "StringSyntax format mismatch",
@@ -71,25 +79,44 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
+            var suppressedNamespaces = ReadSuppressedNamespaces(start.Options);
+
             start.RegisterOperationAction(
-                _ => AnalyzeArgument(_, stringSyntaxType),
+                _ => AnalyzeArgument(_, stringSyntaxType, suppressedNamespaces),
                 OperationKind.Argument);
             start.RegisterOperationAction(
-                _ => AnalyzeSimpleAssignment(_, stringSyntaxType),
+                _ => AnalyzeSimpleAssignment(_, stringSyntaxType, suppressedNamespaces),
                 OperationKind.SimpleAssignment);
             start.RegisterOperationAction(
-                _ => AnalyzePropertyInitializer(_, stringSyntaxType),
+                _ => AnalyzePropertyInitializer(_, stringSyntaxType, suppressedNamespaces),
                 OperationKind.PropertyInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeFieldInitializer(_, stringSyntaxType),
+                _ => AnalyzeFieldInitializer(_, stringSyntaxType, suppressedNamespaces),
                 OperationKind.FieldInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeBinaryOperator(_, stringSyntaxType),
+                _ => AnalyzeBinaryOperator(_, stringSyntaxType, suppressedNamespaces),
                 OperationKind.BinaryOperator);
         });
     }
 
-    static void AnalyzeArgument(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
+    static string[] ReadSuppressedNamespaces(AnalyzerOptions options)
+    {
+        var raw = options.AnalyzerConfigOptionsProvider.GlobalOptions
+            .TryGetValue(SuppressedNamespacesKey, out var configured)
+            ? configured
+            : DefaultSuppressedNamespaces;
+
+        return raw
+            .Split(',')
+            .Select(_ => _.Trim())
+            .Where(_ => _.Length > 0)
+            .ToArray();
+    }
+
+    static void AnalyzeArgument(
+        OperationAnalysisContext context,
+        INamedTypeSymbol stringSyntaxType,
+        string[] suppressedNamespaces)
     {
         var argument = (IArgumentOperation)context.Operation;
         var parameter = argument.Parameter;
@@ -107,10 +134,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             sourceSymbol,
             sourceInfo,
             parameter,
-            targetInfo);
+            targetInfo,
+            suppressedNamespaces);
     }
 
-    static void AnalyzeSimpleAssignment(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
+    static void AnalyzeSimpleAssignment(
+        OperationAnalysisContext context,
+        INamedTypeSymbol stringSyntaxType,
+        string[] suppressedNamespaces)
     {
         var assignment = (ISimpleAssignmentOperation)context.Operation;
         var targetSymbol = GetSymbol(assignment.Target);
@@ -128,10 +159,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             sourceSymbol,
             sourceInfo,
             targetSymbol,
-            targetInfo);
+            targetInfo,
+            suppressedNamespaces);
     }
 
-    static void AnalyzePropertyInitializer(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
+    static void AnalyzePropertyInitializer(
+        OperationAnalysisContext context,
+        INamedTypeSymbol stringSyntaxType,
+        string[] suppressedNamespaces)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
@@ -145,11 +180,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 sourceSymbol,
                 sourceInfo,
                 property,
-                targetInfo);
+                targetInfo,
+                suppressedNamespaces);
         }
     }
 
-    static void AnalyzeFieldInitializer(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
+    static void AnalyzeFieldInitializer(
+        OperationAnalysisContext context,
+        INamedTypeSymbol stringSyntaxType,
+        string[] suppressedNamespaces)
     {
         var init = (IFieldInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
@@ -163,11 +202,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 sourceSymbol,
                 sourceInfo,
                 field,
-                targetInfo);
+                targetInfo,
+                suppressedNamespaces);
         }
     }
 
-    static void AnalyzeBinaryOperator(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
+    static void AnalyzeBinaryOperator(
+        OperationAnalysisContext context,
+        INamedTypeSymbol stringSyntaxType,
+        string[] suppressedNamespaces)
     {
         var binary = (IBinaryOperation)context.Operation;
         if (binary.OperatorKind is not (BinaryOperatorKind.Equals or BinaryOperatorKind.NotEquals))
@@ -206,11 +249,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         // One side Present, the other NotPresent — fixable: add the present side's
         // StringSyntax value to the bare side's declaration. Suppress when the bare side
-        // is an object/T slot — equality to a generic value is usually reference-style
-        // comparison, not a missed format annotation.
+        // is an object/T slot or lives in a suppressed namespace (BCL etc.).
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
         {
-            if (IsGenericValueSlot(GetTargetType(rightSymbol!)))
+            if (IsGenericValueSlot(GetTargetType(rightSymbol!)) ||
+                IsInSuppressedNamespace(rightSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -223,7 +266,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
         else if (rightInfo.State == SyntaxState.Present && leftInfo.State == SyntaxState.NotPresent)
         {
-            if (IsGenericValueSlot(GetTargetType(leftSymbol!)))
+            if (IsGenericValueSlot(GetTargetType(leftSymbol!)) ||
+                IsInSuppressedNamespace(leftSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -313,7 +357,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         ISymbol? sourceSymbol,
         SyntaxInfo source,
         ISymbol targetSymbol,
-        SyntaxInfo target)
+        SyntaxInfo target,
+        string[] suppressedNamespaces)
     {
         if (source.State == SyntaxState.Unknown ||
             target.State == SyntaxState.Unknown)
@@ -360,6 +405,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (source.State == SyntaxState.Present &&
             target.State == SyntaxState.NotPresent)
         {
+            // SSA003: the target can't be fixed if it's in a namespace the user can't
+            // edit (BCL by default). Bail rather than showing an unfixable warning.
+            if (IsInSuppressedNamespace(targetSymbol, suppressedNamespaces))
+            {
+                return;
+            }
+
             // Fix site is the target symbol's declaration (add StringSyntax matching source).
             context.ReportDiagnostic(CreateFixableDiagnostic(
                 DroppedFormatRule,
@@ -367,6 +419,47 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 targetSymbol,
                 source.Value));
         }
+    }
+
+    static bool IsInSuppressedNamespace(ISymbol? symbol, string[] patterns)
+    {
+        if (symbol is null || patterns.Length == 0)
+        {
+            return false;
+        }
+
+        // For parameters, check the containing method's type's namespace; for
+        // properties/fields, check the containing type's namespace.
+        var owner = symbol.ContainingType ?? symbol.ContainingSymbol as INamedTypeSymbol;
+        var ns = owner?.ContainingNamespace;
+        if (ns is null || ns.IsGlobalNamespace)
+        {
+            return false;
+        }
+
+        var fullName = ns.ToDisplayString();
+        foreach (var pattern in patterns)
+        {
+            if (pattern.Length == 0)
+            {
+                continue;
+            }
+
+            if (pattern[pattern.Length - 1] == '*')
+            {
+                var prefix = pattern.Substring(0, pattern.Length - 1);
+                if (fullName.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            else if (fullName == pattern)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Only the first character is compared case-insensitively — the BCL constants

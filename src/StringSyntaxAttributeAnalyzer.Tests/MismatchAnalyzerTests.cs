@@ -573,6 +573,83 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void DroppedFormat_SystemNamespace_Suppressed()
+    {
+        // Passing a StringSyntax-attributed string to a System.* API (string.Concat here)
+        // would normally fire SSA003 — but we can't add attributes to the BCL, so the
+        // default suppression list (System*, Microsoft*) skips it.
+        var source = """
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public string Use() => string.Concat(Pattern, "-suffix");
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void DroppedFormat_CustomNamespace_NotSuppressed()
+    {
+        // Regression guard: user code (outside System/Microsoft) should still fire SSA003.
+        var source = """
+            namespace MyLibrary
+            {
+                public class Target
+                {
+                    public static void Consume(string value) { }
+                }
+            }
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public void Use() => MyLibrary.Target.Consume(Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA003", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void DroppedFormat_CustomSuppressionList_Honoured()
+    {
+        var source = """
+            namespace MyLegacy
+            {
+                public class Target
+                {
+                    public static void Consume(string value) { }
+                }
+            }
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public void Use() => MyLegacy.Target.Consume(Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(
+            source,
+            editorConfig: "stringsyntax.suppressed_target_namespaces = MyLegacy*");
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
     public void FieldSource_Mismatch()
     {
         var source = """
@@ -593,7 +670,7 @@ public class MismatchAnalyzerTests
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
-    static ImmutableArray<Diagnostic> GetDiagnostics(string source)
+    static ImmutableArray<Diagnostic> GetDiagnostics(string source, string? editorConfig = null)
     {
         // Mirror the real consumer environment: our source generator ships a
         // `global using System.Diagnostics.CodeAnalysis;`, so test sources don't need
@@ -614,11 +691,50 @@ public class MismatchAnalyzerTests
             new(OutputKind.DynamicallyLinkedLibrary));
 
         var analyzer = new MismatchAnalyzer();
+        var analyzerOptions = editorConfig is null
+            ? null
+            : new AnalyzerOptions(
+                additionalFiles: [],
+                optionsProvider: new TestConfigOptionsProvider(ParseEditorConfig(editorConfig)));
 
         return compilation
-            .WithAnalyzers([analyzer])
+            .WithAnalyzers([analyzer], analyzerOptions)
             .GetAnalyzerDiagnosticsAsync()
             .GetAwaiter()
             .GetResult();
+    }
+
+    static Dictionary<string, string> ParseEditorConfig(string content)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in content.Split('\n'))
+        {
+            var eq = line.IndexOf('=');
+            if (eq < 0)
+            {
+                continue;
+            }
+
+            var key = line.Substring(0, eq).Trim();
+            var value = line.Substring(eq + 1).Trim();
+            if (key.Length > 0)
+            {
+                result[key] = value;
+            }
+        }
+        return result;
+    }
+
+    sealed class TestConfigOptionsProvider(Dictionary<string, string> globals) : AnalyzerConfigOptionsProvider
+    {
+        public override AnalyzerConfigOptions GlobalOptions { get; } = new TestConfigOptions(globals);
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => GlobalOptions;
+        public override AnalyzerConfigOptions GetOptions(AdditionalText additionalText) => GlobalOptions;
+    }
+
+    sealed class TestConfigOptions(Dictionary<string, string> data) : AnalyzerConfigOptions
+    {
+        public override bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? value) =>
+            data.TryGetValue(key, out value);
     }
 }

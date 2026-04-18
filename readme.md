@@ -43,6 +43,21 @@ Other sources — string literals, interpolated strings, local variables, method
 Likewise, when the **target** is `object`, `params object?[]`, or a generic type parameter (`T`) without its own `StringSyntax`, the analyzer treats it as a generic value slot and suppresses SSA003/SSA005. That keeps logging calls like `logger.Info("processing {P}", pattern)` quiet — the logger was never going to honour a format contract on `pattern`.
 
 
+## Suppressed target namespaces
+
+SSA003 and SSA005 point at the *target* symbol's declaration as the fix site. When the target lives in a namespace the consumer can't edit (the BCL, third-party packages), the warning is unfixable noise. The analyzer skips those diagnostics when the target's containing namespace matches one of the configured patterns.
+
+**Default**: `System*,Microsoft*` — covers `System.Console`, `System.IO.File.WriteAllText`, `Microsoft.Extensions.Logging.ILogger`, etc.
+
+**Override** via `.editorconfig`:
+
+```ini
+stringsyntax.suppressed_target_namespaces = System*,Microsoft*,MyCompany.Legacy*
+```
+
+Patterns support a trailing `*` (prefix match) or an exact match. Empty config means "no namespaces suppressed".
+
+
 ## Usage
 
 
