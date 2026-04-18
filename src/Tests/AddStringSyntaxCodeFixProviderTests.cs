@@ -577,14 +577,12 @@ public class AddStringSyntaxCodeFixProviderTests
                 global using StringSyntaxAttributeAnalyzer;
                 global using SyntaxAttribute = System.Diagnostics.CodeAnalysis.StringSyntaxAttribute;
 
-                namespace StringSyntaxAttributeAnalyzer
-                {
-                    [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
-                    internal sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
+                namespace StringSyntaxAttributeAnalyzer;
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                internal sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
 
-                    [System.AttributeUsage(System.AttributeTargets.Method | System.AttributeTargets.Delegate, AllowMultiple = false)]
-                    internal sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
-                }
+                [System.AttributeUsage(System.AttributeTargets.Method | System.AttributeTargets.Delegate, AllowMultiple = false)]
+                internal sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
                 """)
             .AddDocument(documentId, "Test.cs", source);
 
