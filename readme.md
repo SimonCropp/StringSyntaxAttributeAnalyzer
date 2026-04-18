@@ -15,8 +15,10 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 | SSA001 | Warning  | —        | Format mismatch — both sides have `StringSyntax` but values differ |
 | SSA002 | Warning  | Yes      | Source has no `StringSyntax` while the target requires one         |
 | SSA003 | Warning  | Yes      | Source has `StringSyntax` while the target has none                |
+| SSA004 | Warning  | —        | Equality comparison between mismatched `StringSyntax` values       |
+| SSA005 | Warning  | Yes      | Equality comparison where only one side has `StringSyntax`         |
 
-SSA002 and SSA003 ship a code fix that adds `[StringSyntax("<value>")]` to the relevant declaration — the source symbol for SSA002, the target symbol for SSA003. SSA001 has no fix because picking which side to change requires human judgement.
+SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
 
 
 ## Analyzed Sites

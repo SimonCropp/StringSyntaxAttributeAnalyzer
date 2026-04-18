@@ -380,6 +380,147 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void EqualityMismatch_FiresOnEqualsOperator()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                public string Format { get; set; }
+
+                public bool Check() => Pattern == Format;
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA004", diagnostics[0].Id);
+        var message = diagnostics[0].GetMessage();
+        IsTrue(message.Contains("Regex"));
+        IsTrue(message.Contains("DateTimeFormat"));
+    }
+
+    [Test]
+    public void EqualityMismatch_FiresOnNotEqualsOperator()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                public string Format { get; set; }
+
+                public bool Check() => Pattern != Format;
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA004", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void EqualityMatching_NoDiagnostic()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string A { get; set; }
+
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string B { get; set; }
+
+                public bool Check() => A == B;
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void EqualityWithLiteral_NoDiagnostic()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public bool Check() => Pattern == "[a-z]+";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void EqualityWithUnattributed_FiresSSA005()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public string Raw { get; set; }
+
+                public bool Check() => Pattern == Raw;
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA005", diagnostics[0].Id);
+        IsTrue(diagnostics[0].GetMessage().Contains("Regex"));
+    }
+
+    [Test]
+    public void EqualityWithUnattributed_RightSide_FiresSSA005()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Holder
+            {
+                public string Raw { get; set; }
+
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public bool Check() => Raw == Pattern;
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA005", diagnostics[0].Id);
+    }
+
+    [Test]
     public void FieldSource_Mismatch()
     {
         var source = """

@@ -9,11 +9,13 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     const string valueKey = "StringSyntaxValue";
     const string missingSourceFormatId = "SSA002";
     const string droppedFormatId = "SSA003";
+    const string equalityMissingFormatId = "SSA005";
 
     public override ImmutableArray<string> FixableDiagnosticIds =>
     [
         missingSourceFormatId,
-        droppedFormatId
+        droppedFormatId,
+        equalityMissingFormatId
     ];
 
     public override FixAllProvider GetFixAllProvider() =>

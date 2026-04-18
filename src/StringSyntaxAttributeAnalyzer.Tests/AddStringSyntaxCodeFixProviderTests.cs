@@ -119,6 +119,29 @@ public class AddStringSyntaxCodeFixProviderTests
     }
 
     [Test]
+    public async Task SSA005_AddsAttributeToUnattributedEqualitySide()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public string Raw { get; set; }
+
+                public bool Check() => Pattern == Raw;
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
+        Contains(fixedSource, "public string Raw { get; set; }");
+    }
+
+    [Test]
     public async Task SSA002_CustomFormatValue()
     {
         var source = """
@@ -249,11 +272,11 @@ public class AddStringSyntaxCodeFixProviderTests
             targetDoc,
             diagnostic,
             (action, _) => actions.Add(action),
-            CancellationToken.None);
+            Cancel.None);
         await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
 
         var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(CancellationToken.None);
+        var operations = await action.GetOperationsAsync(Cancel.None);
         var apply = operations.OfType<ApplyChangesOperation>().Single();
         var newDoc = apply.ChangedSolution.GetDocument(targetId)!;
         return (await newDoc.GetTextAsync()).ToString();

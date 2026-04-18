@@ -29,8 +29,30 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor EqualityMismatchRule = new(
+        id: "SSA004",
+        title: "Equality comparison between mismatched StringSyntax values",
+        messageFormat: "Comparing a value with StringSyntax \"{0}\" to a value with StringSyntax \"{1}\"",
+        category: "StringSyntaxAttribute.Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor EqualityMissingFormatRule = new(
+        id: "SSA005",
+        title: "Equality comparison with an unattributed value",
+        messageFormat: "Comparing a value with StringSyntax \"{0}\" to a value without a StringSyntax attribute",
+        category: "StringSyntaxAttribute.Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        [FormatMismatchRule, MissingSourceFormatRule, DroppedFormatRule];
+    [
+        FormatMismatchRule,
+        MissingSourceFormatRule,
+        DroppedFormatRule,
+        EqualityMismatchRule,
+        EqualityMissingFormatRule
+    ];
 
     public override void Initialize(AnalysisContext context)
     {
@@ -61,6 +83,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             start.RegisterOperationAction(
                 _ => AnalyzeFieldInitializer(_, stringSyntaxType),
                 OperationKind.FieldInitializer);
+            start.RegisterOperationAction(
+                _ => AnalyzeBinaryOperator(_, stringSyntaxType),
+                OperationKind.BinaryOperator);
         });
     }
 
@@ -139,6 +164,63 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 sourceInfo,
                 field,
                 targetInfo);
+        }
+    }
+
+    static void AnalyzeBinaryOperator(OperationAnalysisContext context, INamedTypeSymbol stringSyntaxType)
+    {
+        var binary = (IBinaryOperation)context.Operation;
+        if (binary.OperatorKind is not (BinaryOperatorKind.Equals or BinaryOperatorKind.NotEquals))
+        {
+            return;
+        }
+
+        var leftSymbol = GetSymbol(binary.LeftOperand);
+        var rightSymbol = GetSymbol(binary.RightOperand);
+        var leftInfo = GetSyntax(leftSymbol, stringSyntaxType);
+        var rightInfo = GetSyntax(rightSymbol, stringSyntaxType);
+
+        // Unknown side (literal, local, invocation) — suppress. Comparing to a literal is
+        // common and fine; the analyzer can't infer intent from an opaque expression.
+        if (leftInfo.State == SyntaxState.Unknown || rightInfo.State == SyntaxState.Unknown)
+        {
+            return;
+        }
+
+        if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.Present)
+        {
+            if (ValuesMatch(leftInfo.Value, rightInfo.Value))
+            {
+                return;
+            }
+
+            // Both sides have attributes, values differ — no codefix (picking which side
+            // is wrong requires judgement, same reasoning as SSA001).
+            context.ReportDiagnostic(Diagnostic.Create(
+                EqualityMismatchRule,
+                binary.Syntax.GetLocation(),
+                leftInfo.Value ?? "",
+                rightInfo.Value ?? ""));
+            return;
+        }
+
+        // One side Present, the other NotPresent — fixable: add the present side's
+        // StringSyntax value to the bare side's declaration.
+        if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
+        {
+            context.ReportDiagnostic(CreateFixableDiagnostic(
+                EqualityMissingFormatRule,
+                binary.Syntax.GetLocation(),
+                rightSymbol,
+                leftInfo.Value));
+        }
+        else if (rightInfo.State == SyntaxState.Present && leftInfo.State == SyntaxState.NotPresent)
+        {
+            context.ReportDiagnostic(CreateFixableDiagnostic(
+                EqualityMissingFormatRule,
+                binary.Syntax.GetLocation(),
+                leftSymbol,
+                rightInfo.Value));
         }
     }
 

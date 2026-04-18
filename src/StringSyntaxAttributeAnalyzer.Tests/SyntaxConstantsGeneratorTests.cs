@@ -15,6 +15,34 @@ public class SyntaxConstantsGeneratorTests
         IsTrue(text.Contains("static class Syntax"));
         IsTrue(text.Contains("public const string Json = SyntaxAttribute.Json;"));
         IsTrue(text.Contains("public const string Html = nameof(Html);"));
+        IsTrue(text.Contains("global using System.Diagnostics.CodeAnalysis;"));
+    }
+
+    [Test]
+    public void ConsumerCode_NoLocalUsing_CompilesDueToGlobalUsing()
+    {
+        // No `using System.Diagnostics.CodeAnalysis;` anywhere in the user source —
+        // the generator's `global using` should make StringSyntax available.
+        var source = """
+            public class Target
+            {
+                public static void Consume([StringSyntax("Regex")] string value) { }
+            }
+            """;
+
+        var compilation = BuildCompilation(source);
+        var driver = CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var genDiagnostics);
+
+        AreEqual(0, genDiagnostics.Length);
+
+        var errors = updated.GetDiagnostics()
+            .Where(_ => _.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        AreEqual(
+            0,
+            errors.Length,
+            string.Join("\n", errors.Select(_ => _.ToString())));
     }
 
     [Test]
