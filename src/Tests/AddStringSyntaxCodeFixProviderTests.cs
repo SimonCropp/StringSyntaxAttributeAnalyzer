@@ -353,7 +353,8 @@ public class AddStringSyntaxCodeFixProviderTests
             diagnostic,
             (action, _) => actions.Add(action),
             Cancel.None);
-        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
+        await new AddStringSyntaxCodeFixProvider()
+            .RegisterCodeFixesAsync(context);
 
         var action = actions.ToImmutable().Single();
         var operations = await action.GetOperationsAsync(Cancel.None);
