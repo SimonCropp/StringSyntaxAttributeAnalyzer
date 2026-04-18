@@ -5,11 +5,7 @@
 // https://www.jetbrains.com/help/rider/Language_Injections.html
 static class LanguageCommentReader
 {
-    // Keyword `language` is matched case-insensitively; the captured value preserves
-    // its case so PascalCase BCL constants like `Regex` round-trip cleanly.
-    static readonly Regex pattern = new(
-        @"\blanguage\s*=\s*([A-Za-z0-9_]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    const string keyword = "language";
 
     public static bool TryRead(ILocalSymbol local, out string syntax)
     {
@@ -41,10 +37,8 @@ static class LanguageCommentReader
                     continue;
                 }
 
-                var match = pattern.Match(trivia.ToString());
-                if (match.Success)
+                if (TryParse(trivia.ToString(), out syntax))
                 {
-                    syntax = Normalize(match.Groups[1].Value);
                     return true;
                 }
             }
@@ -63,10 +57,8 @@ static class LanguageCommentReader
                 continue;
             }
 
-            var match = pattern.Match(item.ToString());
-            if (match.Success)
+            if (TryParse(item.ToString(), out syntax))
             {
-                syntax = Normalize(match.Groups[1].Value);
                 return true;
             }
         }
@@ -78,6 +70,76 @@ static class LanguageCommentReader
     static bool IsCommentTrivia(SyntaxTrivia trivia) =>
         trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) ||
         trivia.IsKind(SyntaxKind.MultiLineCommentTrivia);
+
+    // Finds the first `language=<identifier>` occurrence where `language` sits at a
+    // word boundary (start-of-string or preceded by a non-word char). Emulates the
+    // previous regex `\blanguage\s*=\s*([A-Za-z0-9_]+)` without the regex engine —
+    // comments are short, so linear scanning is cheap and avoids the Regex cache.
+    static bool TryParse(string text, out string syntax)
+    {
+        for (var i = 0; i <= text.Length - keyword.Length; i++)
+        {
+            if (!MatchesKeyword(text, i))
+            {
+                continue;
+            }
+
+            // Word boundary before: start of string, or previous char is non-word.
+            if (i > 0 && IsWordChar(text[i - 1]))
+            {
+                continue;
+            }
+
+            var pos = i + keyword.Length;
+            pos = SkipWhitespace(text, pos);
+            if (pos >= text.Length || text[pos] != '=')
+            {
+                continue;
+            }
+
+            pos = SkipWhitespace(text, pos + 1);
+            var start = pos;
+            while (pos < text.Length && IsWordChar(text[pos]))
+            {
+                pos++;
+            }
+
+            if (pos == start)
+            {
+                continue;
+            }
+
+            syntax = Normalize(text.Substring(start, pos - start));
+            return true;
+        }
+
+        syntax = "";
+        return false;
+    }
+
+    static bool MatchesKeyword(string text, int index)
+    {
+        for (var j = 0; j < keyword.Length; j++)
+        {
+            if (char.ToLowerInvariant(text[index + j]) != keyword[j])
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static int SkipWhitespace(string text, int pos)
+    {
+        while (pos < text.Length && char.IsWhiteSpace(text[pos]))
+        {
+            pos++;
+        }
+        return pos;
+    }
+
+    static bool IsWordChar(char c) =>
+        char.IsLetterOrDigit(c) || c == '_';
 
     // Rider doc examples spell regex as `regexp`; the BCL constant is `Regex`. Bridge
     // the two so `//language=regexp` matches `[StringSyntax(StringSyntaxAttribute.Regex)]`
