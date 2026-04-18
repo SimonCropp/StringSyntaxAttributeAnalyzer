@@ -17,8 +17,26 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 | SSA003 | Warning  | Yes      | Source has `StringSyntax` while the target has none                |
 | SSA004 | Warning  | —        | Equality comparison between mismatched `StringSyntax` values       |
 | SSA005 | Warning  | Yes      | Equality comparison where only one side has `StringSyntax`         |
+| SSA006 | Warning  | Yes      | `[UnionSyntax("x")]` with a single option — should be `[StringSyntax("x")]` |
 
-SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
+SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA006 rewrites the attribute in place. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
+
+
+## `[UnionSyntax(...)]`
+
+Sometimes a member can legitimately hold any one of several syntaxes — a cell in a report that's either HTML or plain text, a payload field that's JSON or YAML. The package ships `[UnionSyntax("html", "xml")]` for that case.
+
+Two values are *compatible* when their option sets overlap on at least one entry:
+
+| Source                                 | Target                                   | Compatible?     |
+|----------------------------------------|------------------------------------------|-----------------|
+| `[UnionSyntax("html","xml")]`          | `[UnionSyntax("html","xml")]`            | yes (full)      |
+| `[UnionSyntax("html","xml")]`          | `[UnionSyntax("html","js")]`             | yes (`html`)    |
+| `[UnionSyntax("html","xml")]`          | `[StringSyntax("xml")]`                  | yes             |
+| `[StringSyntax("xml")]`                | `[UnionSyntax("html","xml")]`            | yes             |
+| `[UnionSyntax("html","xml")]`          | `[UnionSyntax("json","yaml")]`           | **no** → SSA001 |
+
+A `[UnionSyntax("x")]` with a single option is always a mistake — use `[StringSyntax("x")]`. SSA006 flags it and suggests a fix.
 
 
 ## Analyzed Sites

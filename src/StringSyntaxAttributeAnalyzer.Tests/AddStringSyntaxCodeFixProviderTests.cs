@@ -130,6 +130,23 @@ public class AddStringSyntaxCodeFixProviderTests
     }
 
     [Test]
+    public async Task SSA006_ReplacesSingletonUnionWithStringSyntax()
+    {
+        var source = """
+            public class Holder
+            {
+                [UnionSyntax("html")]
+                public string Markup { get; set; }
+            }
+            """;
+
+        var fixedSource = await ApplyFix<ReplaceUnionWithStringSyntaxCodeFixProvider>(source);
+
+        Contains(fixedSource, "[StringSyntax(\"html\")]");
+        IsFalse(fixedSource.Contains("[UnionSyntax"), $"Expected UnionSyntax removed:\n{fixedSource}");
+    }
+
+    [Test]
     public async Task SSA002_CustomFormatValue()
     {
         var source = """
@@ -293,7 +310,11 @@ public class AddStringSyntaxCodeFixProviderTests
             actual.Contains(expected),
             $"Expected fixed source to contain:\n{expected}\n\nActual:\n{actual}");
 
-    static async Task<string> ApplyFix(string source)
+    static Task<string> ApplyFix(string source) =>
+        ApplyFix<AddStringSyntaxCodeFixProvider>(source);
+
+    static async Task<string> ApplyFix<TProvider>(string source)
+        where TProvider : CodeFixProvider, new()
     {
         var (document, diagnostic) = await PrepareFixAsync(source);
 
@@ -304,7 +325,7 @@ public class AddStringSyntaxCodeFixProviderTests
             (action, _) => actions.Add(action),
             Cancel.None);
 
-        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
+        await new TProvider().RegisterCodeFixesAsync(context);
 
         var action = actions.ToImmutable().Single();
         var operations = await action.GetOperationsAsync(Cancel.None);
@@ -344,10 +365,23 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var solution = workspace.CurrentSolution.AddProject(projectInfo);
         var documentId = DocumentId.CreateNewId(projectInfo.Id);
-        var globalUsingId = DocumentId.CreateNewId(projectInfo.Id);
-        // Mirror the generator-injected global using so test sources don't need their own.
+        var generatedId = DocumentId.CreateNewId(projectInfo.Id);
+        // Mirror what SyntaxConstantsGenerator emits: the global using for
+        // StringSyntaxAttribute, and the UnionSyntaxAttribute definition. Test sources
+        // don't have to declare either. Duplicated here (rather than actually running
+        // the generator) because AdhocWorkspace fix pipelines don't pick up generators
+        // automatically from a project reference.
         solution = solution
-            .AddDocument(globalUsingId, "GlobalUsings.cs", "global using System.Diagnostics.CodeAnalysis;")
+            .AddDocument(generatedId, "Generated.cs", """
+                global using System.Diagnostics.CodeAnalysis;
+                global using StringSyntaxAttributeAnalyzer;
+
+                namespace StringSyntaxAttributeAnalyzer
+                {
+                    [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                    internal sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
+                }
+                """)
             .AddDocument(documentId, "Test.cs", source);
 
         var document = solution.GetDocument(documentId)!;

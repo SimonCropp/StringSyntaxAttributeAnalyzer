@@ -650,6 +650,122 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void UnionSyntax_OverlappingSets_NoDiagnostic()
+    {
+        var source = """
+            public class Holder
+            {
+                [UnionSyntax("html", "xml")]
+                public string Markup { get; set; }
+
+                public static void Consume([UnionSyntax("html", "js")] string value) { }
+
+                public void Use() => Consume(Markup);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void UnionSyntax_DisjointSets_FiresSSA001()
+    {
+        var source = """
+            public class Holder
+            {
+                [UnionSyntax("html", "xml")]
+                public string Markup { get; set; }
+
+                public static void Consume([UnionSyntax("json", "yaml")] string value) { }
+
+                public void Use() => Consume(Markup);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void UnionSyntax_MatchesStringSyntax_NoDiagnostic()
+    {
+        var source = """
+            public class Holder
+            {
+                [UnionSyntax("html", "xml")]
+                public string Markup { get; set; }
+
+                public static void ConsumeXml([StringSyntax("xml")] string value) { }
+
+                public void Use() => ConsumeXml(Markup);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void StringSyntax_MatchesUnionSyntax_NoDiagnostic()
+    {
+        // Symmetric to the previous test — source is StringSyntax, target is UnionSyntax.
+        var source = """
+            public class Holder
+            {
+                [StringSyntax("xml")]
+                public string Markup { get; set; }
+
+                public static void ConsumeUnion([UnionSyntax("html", "xml")] string value) { }
+
+                public void Use() => ConsumeUnion(Markup);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void UnionSyntax_SingleOption_FiresSSA006()
+    {
+        var source = """
+            public class Holder
+            {
+                [UnionSyntax("html")]
+                public string Markup { get; set; }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA006", diagnostics[0].Id);
+        IsTrue(diagnostics[0].GetMessage().Contains("html"));
+    }
+
+    [Test]
+    public void UnionSyntax_MultipleOptions_NoSSA006()
+    {
+        var source = """
+            public class Holder
+            {
+                [UnionSyntax("html", "xml")]
+                public string Markup { get; set; }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
     public void FieldSource_Mismatch()
     {
         var source = """
@@ -672,23 +788,25 @@ public class MismatchAnalyzerTests
 
     static ImmutableArray<Diagnostic> GetDiagnostics(string source, string? editorConfig = null)
     {
-        // Mirror the real consumer environment: our source generator ships a
-        // `global using System.Diagnostics.CodeAnalysis;`, so test sources don't need
-        // their own local using. Injected here as a second syntax tree.
+        // Run the package's own source generator so test compilations see what real
+        // consumers do: the `global using System.Diagnostics.CodeAnalysis;`, the
+        // `Syntax` constants class, and the `UnionSyntaxAttribute` type. Tests don't
+        // have to declare any of these themselves.
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
-        var globalUsingTree = CSharpSyntaxTree.ParseText(
-            "global using System.Diagnostics.CodeAnalysis;");
 
         var trustedAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
             .Select(_ => MetadataReference.CreateFromFile(_))
             .ToList();
 
-        var compilation = CSharpCompilation.Create(
+        var baseCompilation = CSharpCompilation.Create(
             "Tests",
-            [syntaxTree, globalUsingTree],
+            [syntaxTree],
             trustedAssemblies,
             new(OutputKind.DynamicallyLinkedLibrary));
+
+        var driver = CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(baseCompilation, out var compilation, out _);
 
         var analyzer = new MismatchAnalyzer();
         var analyzerOptions = editorConfig is null

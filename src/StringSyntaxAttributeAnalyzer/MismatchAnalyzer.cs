@@ -53,13 +53,22 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor SingletonUnionRule = new(
+        id: "SSA006",
+        title: "UnionSyntax with a single option should be StringSyntax",
+        messageFormat: "[UnionSyntax(\"{0}\")] has only one option; use [StringSyntax(\"{0}\")] instead",
+        category: "StringSyntaxAttribute.Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
     [
         FormatMismatchRule,
         MissingSourceFormatRule,
         DroppedFormatRule,
         EqualityMismatchRule,
-        EqualityMissingFormatRule
+        EqualityMissingFormatRule,
+        SingletonUnionRule
     ];
 
     public override void Initialize(AnalysisContext context)
@@ -79,23 +88,37 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
+            // UnionSyntaxAttribute is ours (source-generated, internal per-assembly). Null
+            // if the generator hasn't run — in that case we just behave as before.
+            var unionSyntaxType = start.Compilation
+                .GetTypeByMetadataName("StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute");
+            var types = new SyntaxTypes(stringSyntaxType, unionSyntaxType);
+
             var suppressedNamespaces = ReadSuppressedNamespaces(start.Options);
 
             start.RegisterOperationAction(
-                _ => AnalyzeArgument(_, stringSyntaxType, suppressedNamespaces),
+                _ => AnalyzeArgument(_, types, suppressedNamespaces),
                 OperationKind.Argument);
             start.RegisterOperationAction(
-                _ => AnalyzeSimpleAssignment(_, stringSyntaxType, suppressedNamespaces),
+                _ => AnalyzeSimpleAssignment(_, types, suppressedNamespaces),
                 OperationKind.SimpleAssignment);
             start.RegisterOperationAction(
-                _ => AnalyzePropertyInitializer(_, stringSyntaxType, suppressedNamespaces),
+                _ => AnalyzePropertyInitializer(_, types, suppressedNamespaces),
                 OperationKind.PropertyInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeFieldInitializer(_, stringSyntaxType, suppressedNamespaces),
+                _ => AnalyzeFieldInitializer(_, types, suppressedNamespaces),
                 OperationKind.FieldInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeBinaryOperator(_, stringSyntaxType, suppressedNamespaces),
+                _ => AnalyzeBinaryOperator(_, types, suppressedNamespaces),
                 OperationKind.BinaryOperator);
+            if (unionSyntaxType is not null)
+            {
+                start.RegisterSymbolAction(
+                    _ => AnalyzeSymbolForSingletonUnion(_, unionSyntaxType),
+                    SymbolKind.Parameter,
+                    SymbolKind.Property,
+                    SymbolKind.Field);
+            }
         });
     }
 
@@ -115,7 +138,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeArgument(
         OperationAnalysisContext context,
-        INamedTypeSymbol stringSyntaxType,
+        SyntaxTypes types,
         string[] suppressedNamespaces)
     {
         var argument = (IArgumentOperation)context.Operation;
@@ -125,9 +148,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), stringSyntaxType);
+        var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
         var sourceSymbol = GetSymbol(argument.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
+        var sourceInfo = GetSyntax(sourceSymbol, types);
         Report(
             context,
             argument.Value.Syntax.GetLocation(),
@@ -140,7 +163,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeSimpleAssignment(
         OperationAnalysisContext context,
-        INamedTypeSymbol stringSyntaxType,
+        SyntaxTypes types,
         string[] suppressedNamespaces)
     {
         var assignment = (ISimpleAssignmentOperation)context.Operation;
@@ -150,9 +173,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var targetInfo = GetSyntax(targetSymbol, stringSyntaxType);
+        var targetInfo = GetSyntax(targetSymbol, types);
         var sourceSymbol = GetSymbol(assignment.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
+        var sourceInfo = GetSyntax(sourceSymbol, types);
         Report(
             context,
             assignment.Value.Syntax.GetLocation(),
@@ -165,15 +188,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzePropertyInitializer(
         OperationAnalysisContext context,
-        INamedTypeSymbol stringSyntaxType,
+        SyntaxTypes types,
         string[] suppressedNamespaces)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
+        var sourceInfo = GetSyntax(sourceSymbol, types);
         foreach (var property in init.InitializedProperties)
         {
-            var targetInfo = GetSyntaxFromAttributes(property.GetAttributes(), stringSyntaxType);
+            var targetInfo = GetSyntaxFromAttributes(property.GetAttributes(), types);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -187,15 +210,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeFieldInitializer(
         OperationAnalysisContext context,
-        INamedTypeSymbol stringSyntaxType,
+        SyntaxTypes types,
         string[] suppressedNamespaces)
     {
         var init = (IFieldInitializerOperation)context.Operation;
         var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, stringSyntaxType);
+        var sourceInfo = GetSyntax(sourceSymbol, types);
         foreach (var field in init.InitializedFields)
         {
-            var targetInfo = GetSyntaxFromAttributes(field.GetAttributes(), stringSyntaxType);
+            var targetInfo = GetSyntaxFromAttributes(field.GetAttributes(), types);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -207,9 +230,43 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
     }
 
+    static void AnalyzeSymbolForSingletonUnion(SymbolAnalysisContext context, INamedTypeSymbol unionSyntaxType)
+    {
+        foreach (var attribute in context.Symbol.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, unionSyntaxType))
+            {
+                continue;
+            }
+
+            var options = ExtractUnionOptions(attribute);
+            if (options.Length > 1)
+            {
+                return;
+            }
+
+            var location = attribute.ApplicationSyntaxReference?
+                .GetSyntax(context.CancellationToken)
+                .GetLocation();
+            if (location is null)
+            {
+                return;
+            }
+
+            var singleValue = options.Length == 1 ? options[0] : "";
+            var properties = ImmutableDictionary<string, string?>.Empty.Add(ValueKey, singleValue);
+            context.ReportDiagnostic(Diagnostic.Create(
+                SingletonUnionRule,
+                location,
+                properties: properties,
+                messageArgs: singleValue));
+            return;
+        }
+    }
+
     static void AnalyzeBinaryOperator(
         OperationAnalysisContext context,
-        INamedTypeSymbol stringSyntaxType,
+        SyntaxTypes types,
         string[] suppressedNamespaces)
     {
         var binary = (IBinaryOperation)context.Operation;
@@ -220,8 +277,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         var leftSymbol = GetSymbol(binary.LeftOperand);
         var rightSymbol = GetSymbol(binary.RightOperand);
-        var leftInfo = GetSyntax(leftSymbol, stringSyntaxType);
-        var rightInfo = GetSyntax(rightSymbol, stringSyntaxType);
+        var leftInfo = GetSyntax(leftSymbol, types);
+        var rightInfo = GetSyntax(rightSymbol, types);
 
         // Unknown side (literal, local, invocation) — suppress. Comparing to a literal is
         // common and fine; the analyzer can't infer intent from an opaque expression.
@@ -232,7 +289,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.Present)
         {
-            if (ValuesMatch(leftInfo.Value, rightInfo.Value))
+            if (ValuesMatch(leftInfo.Values, rightInfo.Values))
             {
                 return;
             }
@@ -242,8 +299,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(
                 EqualityMismatchRule,
                 binary.Syntax.GetLocation(),
-                leftInfo.Value ?? "",
-                rightInfo.Value ?? ""));
+                FormatValues(leftInfo.Values),
+                FormatValues(rightInfo.Values)));
             return;
         }
 
@@ -262,7 +319,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 EqualityMissingFormatRule,
                 binary.Syntax.GetLocation(),
                 rightSymbol,
-                leftInfo.Value));
+                leftInfo.PrimaryValue));
         }
         else if (rightInfo.State == SyntaxState.Present && leftInfo.State == SyntaxState.NotPresent)
         {
@@ -276,7 +333,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 EqualityMissingFormatRule,
                 binary.Syntax.GetLocation(),
                 leftSymbol,
-                rightInfo.Value));
+                rightInfo.PrimaryValue));
         }
     }
 
@@ -313,10 +370,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         };
     }
 
-    static SyntaxInfo GetSyntax(ISymbol? symbol, INamedTypeSymbol stringSyntaxType) =>
+    static SyntaxInfo GetSyntax(ISymbol? symbol, SyntaxTypes types) =>
         symbol is null
             ? SyntaxInfo.Unknown
-            : GetSyntaxFromAttributes(symbol.GetAttributes(), stringSyntaxType);
+            : GetSyntaxFromAttributes(symbol.GetAttributes(), types);
 
     static IOperation UnwrapConversions(IOperation operation)
     {
@@ -327,28 +384,61 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return operation;
     }
 
+    readonly struct SyntaxTypes(INamedTypeSymbol stringSyntax, INamedTypeSymbol? unionSyntax)
+    {
+        public INamedTypeSymbol StringSyntax { get; } = stringSyntax;
+        public INamedTypeSymbol? UnionSyntax { get; } = unionSyntax;
+    }
+
     static SyntaxInfo GetSyntaxFromAttributes(
         ImmutableArray<AttributeData> attributes,
-        INamedTypeSymbol stringSyntaxType)
+        SyntaxTypes types)
     {
         foreach (var attribute in attributes)
         {
-            if (!SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, stringSyntaxType))
+            if (SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
             {
-                continue;
+                if (attribute.ConstructorArguments.Length > 0 &&
+                    attribute.ConstructorArguments[0].Value is string s)
+                {
+                    return SyntaxInfo.Present(s);
+                }
+                return new(SyntaxState.Present, []);
             }
 
-            string? value = null;
-            if (attribute.ConstructorArguments.Length > 0 &&
-                attribute.ConstructorArguments[0].Value is string s)
+            if (types.UnionSyntax is not null &&
+                SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.UnionSyntax))
             {
-                value = s;
+                var values = ExtractUnionOptions(attribute);
+                return SyntaxInfo.PresentUnion(values);
             }
-
-            return new(SyntaxState.Present, value);
         }
 
-        return new(SyntaxState.NotPresent, null);
+        return SyntaxInfo.NotPresent;
+    }
+
+    static ImmutableArray<string> ExtractUnionOptions(AttributeData attribute)
+    {
+        if (attribute.ConstructorArguments.Length == 0)
+        {
+            return [];
+        }
+
+        var first = attribute.ConstructorArguments[0];
+        if (first.Kind != TypedConstantKind.Array)
+        {
+            return [];
+        }
+
+        var builder = ImmutableArray.CreateBuilder<string>(first.Values.Length);
+        foreach (var element in first.Values)
+        {
+            if (element.Value is string s)
+            {
+                builder.Add(s);
+            }
+        }
+        return builder.ToImmutable();
     }
 
     static void Report(
@@ -378,13 +468,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (source.State == SyntaxState.Present &&
             target.State == SyntaxState.Present)
         {
-            if (!ValuesMatch(source.Value, target.Value))
+            if (!ValuesMatch(source.Values, target.Values))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     FormatMismatchRule,
                     location,
-                    source.Value ?? "",
-                    target.Value ?? ""));
+                    FormatValues(source.Values),
+                    FormatValues(target.Values)));
             }
 
             return;
@@ -398,7 +488,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 MissingSourceFormatRule,
                 location,
                 sourceSymbol,
-                target.Value));
+                target.PrimaryValue));
             return;
         }
 
@@ -417,9 +507,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 DroppedFormatRule,
                 location,
                 targetSymbol,
-                source.Value));
+                source.PrimaryValue));
         }
     }
+
+    static string FormatValues(ImmutableArray<string> values) =>
+        values.IsDefaultOrEmpty ? "" : string.Join("|", values);
 
     static bool IsInSuppressedNamespace(ISymbol? symbol, string[] patterns)
     {
@@ -465,7 +558,28 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // Only the first character is compared case-insensitively — the BCL constants
     // (Regex, Json, Xml, DateTimeFormat, ...) are PascalCase, and we want "json" and
     // "Json" to be treated as the same format. "jSon" vs "json" is still a mismatch.
-    static bool ValuesMatch(string? a, string? b)
+    // Two value-sets "match" if they overlap on at least one value. `[StringSyntax(x)]`
+    // ↔ `[UnionSyntax(x, y)]` matches via `x`. Union ↔ union passes when the intersection
+    // is non-empty.
+    static bool ValuesMatch(ImmutableArray<string> a, ImmutableArray<string> b)
+    {
+        foreach (var va in a)
+        {
+            foreach (var vb in b)
+            {
+                if (SingleValueMatches(va, vb))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // First character compared case-insensitively — the BCL constants (Regex, Json, Xml,
+    // DateTimeFormat, ...) are PascalCase, and we want "json" and "Json" to be treated
+    // as the same format. "jSon" vs "json" is still a mismatch.
+    static bool SingleValueMatches(string? a, string? b)
     {
         if (ReferenceEquals(a, b))
         {
@@ -525,11 +639,23 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         Present
     }
 
-    readonly struct SyntaxInfo(SyntaxState state, string? value)
+    readonly struct SyntaxInfo(SyntaxState state, ImmutableArray<string> values)
     {
         public SyntaxState State { get; } = state;
-        public string? Value { get; } = value;
 
-        public static SyntaxInfo Unknown => new(SyntaxState.Unknown, null);
+        // The set of accepted syntax values. Single-valued for `[StringSyntax(x)]`,
+        // multi-valued for `[UnionSyntax(a, b, c)]`. Empty when State != Present.
+        public ImmutableArray<string> Values { get; } = values;
+
+        // Primary value to surface in messages and codefixes. For a union, takes the
+        // first option — consistent but arbitrary; consumers overriding to a specific
+        // value is expected.
+        public string? PrimaryValue => Values.IsDefaultOrEmpty ? null : Values[0];
+
+        public static SyntaxInfo Unknown { get; } = new(SyntaxState.Unknown, []);
+        public static SyntaxInfo NotPresent { get; } = new(SyntaxState.NotPresent, []);
+        public static SyntaxInfo Present(string value) => new(SyntaxState.Present, [value]);
+        public static SyntaxInfo PresentUnion(ImmutableArray<string> values) =>
+            new(SyntaxState.Present, values);
     }
 }
