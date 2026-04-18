@@ -372,9 +372,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // Doc: https://www.jetbrains.com/help/rider/Language_Injections.html
         if (symbol is ILocalSymbol local)
         {
-            return LanguageCommentReader.TryRead(local, out var comment)
-                ? SyntaxInfo.Present(comment)
-                : SyntaxInfo.NotPresent;
+            if (LanguageCommentReader.TryRead(local, out var comment))
+            {
+                return SyntaxInfo.Present(comment);
+            }
+
+            return SyntaxInfo.NotPresent;
         }
 
         var info = GetSyntaxFromAttributes(symbol.GetAttributes(), types);
@@ -425,6 +428,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             operation = conversion.Operand;
         }
+
         return operation;
     }
 
@@ -572,11 +576,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             // Fix site is the target symbol's declaration (add StringSyntax matching source).
-            context.ReportDiagnostic(CreateFixableDiagnostic(
-                droppedFormatRule,
-                location,
-                targetSymbol,
-                source.PrimaryValue));
+            context.ReportDiagnostic(
+                CreateFixableDiagnostic(
+                    droppedFormatRule,
+                    location,
+                    targetSymbol,
+                    source.PrimaryValue));
         }
     }
 
@@ -602,5 +607,4 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         return [Location.Create(declaration.SyntaxTree, declaration.Span)];
     }
-
 }
