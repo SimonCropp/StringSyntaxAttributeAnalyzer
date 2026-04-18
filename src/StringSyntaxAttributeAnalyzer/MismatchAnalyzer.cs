@@ -286,8 +286,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var leftInfo = GetSyntax(leftSymbol, types);
         var rightInfo = GetSyntax(rightSymbol, types);
 
-        // Unknown side (literal, local, invocation) — suppress. Comparing to a literal is
-        // common and fine; the analyzer can't infer intent from an opaque expression.
+        // Unknown side (literal, local, concatenation, await) — suppress. Comparing to
+        // a literal is common and fine; the analyzer can't infer intent from an opaque
+        // expression. Method invocations are NotPresent (fixable via [ReturnSyntax]),
+        // not Unknown.
         if (leftInfo.State == SyntaxState.Unknown ||
             rightInfo.State == SyntaxState.Unknown)
         {
@@ -375,6 +377,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             IFieldReferenceOperation field => field.Field,
             IParameterReferenceOperation param => param.Parameter,
             IInvocationOperation invocation => invocation.TargetMethod,
+            ILocalReferenceOperation local => local.Local,
             _ => null
         };
     }
@@ -386,18 +389,22 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return SyntaxInfo.Unknown;
         }
 
+        // Locals can't carry attributes in C#. Instead we honour the JetBrains / Rider
+        // `//language=<name>` comment convention on the declaration (or inline before
+        // the initializer): an annotated local is Present, an unannotated local falls
+        // through to NotPresent so SSA002 fires with a codefix that inserts the comment.
+        // Doc: https://www.jetbrains.com/help/rider/Language_Injections.html
+        if (symbol is ILocalSymbol local)
+        {
+            return TryReadLanguageComment(local, out var comment)
+                ? SyntaxInfo.Present(comment)
+                : SyntaxInfo.NotPresent;
+        }
+
         var info = GetSyntaxFromAttributes(symbol.GetAttributes(), types);
         if (info.State == SyntaxState.Present)
         {
             return info;
-        }
-
-        // Method invocations are only resolvable when the method opts in via
-        // [ReturnSyntax]. Without it, treat the result as Unknown (not NotPresent) —
-        // otherwise every helper returning a string would fire SSA002 at call sites.
-        if (symbol is IMethodSymbol)
-        {
-            return SyntaxInfo.Unknown;
         }
 
         // Records: a primary-constructor parameter with [StringSyntax] doesn't
@@ -435,6 +442,87 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         return null;
     }
+
+    // Rider/IntelliJ-compatible injection comment: `//language=<name>` or
+    // `/*language=<name>*/`, optionally followed by `prefix=`/`postfix=` options which
+    // we ignore here (those are renderer hints, not relevant to syntax identity).
+    // Keyword is case-insensitive; the value preserves its case so PascalCase BCL
+    // constants like `Regex` round-trip cleanly.
+    static readonly Regex languageCommentRegex = new(
+        @"\blanguage\s*=\s*([A-Za-z0-9_]+)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    static bool TryReadLanguageComment(ILocalSymbol local, out string syntax)
+    {
+        foreach (var reference in local.DeclaringSyntaxReferences)
+        {
+            var node = reference.GetSyntax();
+            var statement = node.FirstAncestorOrSelf<LocalDeclarationStatementSyntax>();
+            if (statement is null)
+            {
+                continue;
+            }
+
+            // Preceding-line form — `// language=regex` on the line above the statement.
+            // Lives in the statement's own leading trivia.
+            if (TryMatchLanguageComment(statement.GetLeadingTrivia(), out syntax))
+            {
+                return true;
+            }
+
+            // Inline form — `var x = /*language=regex*/ "..."`. Roslyn attaches the
+            // block comment to the `=` token's trailing trivia (same-line trivia before
+            // a token sticks to the previous token in Roslyn's default policy), so a
+            // targeted check of the initializer's leading trivia misses it. Scan every
+            // trivia within the statement and take the first match.
+            foreach (var trivia in statement.DescendantTrivia())
+            {
+                if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) &&
+                    !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+                {
+                    continue;
+                }
+
+                var match = languageCommentRegex.Match(trivia.ToString());
+                if (match.Success)
+                {
+                    syntax = NormalizeLanguageToken(match.Groups[1].Value);
+                    return true;
+                }
+            }
+        }
+
+        syntax = "";
+        return false;
+    }
+
+    static bool TryMatchLanguageComment(SyntaxTriviaList trivia, out string syntax)
+    {
+        foreach (var item in trivia)
+        {
+            if (!item.IsKind(SyntaxKind.SingleLineCommentTrivia) &&
+                !item.IsKind(SyntaxKind.MultiLineCommentTrivia))
+            {
+                continue;
+            }
+
+            var match = languageCommentRegex.Match(item.ToString());
+            if (match.Success)
+            {
+                syntax = NormalizeLanguageToken(match.Groups[1].Value);
+                return true;
+            }
+        }
+
+        syntax = "";
+        return false;
+    }
+
+    // Rider doc examples spell regex as `regexp`; the BCL constant is `Regex`. Bridge
+    // the two so `//language=regexp` matches `[StringSyntax(StringSyntaxAttribute.Regex)]`
+    // without the user having to know the naming history.
+    static string NormalizeLanguageToken(string raw) =>
+        raw.Equals("regexp", StringComparison.OrdinalIgnoreCase) ? "Regex" : raw;
 
     static IOperation UnwrapConversions(IOperation operation)
     {
@@ -559,7 +647,16 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (source.State == SyntaxState.NotPresent &&
             target.State == SyntaxState.Present)
         {
-            // Fix site is the source symbol's declaration (add StringSyntax matching target).
+            // Source in a suppressed namespace (BCL etc.) can't be annotated by the
+            // consumer — skip rather than surfacing an unfixable SSA002. Mirrors the
+            // target-side check on the SSA003 branch below.
+            if (IsInSuppressedNamespace(sourceSymbol, suppressedNamespaces))
+            {
+                return;
+            }
+
+            // Fix site is the source symbol's declaration: add [StringSyntax] to a
+            // field/property/parameter, or [ReturnSyntax] to a method.
             context.ReportDiagnostic(
                 CreateFixableDiagnostic(
                     missingSourceFormatRule,

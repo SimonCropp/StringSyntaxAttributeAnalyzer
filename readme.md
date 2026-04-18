@@ -78,21 +78,52 @@ The source of a string is resolved when it is one of:
  * A property reference (`obj.Prop`)
  * A field reference (`obj._field`)
  * A parameter reference (method argument, lambda parameter, etc.)
+ * A method invocation (read from `[ReturnSyntax(...)]` on the method — unannotated methods are treated as bare, same as an unattributed property)
+ * A local variable declaration (read from `//language=<name>` comments — unannotated locals are treated as bare)
 
-Other sources — string literals, interpolated strings, local variables, concatenation, `await`, binary expressions, etc. — are treated as **unknown** and suppress all three diagnostics. This avoids noise on every `"foo"` and every local variable passed to a `[StringSyntax]` parameter.
+Other sources — string literals, interpolated strings, concatenation, `await`, binary expressions, etc. — are treated as **unknown** and suppress all three diagnostics. This avoids noise on every `"foo"` passed to a `[StringSyntax]` parameter.
 
-Method invocations are resolved when the method opts in via `[ReturnSyntax("...")]` (see below) and otherwise treated as unknown — plain `ToString()` or any unannotated helper won't trigger diagnostics.
+Invocations of BCL / framework methods are silenced by the namespace suppression below — `string.Format`, `sb.ToString()`, and `Path.Combine` won't fire SSA002 even though their return values aren't annotated.
 
 Likewise, when the **target** is `object`, `params object?[]`, or a generic type parameter (`T`) without its own `StringSyntax`, the analyzer treats it as a generic value slot and suppresses SSA003/SSA005. That keeps logging calls like `logger.Info("processing {P}", pattern)` quiet — the logger was never going to honour a format contract on `pattern`.
+
+Symmetrically, sources whose declaring type lives in a suppressed namespace (BCL by default) are skipped on the SSA002/SSA005 paths — an unannotated BCL method or property is not something the consumer can add `[StringSyntax]` / `[ReturnSyntax]` to, so surfacing an unfixable warning would be noise. Same config knob as the target side.
+
+
+## Local variables — `//language=<name>` comments
+
+C# doesn't permit attributes on local variables, so `[StringSyntax]` has nowhere to hang. To describe a local's syntax the analyzer reads the JetBrains / IntelliJ-platform [language injection](https://www.jetbrains.com/help/rider/Language_Injections.html#use-comments) comment convention — the same comment Rider and ReSharper already honour, so adopting it is zero-cost for anyone already using those tools.
+
+```cs
+public void Use()
+{
+    // language=regex
+    var pattern = "[a-z]+";
+    Consume(pattern); // flows as [StringSyntax("Regex")] — no diagnostic
+}
+```
+
+### Accepted forms
+
+ * `// language=<name>` or `//language=<name>` on the line preceding the declaration
+ * `var x = /*language=<name>*/ "..."` inline before the initializer
+ * Optional `prefix=` / `postfix=` follow-on options are ignored (they're renderer hints, irrelevant to syntax identity)
+ * Keyword `language` is matched case-insensitively
+
+### Token names
+
+Rider spells regex as `regexp`; the BCL uses `Regex`. The analyzer normalizes `regexp` → `Regex` so `//language=regexp` matches `[StringSyntax(StringSyntaxAttribute.Regex)]` without requiring the user to know the naming history. Other tokens (`json`, `html`, `xml`, `sql`, ...) pass through and match case-insensitively against BCL PascalCase (`Json`, `Html`, `Xml`, ...).
+
+### Unannotated locals fire SSA002
+
+A local flowing into a `[StringSyntax]` target without a `//language=` comment fires **SSA002**, with a code fix that inserts `// language=<token>` above the declaration. Token names follow Rider conventions — `regex` is emitted as `regexp` (so Rider's own highlighting lights up), everything else is lowercased.
+
+Locals that never flow into a `[StringSyntax]` target are untouched — `var name = user.GetName();` on its own produces no diagnostic; only the passthrough into a formatted slot surfaces the warning.
 
 
 ## `[ReturnSyntax(...)]` on methods
 
 `StringSyntaxAttribute` has `AttributeUsage(Field | Parameter | Property)`, so `[return: StringSyntax(...)]` is a compile error and the BCL attribute cannot describe the syntax of a method's return value. Broadening its targets is tracked in [dotnet/runtime#76203](https://github.com/dotnet/runtime/issues/76203); until that ships, the source generator emits `ReturnSyntaxAttribute` (targetable at `Method | Delegate`) as a bridge so invocation results can participate in format analysis.
-
-### Why a second attribute?
-
-Without an opt-in, invocation results are treated as **unknown** (see "Sources the analyzer can resolve" above). That's deliberate: defaulting method returns to *no* syntax would fire SSA002 on every unannotated helper — `"x".Substring(1)`, `sb.ToString()`, `config.GetValue("key")` — and bury real diagnostics in noise. `[ReturnSyntax]` is the explicit signal that a method's return carries a known syntax.
 
 ### Example
 
@@ -107,9 +138,9 @@ public void Use() => ConsumePattern(GetPattern()); // no diagnostic — invocati
 
 With the annotation, calls to `GetPattern()` are treated as `[StringSyntax("Regex")]`-attributed at every call site. A call passing the result into a mismatched target fires SSA001; passing it into a bare `string` parameter fires SSA003; passing it into the matching target is silent.
 
-### Opt-in semantics
+### Unannotated methods fire SSA002
 
-A method without `[ReturnSyntax]` stays **unknown** at call sites (not bare). Adding this attribute to the toolbox does not retroactively light up SSA002 on every unannotated helper — you choose which return values are worth annotating.
+An unannotated method flowing into a `[StringSyntax]` target fires **SSA002**, with a code fix that adds `[ReturnSyntax("...")]` to the method declaration. This mirrors the behaviour for an unannotated property or field source. BCL methods are silenced automatically by the namespace suppression — a call to `string.Format` or `sb.ToString()` does not produce a diagnostic, because the consumer can't annotate those methods anyway. Third-party libraries outside `System*` / `Microsoft*` can be added to `stringsyntax.suppressed_target_namespaces` when needed.
 
 ### Planned retirement
 
@@ -128,7 +159,7 @@ public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string P
 public void RecordCall(PatternRecord record) =>
     ConsumeRegexStrict(record.Pattern); // no diagnostic — attribute flows to property
 ```
-<sup><a href='/src/Tests/Samples.cs#L100-L107' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L81-L88' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 An explicit `[property: StringSyntax(...)]` on the property still wins — if both targets are attributed, the property's own attribute is used.
@@ -256,37 +287,6 @@ public void LiteralCall() =>
 <sup><a href='/src/Tests/Samples.cs#L67-L72' title='Snippet source file'>snippet source</a> | <a href='#snippet-LiteralSource' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
-#### Local variables
-
-Locals cannot carry `[StringSyntax]` (the attribute targets fields, parameters, and properties only), so a value passed through a local is Unknown.
-
-<!-- snippet: LocalVariableSource -->
-<a id='snippet-LocalVariableSource'></a>
-```cs
-public void LocalVariableCall()
-{
-    var pattern = "[a-z]+";
-    ConsumeRegexStrict(pattern); // no diagnostic — local is Unknown
-}
-```
-<sup><a href='/src/Tests/Samples.cs#L74-L82' title='Snippet source file'>snippet source</a> | <a href='#snippet-LocalVariableSource' title='Start of snippet'>anchor</a></sup>
-<!-- endSnippet -->
-
-#### Method invocations
-
-Return values also cannot carry `[StringSyntax]`, so invocation results are Unknown — otherwise every `.ToString()` or helper call flowing into a formatted slot would warn.
-
-<!-- snippet: MethodInvocationSource -->
-<a id='snippet-MethodInvocationSource'></a>
-```cs
-public string GetPattern() => "[a-z]+";
-
-public void InvocationCall() =>
-    ConsumeRegexStrict(GetPattern()); // no diagnostic — invocation result is Unknown
-```
-<sup><a href='/src/Tests/Samples.cs#L84-L91' title='Snippet source file'>snippet source</a> | <a href='#snippet-MethodInvocationSource' title='Start of snippet'>anchor</a></sup>
-<!-- endSnippet -->
-
 #### Other non-resolvable expressions
 
 Concatenations, interpolations, and `await` expressions don't reduce to a single symbol, so they're Unknown too.
@@ -297,7 +297,7 @@ Concatenations, interpolations, and `await` expressions don't reduce to a single
 public void ConcatCall(string suffix) =>
     ConsumeRegexStrict("[a-z]" + suffix); // no diagnostic — concatenation is Unknown
 ```
-<sup><a href='/src/Tests/Samples.cs#L93-L98' title='Snippet source file'>snippet source</a> | <a href='#snippet-OtherUnknownSource' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L74-L79' title='Snippet source file'>snippet source</a> | <a href='#snippet-OtherUnknownSource' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 

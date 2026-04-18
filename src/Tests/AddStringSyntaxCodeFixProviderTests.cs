@@ -387,6 +387,123 @@ public class AddStringSyntaxCodeFixProviderTests
         IsFalse(fixedSource.StartsWith('\r'), "Fixed source should not start with CR");
     }
 
+    [Test]
+    public async Task SSA002_AddsReturnSyntaxToSourceMethod()
+    {
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+
+            public class Holder
+            {
+                public string GetPattern() => "[a-z]+";
+
+                public void Use(Target target) => target.Consume(GetPattern());
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[ReturnSyntax(\"Regex\")]");
+        Contains(fixedSource, "public string GetPattern()");
+    }
+
+    [Test]
+    public async Task SSA002_MethodFix_TitleUsesReturnSyntax()
+    {
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+
+            public class Holder
+            {
+                public string GetPattern() => "[a-z]+";
+
+                public void Use(Target target) => target.Consume(GetPattern());
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        AreEqual(1, actions.Length);
+        AreEqual("Add [ReturnSyntax(\"Regex\")]", actions[0].Title);
+    }
+
+    [Test]
+    public async Task SSA002_AddsLanguageCommentToLocal()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    var pattern = "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        // Rider/IntelliJ convention: `regexp` for regex tokens.
+        Contains(fixedSource, "// language=regexp");
+        Contains(fixedSource, "var pattern = \"[a-z]+\";");
+    }
+
+    [Test]
+    public async Task SSA002_LocalFix_TitleUsesLanguageComment()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    var pattern = "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        AreEqual(1, actions.Length);
+        AreEqual("Add //language=regexp", actions[0].Title);
+    }
+
+    [Test]
+    public async Task SSA002_LocalFix_LowercasesJsonToken()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Json)] string value) { }
+
+                public void Use()
+                {
+                    var payload = "{}";
+                    Consume(payload);
+                }
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "// language=json");
+    }
+
     static void Contains(string actual, string expected) =>
         IsTrue(
             actual.Contains(expected),
@@ -463,6 +580,9 @@ public class AddStringSyntaxCodeFixProviderTests
                 {
                     [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
                     internal sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
+
+                    [System.AttributeUsage(System.AttributeTargets.Method | System.AttributeTargets.Delegate, AllowMultiple = false)]
+                    internal sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
                 }
                 """)
             .AddDocument(documentId, "Test.cs", source);

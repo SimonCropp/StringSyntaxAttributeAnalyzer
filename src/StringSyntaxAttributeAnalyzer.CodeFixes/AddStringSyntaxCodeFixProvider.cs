@@ -57,15 +57,17 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                 continue;
             }
 
+            var host = FindAttributeHost(declarationNode);
+            var (title, equivalenceKey) = BuildFixMetadata(host, value);
             context.RegisterCodeFix(
                 CodeAction.Create(
-                    $"Add [Syntax(\"{value}\")]",
+                    title,
                     cancel => AddAttributeAsync(
                         context.Document.Project.Solution,
                         declarationLocation,
                         value,
                         cancel),
-                    equivalenceKey: $"AddSyntax:{value}"),
+                    equivalenceKey: equivalenceKey),
                 diagnostic);
         }
     }
@@ -97,10 +99,20 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
-        var compilation = await document.Project.GetCompilationAsync(cancel).ConfigureAwait(false);
-        var attributeName = ResolveAttributeName(compilation);
+        SyntaxNode? newTargetNode;
+        if (targetNode is LocalDeclarationStatementSyntax localHost)
+        {
+            newTargetNode = AddLanguageCommentToLocal(localHost, value);
+        }
+        else
+        {
+            var compilation = await document.Project.GetCompilationAsync(cancel).ConfigureAwait(false);
+            var attributeName = IsMethodHost(targetNode)
+                ? "ReturnSyntax"
+                : ResolveAttributeName(compilation);
+            newTargetNode = AddStringSyntaxAttribute(targetNode, value, attributeName);
+        }
 
-        var newTargetNode = AddStringSyntaxAttribute(targetNode, value, attributeName);
         if (newTargetNode is null)
         {
             return solution;
@@ -124,9 +136,11 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
     static SyntaxNode? FindAttributeHost(SyntaxNode node)
     {
-        // IFieldSymbol.DeclaringSyntaxReferences points at the VariableDeclaratorSyntax
-        // (e.g. `a` in `public string a, b;`). Attribute lists live on the enclosing
-        // FieldDeclarationSyntax, which would apply the attribute to *all* declarators.
+        // Both IFieldSymbol and ILocalSymbol DeclaringSyntaxReferences point at the
+        // VariableDeclaratorSyntax (e.g. `a` in `public string a, b;` or `var a = 1`).
+        // The host depends on context: FieldDeclarationSyntax for a field,
+        // LocalDeclarationStatementSyntax for a local. Multi-declarator forms are
+        // refused in both cases — one attribute or comment would apply to all.
         var declarator = node.FirstAncestorOrSelf<VariableDeclaratorSyntax>();
         if (declarator is not null)
         {
@@ -135,11 +149,84 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                 return null;
             }
 
-            return declarator.FirstAncestorOrSelf<FieldDeclarationSyntax>();
+            return declarator.FirstAncestorOrSelf<SyntaxNode>(ancestor =>
+                ancestor is FieldDeclarationSyntax or LocalDeclarationStatementSyntax);
         }
 
         return node.FirstAncestorOrSelf<SyntaxNode>(ancestor =>
-            ancestor is PropertyDeclarationSyntax or ParameterSyntax);
+            ancestor is PropertyDeclarationSyntax
+                or ParameterSyntax
+                or MethodDeclarationSyntax
+                or LocalFunctionStatementSyntax
+                or DelegateDeclarationSyntax);
+    }
+
+    static bool IsMethodHost(SyntaxNode? host) =>
+        host is MethodDeclarationSyntax
+            or LocalFunctionStatementSyntax
+            or DelegateDeclarationSyntax;
+
+    static (string Title, string EquivalenceKey) BuildFixMetadata(SyntaxNode? host, string value) =>
+        host switch
+        {
+            LocalDeclarationStatementSyntax => (
+                $"Add //language={ToRiderToken(value)}",
+                $"AddLanguageComment:{value}"),
+            _ when IsMethodHost(host) => (
+                $"Add [ReturnSyntax(\"{value}\")]",
+                $"AddReturnSyntax:{value}"),
+            _ => (
+                $"Add [Syntax(\"{value}\")]",
+                $"AddSyntax:{value}")
+        };
+
+    // Rider docs spell regex as `regexp`. Normalizing on write means the emitted
+    // comment lights up Rider's own highlighting; MismatchAnalyzer's read path maps
+    // `regexp` back to `Regex` so the round-trip matches the BCL constant.
+    static string ToRiderToken(string value) =>
+        value.Equals("Regex", StringComparison.Ordinal)
+            ? "regexp"
+            : value.ToLowerInvariant();
+
+    // Emits the Rider/IntelliJ-compatible `//language=<token>` comment above the
+    // declaration. The value is lowercased to match the convention used in Rider's
+    // own docs (e.g. `//language=regex`); MismatchAnalyzer's read path is
+    // first-character-case-insensitive, so this round-trips cleanly against the BCL
+    // PascalCase constants (`Regex`, `Json`, ...).
+    static SyntaxNode AddLanguageCommentToLocal(LocalDeclarationStatementSyntax local, string value)
+    {
+        var comment = Comment($"// language={ToRiderToken(value)}");
+        var eol = CarriageReturnLineFeed;
+
+        var existingLeading = local.GetLeadingTrivia();
+        var indent = FindCurrentLineIndent(existingLeading);
+
+        var prefix = indent.IsKind(SyntaxKind.WhitespaceTrivia)
+            ? TriviaList(indent, comment, eol)
+            : TriviaList(comment, eol);
+
+        return local.WithLeadingTrivia(prefix.AddRange(existingLeading));
+    }
+
+    // The current-line indent is the trailing whitespace trivia of the leading trivia
+    // list — i.e. the last whitespace before the token. Earlier whitespace may belong
+    // to blank-line gaps between this statement and the previous one.
+    static SyntaxTrivia FindCurrentLineIndent(SyntaxTriviaList trivia)
+    {
+        for (var i = trivia.Count - 1; i >= 0; i--)
+        {
+            var item = trivia[i];
+            if (item.IsKind(SyntaxKind.WhitespaceTrivia))
+            {
+                return item;
+            }
+            if (item.IsKind(SyntaxKind.EndOfLineTrivia))
+            {
+                break;
+            }
+        }
+
+        return default;
     }
 
     static SyntaxNode? AddStringSyntaxAttribute(SyntaxNode host, string value, string attributeName)
@@ -160,6 +247,9 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             PropertyDeclarationSyntax property => property.AddAttributeLists(attributeList),
             FieldDeclarationSyntax field => field.AddAttributeLists(attributeList),
             ParameterSyntax parameter => parameter.AddAttributeLists(attributeList),
+            MethodDeclarationSyntax method => method.AddAttributeLists(attributeList),
+            LocalFunctionStatementSyntax local => local.AddAttributeLists(attributeList),
+            DelegateDeclarationSyntax del => del.AddAttributeLists(attributeList),
             _ => null
         };
     }

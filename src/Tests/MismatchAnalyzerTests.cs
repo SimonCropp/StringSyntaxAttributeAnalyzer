@@ -78,26 +78,6 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void MethodReturnSource_IsUnknown()
-    {
-        var source =
-            """
-            public class Holder
-            {
-                public string GetValue() => "";
-
-                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
-
-                public void Use() => Consume(GetValue());
-            }
-            """;
-
-        var diagnostics = GetDiagnostics(source);
-
-        AreEqual(0, diagnostics.Length);
-    }
-
-    [Test]
     public void MissingSourceFormat_ArgumentToParameter()
     {
         var source =
@@ -235,31 +215,6 @@ public class MismatchAnalyzerTests
             public class Caller
             {
                 public void Use(Target target) => target.Consume("[a-z]+");
-            }
-            """;
-
-        var diagnostics = GetDiagnostics(source);
-
-        AreEqual(0, diagnostics.Length);
-    }
-
-    [Test]
-    public void LocalVariableSource_NoDiagnostic()
-    {
-        var source =
-            """
-            public class Target
-            {
-                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
-            }
-
-            public class Caller
-            {
-                public void Use(Target target)
-                {
-                    string local = "anything";
-                    target.Consume(local);
-                }
             }
             """;
 
@@ -909,10 +864,11 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void ReturnSyntax_MethodWithoutAttribute_StaysUnknown()
+    public void ReturnSyntax_MethodWithoutAttribute_FiresSSA002()
     {
-        // Without [ReturnSyntax], invocation results must remain Unknown — otherwise
-        // every helper returning a string would fire SSA002 at the call site.
+        // User-code method returning a string and flowing into a [StringSyntax] target
+        // — no [ReturnSyntax], no suppressed namespace — should fire SSA002 and be
+        // fixable by adding [ReturnSyntax] to the method.
         var source =
             """
             public class Consumer
@@ -922,6 +878,27 @@ public class MismatchAnalyzerTests
                 public string GetPattern() => "[a-z]+";
 
                 public void Use() => Consume(GetPattern());
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA002", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void ReturnSyntax_BclMethodSource_Suppressed()
+    {
+        // string.Format lives under System.* — suppressed_target_namespaces default
+        // covers it, so SSA002 should not fire even though the return is not annotated.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use() => Consume(string.Format("{0}", 1));
             }
             """;
 
@@ -952,6 +929,150 @@ public class MismatchAnalyzerTests
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void LocalVariable_LanguageComment_MatchingSyntax_NoDiagnostic()
+    {
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    // language=regex
+                    var pattern = "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void LocalVariable_LanguageComment_RegexpToken_NormalizedToRegex()
+    {
+        // Rider doc uses `regexp`; BCL constant is `Regex`. Verify the normalization
+        // so `//language=regexp` matches `[StringSyntax("Regex")]`.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    //language=regexp
+                    var pattern = "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void LocalVariable_LanguageComment_BlockFormInline_NoDiagnostic()
+    {
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    var pattern = /*language=regex*/ "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void LocalVariable_LanguageComment_Mismatched_FiresSSA001()
+    {
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    //language=json
+                    var payload = "{}";
+                    Consume(payload);
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void LocalVariable_NoComment_FiresSSA002()
+    {
+        // An unannotated local flowing into a [StringSyntax] target fires SSA002,
+        // fixable by adding a //language=<name> comment above the declaration.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    var pattern = "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA002", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void LocalVariable_LanguageComment_PrefixOption_Ignored()
+    {
+        // Rider allows `//language=css prefix=body{ postfix=}`. We ignore the
+        // prefix/postfix options — they don't affect syntax identity.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    //language=regex prefix=^ postfix=$
+                    var pattern = "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
     }
 
     static ImmutableArray<Diagnostic> GetDiagnostics(string source, string? editorConfig = null)
