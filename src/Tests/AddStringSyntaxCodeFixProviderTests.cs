@@ -331,7 +331,7 @@ public class AddStringSyntaxCodeFixProviderTests
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
             metadataReferences: ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
                 .Split(Path.PathSeparator)
-                .Select(path => MetadataReference.CreateFromFile(path)));
+                .Select(_ => MetadataReference.CreateFromFile(_)));
 
         var solution = workspace.CurrentSolution.AddProject(projectInfo);
         var globalsId = DocumentId.CreateNewId(projectInfo.Id);
@@ -579,10 +579,10 @@ public class AddStringSyntaxCodeFixProviderTests
 
                 namespace StringSyntaxAttributeAnalyzer;
                 [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
-                internal sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
+                sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
 
                 [System.AttributeUsage(System.AttributeTargets.Method | System.AttributeTargets.Delegate, AllowMultiple = false)]
-                internal sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
+                sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
                 """)
             .AddDocument(documentId, "Test.cs", source);
 
@@ -598,5 +598,5 @@ public class AddStringSyntaxCodeFixProviderTests
     static IEnumerable<MetadataReference> TrustedReferences() =>
         ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
-            .Select(path => MetadataReference.CreateFromFile(path));
+            .Select(_ => MetadataReference.CreateFromFile(_));
 }

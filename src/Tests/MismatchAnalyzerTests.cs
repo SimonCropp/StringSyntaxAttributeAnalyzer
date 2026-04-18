@@ -1132,19 +1132,4 @@ public class MismatchAnalyzerTests
 
         return result;
     }
-
-    sealed class TestConfigOptionsProvider(Dictionary<string, string> globals) :
-        AnalyzerConfigOptionsProvider
-    {
-        public override AnalyzerConfigOptions GlobalOptions { get; } = new TestConfigOptions(globals);
-        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => GlobalOptions;
-        public override AnalyzerConfigOptions GetOptions(AdditionalText additionalText) => GlobalOptions;
-    }
-
-    sealed class TestConfigOptions(Dictionary<string, string> data) :
-        AnalyzerConfigOptions
-    {
-        public override bool TryGetValue(string key, [NotNullWhen(true)] out string? value) =>
-            data.TryGetValue(key, out value);
-    }
 }

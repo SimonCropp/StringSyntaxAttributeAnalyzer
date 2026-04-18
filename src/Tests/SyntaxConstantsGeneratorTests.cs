@@ -9,14 +9,14 @@ public class SyntaxConstantsGeneratorTests
         AreEqual(0, runResult.Diagnostics.Length);
 
         var typesTree = runResult.GeneratedTrees
-            .Single(tree => tree.FilePath.EndsWith("Syntax.Types.g.cs"));
+            .Single(_ => _.FilePath.EndsWith("Syntax.Types.g.cs"));
         var types = typesTree.ToString();
         IsTrue(types.Contains("static class Syntax"));
         IsTrue(types.Contains("public const string Json = SyntaxAttribute.Json;"));
         IsTrue(types.Contains("public const string Html = nameof(Html);"));
 
         var globalsTree = runResult.GeneratedTrees
-            .Single(tree => tree.FilePath.EndsWith("Syntax.Globals.g.cs"));
+            .Single(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs"));
         IsTrue(globalsTree.ToString().Contains("global using System.Diagnostics.CodeAnalysis;"));
     }
 
@@ -123,32 +123,6 @@ public class SyntaxConstantsGeneratorTests
 
         IsTrue(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs")));
     }
-
-    sealed class OptOutOptionsProvider(string emitGlobalUsingsValue) : AnalyzerConfigOptionsProvider
-    {
-        public override AnalyzerConfigOptions GlobalOptions { get; } =
-            new OptOutOptions(emitGlobalUsingsValue);
-
-        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => GlobalOptions;
-
-        public override AnalyzerConfigOptions GetOptions(AdditionalText additionalText) => GlobalOptions;
-    }
-
-    sealed class OptOutOptions(string emitGlobalUsingsValue) : AnalyzerConfigOptions
-    {
-        public override bool TryGetValue(string key, [NotNullWhen(true)] out string? value)
-        {
-            if (key == "build_property.StringSyntaxAnalyzer_EmitGlobalUsings")
-            {
-                value = emitGlobalUsingsValue;
-                return true;
-            }
-
-            value = null;
-            return false;
-        }
-    }
-
     static GeneratorDriverRunResult RunGenerator(string source)
     {
         var compilation = BuildCompilation(source);
@@ -161,7 +135,7 @@ public class SyntaxConstantsGeneratorTests
     {
         var trusted = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
-            .Select(path => MetadataReference.CreateFromFile(path));
+            .Select(_ => MetadataReference.CreateFromFile(_));
 
         return CSharpCompilation.Create(
             "Tests",
