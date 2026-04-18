@@ -37,11 +37,16 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider : CodeFixProvider
                 continue;
             }
 
+            var compilation = await context.Document.Project
+                .GetCompilationAsync(context.CancellationToken)
+                .ConfigureAwait(false);
+            var attributeName = ResolveAttributeName(compilation);
+
             context.RegisterCodeFix(
                 CodeAction.Create(
-                    $"Replace with [StringSyntax(\"{value}\")]",
-                    cancel => ReplaceAttributeAsync(context.Document, attribute, value, cancel),
-                    equivalenceKey: $"ReplaceUnionWithStringSyntax:{value}"),
+                    $"Replace with [{attributeName}(\"{value}\")]",
+                    cancel => ReplaceAttributeAsync(context.Document, attribute, value, attributeName, cancel),
+                    equivalenceKey: $"ReplaceUnionWithSyntax:{value}"),
                 diagnostic);
         }
     }
@@ -50,6 +55,7 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider : CodeFixProvider
         Document document,
         AttributeSyntax oldAttribute,
         string value,
+        string attributeName,
         Cancel cancel)
     {
         var root = await document.GetSyntaxRootAsync(cancel).ConfigureAwait(false);
@@ -60,12 +66,37 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider : CodeFixProvider
 
         var argument = AttributeArgument(
             LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value)));
-        var newAttribute = Attribute(IdentifierName("StringSyntax"))
+        var newAttribute = Attribute(IdentifierName(attributeName))
             .WithArgumentList(AttributeArgumentList(SingletonSeparatedList(argument)))
             .WithTriviaFrom(oldAttribute)
             .WithAdditionalAnnotations(Formatter.Annotation);
 
         var newRoot = root.ReplaceNode(oldAttribute, newAttribute);
         return document.WithSyntaxRoot(newRoot);
+    }
+
+    // Prefer `[Syntax(...)]` when the generator's `global using SyntaxAttribute = ...`
+    // alias is in scope. Fall back to `[StringSyntax(...)]` otherwise.
+    static string ResolveAttributeName(Compilation? compilation)
+    {
+        if (compilation is null)
+        {
+            return "StringSyntax";
+        }
+
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            var root = tree.GetRoot();
+            foreach (var usingDirective in root.DescendantNodes(_ => _ is CompilationUnitSyntax or NamespaceDeclarationSyntax or FileScopedNamespaceDeclarationSyntax).OfType<UsingDirectiveSyntax>())
+            {
+                if (usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
+                    usingDirective.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")
+                {
+                    return "Syntax";
+                }
+            }
+        }
+
+        return "StringSyntax";
     }
 }

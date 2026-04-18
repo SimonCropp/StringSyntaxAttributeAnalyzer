@@ -59,13 +59,13 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
             context.RegisterCodeFix(
                 CodeAction.Create(
-                    $"Add [StringSyntax(\"{value}\")]",
+                    $"Add [Syntax(\"{value}\")]",
                     cancel => AddAttributeAsync(
                         context.Document.Project.Solution,
                         declarationLocation,
                         value,
                         cancel),
-                    equivalenceKey: $"AddStringSyntax:{value}"),
+                    equivalenceKey: $"AddSyntax:{value}"),
                 diagnostic);
         }
     }
@@ -97,7 +97,10 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
-        var newTargetNode = AddStringSyntaxAttribute(targetNode, value);
+        var compilation = await document.Project.GetCompilationAsync(cancel).ConfigureAwait(false);
+        var attributeName = ResolveAttributeName(compilation);
+
+        var newTargetNode = AddStringSyntaxAttribute(targetNode, value, attributeName);
         if (newTargetNode is null)
         {
             return solution;
@@ -139,16 +142,14 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             ancestor is PropertyDeclarationSyntax or ParameterSyntax);
     }
 
-    static SyntaxNode? AddStringSyntaxAttribute(SyntaxNode host, string value)
+    static SyntaxNode? AddStringSyntaxAttribute(SyntaxNode host, string value, string attributeName)
     {
-        var attributeName = IdentifierName("StringSyntax");
-
         var argument = AttributeArgument(
             LiteralExpression(
                 SyntaxKind.StringLiteralExpression,
                 Literal(value)));
 
-        var attribute = Attribute(attributeName)
+        var attribute = Attribute(IdentifierName(attributeName))
             .WithArgumentList(AttributeArgumentList(SingletonSeparatedList(argument)));
 
         var attributeList = AttributeList(SingletonSeparatedList(attribute))
@@ -161,5 +162,31 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             ParameterSyntax parameter => parameter.AddAttributeLists(attributeList),
             _ => null
         };
+    }
+
+    // Prefer `[Syntax(...)]` when the generator's `global using SyntaxAttribute = ...`
+    // alias is in scope. Fall back to `[StringSyntax(...)]` when the consumer has opted
+    // out of the global usings (via StringSyntaxAnalyzer_EmitGlobalUsings=false).
+    static string ResolveAttributeName(Compilation? compilation)
+    {
+        if (compilation is null)
+        {
+            return "StringSyntax";
+        }
+
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            var root = tree.GetRoot();
+            foreach (var usingDirective in root.DescendantNodes(_ => _ is CompilationUnitSyntax or NamespaceDeclarationSyntax or FileScopedNamespaceDeclarationSyntax).OfType<UsingDirectiveSyntax>())
+            {
+                if (usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
+                    usingDirective.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")
+                {
+                    return "Syntax";
+                }
+            }
+        }
+
+        return "StringSyntax";
     }
 }

@@ -20,7 +20,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(\"Regex\")]");
         Contains(fixedSource, "public string Value { get; set; }");
     }
 
@@ -40,7 +40,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(\"Regex\")]");
         Contains(fixedSource, "public string Field;");
     }
 
@@ -58,7 +58,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")] string input");
+        Contains(fixedSource, "[Syntax(\"Regex\")] string input");
     }
 
     [Test]
@@ -81,7 +81,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")] string value");
+        Contains(fixedSource, "[Syntax(\"Regex\")] string value");
     }
 
     [Test]
@@ -104,7 +104,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(\"Regex\")]");
         Contains(fixedSource, "public string Value { get; set; }");
     }
 
@@ -125,7 +125,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(\"Regex\")]");
         Contains(fixedSource, "public string Raw { get; set; }");
     }
 
@@ -142,8 +142,77 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix<ReplaceUnionWithStringSyntaxCodeFixProvider>(source);
 
-        Contains(fixedSource, "[StringSyntax(\"html\")]");
+        Contains(fixedSource, "[Syntax(\"html\")]");
         IsFalse(fixedSource.Contains("[UnionSyntax"), $"Expected UnionSyntax removed:\n{fixedSource}");
+    }
+
+    [Test]
+    public async Task Fix_WithoutSyntaxAlias_FallsBackToStringSyntax()
+    {
+        // Consumer opted out of the generator's global usings — no `SyntaxAttribute` alias
+        // in scope. The fixer should emit the long form `[StringSyntax(...)]` so the
+        // result compiles.
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Target
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFixWithoutAlias(source);
+
+        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
+        IsFalse(fixedSource.Contains("[Syntax("),
+            $"Expected no [Syntax(...)] attribute when alias isn't in scope:\n{fixedSource}");
+    }
+
+    static async Task<string> ApplyFixWithoutAlias(string source)
+    {
+        // Same shape as PrepareFixAsync but deliberately omits the
+        // `global using SyntaxAttribute = ...` alias — simulates the opt-out case.
+        var workspace = new AdhocWorkspace();
+        var projectInfo = ProjectInfo.Create(
+            ProjectId.CreateNewId(),
+            VersionStamp.Default,
+            name: "Tests",
+            assemblyName: "Tests",
+            language: LanguageNames.CSharp,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: TrustedReferences());
+
+        var solution = workspace.CurrentSolution.AddProject(projectInfo);
+        var documentId = DocumentId.CreateNewId(projectInfo.Id);
+        solution = solution.AddDocument(documentId, "Test.cs", source);
+
+        var document = solution.GetDocument(documentId)!;
+        var compilation = (await document.Project.GetCompilationAsync())!;
+        var diagnostics = await compilation
+            .WithAnalyzers([new MismatchAnalyzer()])
+            .GetAnalyzerDiagnosticsAsync();
+        var diagnostic = diagnostics.Single();
+
+        var actions = ImmutableArray.CreateBuilder<CodeAction>();
+        var context = new CodeFixContext(
+            document,
+            diagnostic,
+            (action, _) => actions.Add(action),
+            Cancel.None);
+        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
+
+        var action = actions.ToImmutable().Single();
+        var operations = await action.GetOperationsAsync(Cancel.None);
+        var apply = operations.OfType<ApplyChangesOperation>().Single();
+        var newDoc = apply.ChangedSolution.GetDocument(document.Id)!;
+        return (await newDoc.GetTextAsync()).ToString();
     }
 
     [Test]
@@ -162,7 +231,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"custom-format\")]");
+        Contains(fixedSource, "[Syntax(\"custom-format\")]");
     }
 
     [Test]
@@ -375,6 +444,7 @@ public class AddStringSyntaxCodeFixProviderTests
             .AddDocument(generatedId, "Generated.cs", """
                 global using System.Diagnostics.CodeAnalysis;
                 global using StringSyntaxAttributeAnalyzer;
+                global using SyntaxAttribute = System.Diagnostics.CodeAnalysis.StringSyntaxAttribute;
 
                 namespace StringSyntaxAttributeAnalyzer
                 {
