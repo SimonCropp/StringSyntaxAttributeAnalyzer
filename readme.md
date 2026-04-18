@@ -96,7 +96,7 @@ public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string P
 public void RecordCall(PatternRecord record) =>
     ConsumeRegexStrict(record.Pattern); // no diagnostic — attribute flows to property
 ```
-<sup><a href='/src/Tests/Samples.cs#L74-L81' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L100-L107' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 An explicit `[property: StringSyntax(...)]` on the property still wins — if both targets are attributed, the property's own attribute is used.
@@ -207,9 +207,13 @@ public void MatchingCall(RegexHolder holder) =>
 <!-- endSnippet -->
 
 
-### Literal source — no diagnostic
+### Unknown sources — no diagnostic
 
-String literals, local variables, method invocations, and other expressions without a resolvable symbol are treated as unknown and do not trigger SSA002.
+Expressions without a resolvable symbol flow as `Unknown` and suppress SSA002.
+
+#### String literals
+
+A literal has no backing symbol to inspect, so the analyzer cannot claim the attribute is missing.
 
 <!-- snippet: LiteralSource -->
 <a id='snippet-LiteralSource'></a>
@@ -218,6 +222,50 @@ public void LiteralCall() =>
     ConsumeRegexStrict("[a-z]+"); // no diagnostic — literal is Unknown
 ```
 <sup><a href='/src/Tests/Samples.cs#L67-L72' title='Snippet source file'>snippet source</a> | <a href='#snippet-LiteralSource' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+#### Local variables
+
+Locals cannot carry `[StringSyntax]` (the attribute targets fields, parameters, and properties only), so a value passed through a local is Unknown.
+
+<!-- snippet: LocalVariableSource -->
+<a id='snippet-LocalVariableSource'></a>
+```cs
+public void LocalVariableCall()
+{
+    var pattern = "[a-z]+";
+    ConsumeRegexStrict(pattern); // no diagnostic — local is Unknown
+}
+```
+<sup><a href='/src/Tests/Samples.cs#L74-L82' title='Snippet source file'>snippet source</a> | <a href='#snippet-LocalVariableSource' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+#### Method invocations
+
+Return values also cannot carry `[StringSyntax]`, so invocation results are Unknown — otherwise every `.ToString()` or helper call flowing into a formatted slot would warn.
+
+<!-- snippet: MethodInvocationSource -->
+<a id='snippet-MethodInvocationSource'></a>
+```cs
+public string GetPattern() => "[a-z]+";
+
+public void InvocationCall() =>
+    ConsumeRegexStrict(GetPattern()); // no diagnostic — invocation result is Unknown
+```
+<sup><a href='/src/Tests/Samples.cs#L84-L91' title='Snippet source file'>snippet source</a> | <a href='#snippet-MethodInvocationSource' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+#### Other non-resolvable expressions
+
+Concatenations, interpolations, and `await` expressions don't reduce to a single symbol, so they're Unknown too.
+
+<!-- snippet: OtherUnknownSource -->
+<a id='snippet-OtherUnknownSource'></a>
+```cs
+public void ConcatCall(string suffix) =>
+    ConsumeRegexStrict("[a-z]" + suffix); // no diagnostic — concatenation is Unknown
+```
+<sup><a href='/src/Tests/Samples.cs#L93-L98' title='Snippet source file'>snippet source</a> | <a href='#snippet-OtherUnknownSource' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 

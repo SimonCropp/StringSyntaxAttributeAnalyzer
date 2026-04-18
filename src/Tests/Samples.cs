@@ -71,6 +71,32 @@ public class Samples
 
     #endregion
 
+    #region LocalVariableSource
+
+    public void LocalVariableCall()
+    {
+        var pattern = "[a-z]+";
+        ConsumeRegexStrict(pattern); // no diagnostic — local is Unknown
+    }
+
+    #endregion
+
+    #region MethodInvocationSource
+
+    public string GetPattern() => "[a-z]+";
+
+    public void InvocationCall() =>
+        ConsumeRegexStrict(GetPattern()); // no diagnostic — invocation result is Unknown
+
+    #endregion
+
+    #region OtherUnknownSource
+
+    public void ConcatCall(string suffix) =>
+        ConsumeRegexStrict("[a-z]" + suffix); // no diagnostic — concatenation is Unknown
+
+    #endregion
+
     #region RecordPrimaryCtorParameter
 
     public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string Pattern);
