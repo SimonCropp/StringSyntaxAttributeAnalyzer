@@ -160,6 +160,129 @@ public class AddStringSyntaxCodeFixProviderTests
         AreEqual(0, actions.Length);
     }
 
+    [Test]
+    public async Task SSA002_ExactOutputShape_WithExistingUsings()
+    {
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Target
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; } = "";
+
+                public void Use() => Target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        TestContext.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
+        IsFalse(fixedSource.StartsWith('\n'), "Fixed source should not start with a newline");
+        IsFalse(fixedSource.StartsWith('\r'), "Fixed source should not start with CR");
+    }
+
+    [Test]
+    public async Task SSA002_WithGlobalUsing_DoesNotAddLocalUsing()
+    {
+        // Consumer has `global using System.Diagnostics.CodeAnalysis;` in another file, so
+        // the fix-target file never had its own local using. A naive codefix would add a
+        // redundant local using which later tooling strips, leaving blank trivia.
+        var targetSource = """
+            public class Target
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; } = "";
+
+                public void Use() => Target.Consume(Value);
+            }
+            """;
+        var globalUsings = "global using System.Diagnostics.CodeAnalysis;\n";
+
+        var fixedSource = await ApplyFixWithGlobalUsings(targetSource, globalUsings);
+
+        TestContext.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
+        IsFalse(fixedSource.StartsWith('\n'), "Fixed file should not start with a newline");
+        IsFalse(
+            fixedSource.Contains("using System.Diagnostics.CodeAnalysis;"),
+            "Should NOT have added a local using when the namespace is already in a global using");
+    }
+
+    static async Task<string> ApplyFixWithGlobalUsings(string source, string globalUsings)
+    {
+        var workspace = new AdhocWorkspace();
+        var projectInfo = ProjectInfo.Create(
+            ProjectId.CreateNewId(),
+            VersionStamp.Default,
+            name: "Tests",
+            assemblyName: "Tests",
+            language: LanguageNames.CSharp,
+            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
+            metadataReferences: ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+                .Split(Path.PathSeparator)
+                .Select(path => MetadataReference.CreateFromFile(path)));
+
+        var solution = workspace.CurrentSolution.AddProject(projectInfo);
+        var globalsId = DocumentId.CreateNewId(projectInfo.Id);
+        var targetId = DocumentId.CreateNewId(projectInfo.Id);
+        solution = solution
+            .AddDocument(globalsId, "GlobalUsings.cs", globalUsings)
+            .AddDocument(targetId, "Target.cs", source);
+
+        var targetDoc = solution.GetDocument(targetId)!;
+        var compilation = (await targetDoc.Project.GetCompilationAsync())!;
+        var diagnostics = await compilation
+            .WithAnalyzers([new MismatchAnalyzer()])
+            .GetAnalyzerDiagnosticsAsync();
+        var diagnostic = diagnostics.Single();
+
+        var actions = ImmutableArray.CreateBuilder<CodeAction>();
+        var context = new CodeFixContext(
+            targetDoc,
+            diagnostic,
+            (action, _) => actions.Add(action),
+            CancellationToken.None);
+        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
+
+        var action = actions.ToImmutable().Single();
+        var operations = await action.GetOperationsAsync(CancellationToken.None);
+        var apply = operations.OfType<ApplyChangesOperation>().Single();
+        var newDoc = apply.ChangedSolution.GetDocument(targetId)!;
+        return (await newDoc.GetTextAsync()).ToString();
+    }
+
+    [Test]
+    public async Task SSA002_ExactOutputShape_NoExistingUsings()
+    {
+        var source = """
+            public class Target
+            {
+                public static void Consume([System.Diagnostics.CodeAnalysis.StringSyntax("Regex")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; } = "";
+
+                public void Use() => Target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        TestContext.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
+        IsFalse(fixedSource.StartsWith('\n'), "Fixed source should not start with a newline");
+        IsFalse(fixedSource.StartsWith('\r'), "Fixed source should not start with CR");
+    }
+
     static void Contains(string actual, string expected) =>
         IsTrue(
             actual.Contains(expected),

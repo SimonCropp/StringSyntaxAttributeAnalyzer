@@ -104,12 +104,12 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         var newRoot = root.ReplaceNode(targetNode, newTargetNode);
         var newDocument = document.WithSyntaxRoot(newRoot);
 
-        newDocument = await ImportAdder
-            .AddImportsAsync(newDocument, Simplifier.Annotation, cancellationToken: cancel)
-            .ConfigureAwait(false);
-        newDocument = await Simplifier
-            .ReduceAsync(newDocument, Simplifier.Annotation, cancellationToken: cancel)
-            .ConfigureAwait(false);
+        // Deliberately no ImportAdder / Simplifier pass. The attribute is inserted as the
+        // short name `StringSyntax` and resolves via whatever using (file-local or
+        // `global using`) the consumer already has. Adding an explicit using here was
+        // fighting with Rider/VS "remove unnecessary usings" cleanup when a global using
+        // was in scope — each successive fix left behind a blank line of trivia where the
+        // redundant local using had been.
         newDocument = await Formatter
             .FormatAsync(newDocument, Formatter.Annotation, cancellationToken: cancel)
             .ConfigureAwait(false);
@@ -139,8 +139,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
     static SyntaxNode? AddStringSyntaxAttribute(SyntaxNode host, string value)
     {
-        var attributeName = ParseName("global::System.Diagnostics.CodeAnalysis.StringSyntax")
-            .WithAdditionalAnnotations(Simplifier.Annotation);
+        var attributeName = IdentifierName("StringSyntax");
 
         var argument = AttributeArgument(
             LiteralExpression(
