@@ -113,22 +113,15 @@ public class SyntaxConstantsGenerator :
         // that make them friction-free to use are opt-out via the
         // `StringSyntaxAnalyzer_EmitGlobalUsings` MSBuild property (surfaced through the
         // props file packed under `build/`).
-        context.RegisterPostInitializationOutput(
-            postInit => postInit.AddSource("Syntax.Types.g.cs", typesBody));
+        context.RegisterPostInitializationOutput(postInit => postInit.AddSource("Syntax.Types.g.cs", typesBody));
 
         var emitGlobals = context.AnalyzerConfigOptionsProvider
             .Select((provider, _) =>
-            {
-                if (provider.GlobalOptions.TryGetValue(
+                !provider.GlobalOptions
+                    .TryGetValue(
                         "build_property.StringSyntaxAnalyzer_EmitGlobalUsings",
-                        out var value) &&
-                    string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
-                return true;
-            });
+                        out var value) ||
+                !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase));
 
         context.RegisterSourceOutput(emitGlobals, (ctx, emit) =>
         {
