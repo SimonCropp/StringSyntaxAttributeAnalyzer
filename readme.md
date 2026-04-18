@@ -22,6 +22,29 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA006 rewrites the attribute in place. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
 
 
+## Opting out of the global usings
+
+The source generator emits three `global using` directives so `[StringSyntax]`, `[UnionSyntax]`, and `Syntax.*` are friction-free to reference without per-file imports:
+
+```csharp
+global using System.Diagnostics.CodeAnalysis;
+global using StringSyntaxAttributeAnalyzer;
+global using SyntaxAttribute = System.Diagnostics.CodeAnalysis.StringSyntaxAttribute;
+```
+
+In strict codebases that prefer explicit imports, set this MSBuild property:
+
+```xml
+<PropertyGroup>
+  <StringSyntaxAnalyzer_EmitGlobalUsings>false</StringSyntaxAnalyzer_EmitGlobalUsings>
+</PropertyGroup>
+```
+
+With the property set to `false`, the `Syntax.Globals.g.cs` file is not emitted. `UnionSyntaxAttribute` and `Syntax` are still generated (you need them for the feature to exist), just no longer globally in scope — add `using System.Diagnostics.CodeAnalysis;` and `using StringSyntaxAttributeAnalyzer;` in the files that reference them.
+
+The property is wired via a `build/StringSyntaxAttributeAnalyzer.props` file that ships in the package and is imported automatically by NuGet.
+
+
 ## `[UnionSyntax(...)]`
 
 Sometimes a member can legitimately hold any one of several syntaxes — a cell in a report that's either HTML or plain text, a payload field that's JSON or YAML. The package ships `[UnionSyntax("html", "xml")]` for that case.

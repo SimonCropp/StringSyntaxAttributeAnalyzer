@@ -5,19 +5,19 @@ public class MismatchAnalyzerTests
     public void FormatMismatch_ArgumentToParameter()
     {
         var source = """
-            public class Target
-            {
-                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
-            }
+                     public class Target
+                     {
+                         public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+                     }
 
-            public class Holder
-            {
-                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
-                public string Value { get; set; }
+                     public class Holder
+                     {
+                         [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                         public string Value { get; set; }
 
-                public void Use(Target target) => target.Consume(Value);
-            }
-            """;
+                         public void Use(Target target) => target.Consume(Value);
+                     }
+                     """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -32,17 +32,17 @@ public class MismatchAnalyzerTests
     public void FormatMismatch_PropertyToProperty_Assignment()
     {
         var source = """
-            public class Holder
-            {
-                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
-                public string Format { get; set; }
+                     public class Holder
+                     {
+                         [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                         public string Format { get; set; }
 
-                [StringSyntax(StringSyntaxAttribute.Regex)]
-                public string Pattern { get; set; }
+                         [StringSyntax(StringSyntaxAttribute.Regex)]
+                         public string Pattern { get; set; }
 
-                public void Copy() => Format = Pattern;
-            }
-            """;
+                         public void Copy() => Format = Pattern;
+                     }
+                     """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -54,20 +54,20 @@ public class MismatchAnalyzerTests
     public void FormatMismatch_ObjectInitializer()
     {
         var source = """
-            public class Target
-            {
-                [StringSyntax(StringSyntaxAttribute.Regex)]
-                public string Pattern { get; set; }
-            }
+                     public class Target
+                     {
+                         [StringSyntax(StringSyntaxAttribute.Regex)]
+                         public string Pattern { get; set; }
+                     }
 
-            public class Holder
-            {
-                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
-                public string Format { get; set; }
+                     public class Holder
+                     {
+                         [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                         public string Format { get; set; }
 
-                public Target Create() => new Target { Pattern = Format };
-            }
-            """;
+                         public Target Create() => new Target { Pattern = Format };
+                     }
+                     """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -79,15 +79,15 @@ public class MismatchAnalyzerTests
     public void MethodReturnSource_IsUnknown()
     {
         var source = """
-            public class Holder
-            {
-                public string GetValue() => "";
+                     public class Holder
+                     {
+                         public string GetValue() => "";
 
-                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+                         public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
 
-                public void Use() => Consume(GetValue());
-            }
-            """;
+                         public void Use() => Consume(GetValue());
+                     }
+                     """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -98,18 +98,18 @@ public class MismatchAnalyzerTests
     public void MissingSourceFormat_ArgumentToParameter()
     {
         var source = """
-            public class Target
-            {
-                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
-            }
+                     public class Target
+                     {
+                         public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+                     }
 
-            public class Holder
-            {
-                public string Value { get; set; }
+                     public class Holder
+                     {
+                         public string Value { get; set; }
 
-                public void Use(Target target) => target.Consume(Value);
-            }
-            """;
+                         public void Use(Target target) => target.Consume(Value);
+                     }
+                     """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -122,19 +122,19 @@ public class MismatchAnalyzerTests
     public void MissingSourceFormat_PropertyInitializer()
     {
         var source = """
-            public class Source
-            {
-                public string Raw { get; set; }
-            }
+                     public class Source
+                     {
+                         public string Raw { get; set; }
+                     }
 
-            public class Holder
-            {
-                [StringSyntax(StringSyntaxAttribute.Regex)]
-                public string Pattern { get; set; }
+                     public class Holder
+                     {
+                         [StringSyntax(StringSyntaxAttribute.Regex)]
+                         public string Pattern { get; set; }
 
-                public void Use(Source src) => Pattern = src.Raw;
-            }
-            """;
+                         public void Use(Source src) => Pattern = src.Raw;
+                     }
+                     """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -146,19 +146,19 @@ public class MismatchAnalyzerTests
     public void DroppedFormat_AssignPropertyToUnattributed()
     {
         var source = """
-            public class Target
-            {
-                public string Value { get; set; }
-            }
+                     public class Target
+                     {
+                         public string Value { get; set; }
+                     }
 
-            public class Holder
-            {
-                [StringSyntax(StringSyntaxAttribute.Regex)]
-                public string Pattern { get; set; }
+                     public class Holder
+                     {
+                         [StringSyntax(StringSyntaxAttribute.Regex)]
+                         public string Pattern { get; set; }
 
-                public void Use(Target target) => target.Value = Pattern;
-            }
-            """;
+                         public void Use(Target target) => target.Value = Pattern;
+                     }
+                     """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -170,7 +170,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void DroppedFormat_ArgumentToParameter()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume(string value) { }
@@ -194,7 +195,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void MatchingFormats_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -217,7 +219,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void StringLiteralSource_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -237,7 +240,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void LocalVariableSource_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -261,7 +265,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void NoStringSyntaxAnywhere_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume(string value) { }
@@ -283,7 +288,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void CustomFormatString_Mismatch()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume([StringSyntax("custom-a")] string value) { }
@@ -307,7 +313,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void FirstCharCaseInsensitive_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume([StringSyntax("json")] string value) { }
@@ -330,7 +337,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void MidStringCaseDifference_StillMismatch()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume([StringSyntax("json")] string value) { }
@@ -354,7 +362,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void EqualityMismatch_FiresOnEqualsOperator()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -379,7 +388,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void EqualityMismatch_FiresOnNotEqualsOperator()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -401,7 +411,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void EqualityMatching_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -422,7 +433,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void EqualityWithLiteral_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -440,7 +452,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void EqualityWithUnattributed_FiresSSA005()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -462,7 +475,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void EqualityWithUnattributed_RightSide_FiresSSA005()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 public string Raw { get; set; }
@@ -483,7 +497,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void DroppedFormat_ObjectParameter_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Logger
             {
                 public static void Log(string message, object value) { }
@@ -506,7 +521,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void DroppedFormat_ParamsObjectArray_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Logger
             {
                 public static void Log(string message, params object?[] args) { }
@@ -529,7 +545,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void DroppedFormat_GenericParameter_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public static class Extensions
             {
                 public static T Echo<T>(T value) => value;
@@ -554,7 +571,8 @@ public class MismatchAnalyzerTests
     {
         // Regression guard: SSA003 must still fire for genuine string-typed slots —
         // the generic-slot suppression shouldn't swallow real dropped-format cases.
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -578,7 +596,8 @@ public class MismatchAnalyzerTests
         // Passing a StringSyntax-attributed string to a System.* API (string.Concat here)
         // would normally fire SSA003 — but we can't add attributes to the BCL, so the
         // default suppression list (System*, Microsoft*) skips it.
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -597,7 +616,8 @@ public class MismatchAnalyzerTests
     public void DroppedFormat_CustomNamespace_NotSuppressed()
     {
         // Regression guard: user code (outside System/Microsoft) should still fire SSA003.
-        var source = """
+        var source =
+            """
             namespace MyLibrary
             {
                 public class Target
@@ -624,7 +644,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void DroppedFormat_CustomSuppressionList_Honoured()
     {
-        var source = """
+        var source =
+            """
             namespace MyLegacy
             {
                 public class Target
@@ -652,7 +673,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void UnionSyntax_OverlappingSets_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [UnionSyntax("html", "xml")]
@@ -672,7 +694,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void UnionSyntax_DisjointSets_FiresSSA001()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [UnionSyntax("html", "xml")]
@@ -693,7 +716,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void UnionSyntax_MatchesStringSyntax_NoDiagnostic()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [UnionSyntax("html", "xml")]
@@ -714,7 +738,8 @@ public class MismatchAnalyzerTests
     public void StringSyntax_MatchesUnionSyntax_NoDiagnostic()
     {
         // Symmetric to the previous test — source is StringSyntax, target is UnionSyntax.
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax("xml")]
@@ -734,7 +759,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void UnionSyntax_SingleOption_FiresSSA006()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [UnionSyntax("html")]
@@ -752,7 +778,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void UnionSyntax_MultipleOptions_NoSSA006()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [UnionSyntax("html", "xml")]
@@ -768,7 +795,8 @@ public class MismatchAnalyzerTests
     [Test]
     public void FieldSource_Mismatch()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -833,26 +861,29 @@ public class MismatchAnalyzerTests
                 continue;
             }
 
-            var key = line.Substring(0, eq).Trim();
-            var value = line.Substring(eq + 1).Trim();
+            var key = line[..eq].Trim();
+            var value = line[(eq + 1)..].Trim();
             if (key.Length > 0)
             {
                 result[key] = value;
             }
         }
+
         return result;
     }
 
-    sealed class TestConfigOptionsProvider(Dictionary<string, string> globals) : AnalyzerConfigOptionsProvider
+    sealed class TestConfigOptionsProvider(Dictionary<string, string> globals) :
+        AnalyzerConfigOptionsProvider
     {
         public override AnalyzerConfigOptions GlobalOptions { get; } = new TestConfigOptions(globals);
         public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => GlobalOptions;
         public override AnalyzerConfigOptions GetOptions(AdditionalText additionalText) => GlobalOptions;
     }
 
-    sealed class TestConfigOptions(Dictionary<string, string> data) : AnalyzerConfigOptions
+    sealed class TestConfigOptions(Dictionary<string, string> data) :
+        AnalyzerConfigOptions
     {
-        public override bool TryGetValue(string key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? value) =>
+        public override bool TryGetValue(string key, [NotNullWhen(true)] out string? value) =>
             data.TryGetValue(key, out value);
     }
 }

@@ -5,8 +5,6 @@
 #pragma warning disable CS0414
 #pragma warning disable CA1822
 
-using System.Diagnostics.CodeAnalysis;
-
 public class Samples
 {
     #region FormatMismatch

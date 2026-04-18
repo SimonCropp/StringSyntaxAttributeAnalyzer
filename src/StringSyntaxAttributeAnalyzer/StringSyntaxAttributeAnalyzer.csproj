@@ -30,6 +30,8 @@
                               PackagePath="analyzers\dotnet\cs" />
       <TfmSpecificPackageFile Include="$(CodeFixesDll)"
                               PackagePath="analyzers\dotnet\cs" />
+      <TfmSpecificPackageFile Include="$(MSBuildThisFileDirectory)build\$(AssemblyName).props"
+                              PackagePath="build" />
     </ItemGroup>
   </Target>
 </Project>
