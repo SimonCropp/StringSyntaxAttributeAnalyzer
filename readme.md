@@ -79,9 +79,41 @@ The source of a string is resolved when it is one of:
  * A field reference (`obj._field`)
  * A parameter reference (method argument, lambda parameter, etc.)
 
-Other sources — string literals, interpolated strings, local variables, method invocations, concatenation, `await`, binary expressions, etc. — are treated as **unknown** and suppress all three diagnostics. This avoids noise on every `"foo"`, every `ToString()`, and every local variable passed to a `[StringSyntax]` parameter. `StringSyntaxAttribute` itself cannot be applied to return values, so method invocations cannot carry a known syntax.
+Other sources — string literals, interpolated strings, local variables, concatenation, `await`, binary expressions, etc. — are treated as **unknown** and suppress all three diagnostics. This avoids noise on every `"foo"` and every local variable passed to a `[StringSyntax]` parameter.
+
+Method invocations are resolved when the method opts in via `[ReturnSyntax("...")]` (see below) and otherwise treated as unknown — plain `ToString()` or any unannotated helper won't trigger diagnostics.
 
 Likewise, when the **target** is `object`, `params object?[]`, or a generic type parameter (`T`) without its own `StringSyntax`, the analyzer treats it as a generic value slot and suppresses SSA003/SSA005. That keeps logging calls like `logger.Info("processing {P}", pattern)` quiet — the logger was never going to honour a format contract on `pattern`.
+
+
+## `[ReturnSyntax(...)]` on methods
+
+`StringSyntaxAttribute` has `AttributeUsage(Field | Parameter | Property)`, so `[return: StringSyntax(...)]` is a compile error and the BCL attribute cannot describe the syntax of a method's return value. Broadening its targets is tracked in [dotnet/runtime#76203](https://github.com/dotnet/runtime/issues/76203); until that ships, the source generator emits `ReturnSyntaxAttribute` (targetable at `Method | Delegate`) as a bridge so invocation results can participate in format analysis.
+
+### Why a second attribute?
+
+Without an opt-in, invocation results are treated as **unknown** (see "Sources the analyzer can resolve" above). That's deliberate: defaulting method returns to *no* syntax would fire SSA002 on every unannotated helper — `"x".Substring(1)`, `sb.ToString()`, `config.GetValue("key")` — and bury real diagnostics in noise. `[ReturnSyntax]` is the explicit signal that a method's return carries a known syntax.
+
+### Example
+
+```cs
+[ReturnSyntax(StringSyntaxAttribute.Regex)]
+public string GetPattern() => "[a-z]+";
+
+public void ConsumePattern([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+public void Use() => ConsumePattern(GetPattern()); // no diagnostic — invocation is Present
+```
+
+With the annotation, calls to `GetPattern()` are treated as `[StringSyntax("Regex")]`-attributed at every call site. A call passing the result into a mismatched target fires SSA001; passing it into a bare `string` parameter fires SSA003; passing it into the matching target is silent.
+
+### Opt-in semantics
+
+A method without `[ReturnSyntax]` stays **unknown** at call sites (not bare). Adding this attribute to the toolbox does not retroactively light up SSA002 on every unannotated helper — you choose which return values are worth annotating.
+
+### Planned retirement
+
+When [dotnet/runtime#76203](https://github.com/dotnet/runtime/issues/76203) is resolved and `StringSyntaxAttribute` targets methods/return values directly, `ReturnSyntaxAttribute` becomes redundant. The analyzer will start reading the BCL attribute off method return values, and this package-emitted attribute will be removed — consumers should be able to migrate with a find-and-replace.
 
 
 ## Record primary-constructor parameters

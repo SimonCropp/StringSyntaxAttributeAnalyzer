@@ -34,6 +34,20 @@ public class SyntaxConstantsGenerator :
             sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
             #pragma warning restore CS9113
 
+            /// <summary>
+            /// Declares the string syntax of a method's return value. Fills the gap left by
+            /// <see cref="StringSyntaxAttribute"/>, whose AttributeUsage excludes methods and
+            /// return values — so invocation results can participate in format analysis.
+            /// TODO: remove when https://github.com/dotnet/runtime/issues/76203 ships and
+            /// StringSyntaxAttribute targets Method/ReturnValue directly.
+            /// </summary>
+            [AttributeUsage(AttributeTargets.Method | AttributeTargets.Delegate, AllowMultiple = false)]
+            [ExcludeFromCodeCoverage]
+            [DebuggerNonUserCode]
+            #pragma warning disable CS9113
+            sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
+            #pragma warning restore CS9113
+
             [ExcludeFromCodeCoverage]
             [DebuggerNonUserCode]
             static class Syntax

@@ -92,7 +92,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // if the generator hasn't run — in that case we just behave as before.
             var unionSyntaxType = start.Compilation
                 .GetTypeByMetadataName("StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute");
-            var types = new SyntaxTypes(stringSyntaxType, unionSyntaxType);
+            // ReturnSyntaxAttribute fills the BCL gap (StringSyntaxAttribute can't target
+            // return values). Also source-generated, also null if the generator hasn't run.
+            // TODO: retire this lookup when https://github.com/dotnet/runtime/issues/76203
+            // ships — StringSyntaxAttribute will then target Method/ReturnValue directly.
+            var returnSyntaxType = start.Compilation
+                .GetTypeByMetadataName("StringSyntaxAttributeAnalyzer.ReturnSyntaxAttribute");
+            var types = new SyntaxTypes(stringSyntaxType, unionSyntaxType, returnSyntaxType);
 
             var suppressedNamespaces = ReadSuppressedNamespaces(start.Options);
 
@@ -368,6 +374,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             IPropertyReferenceOperation prop => prop.Property,
             IFieldReferenceOperation field => field.Field,
             IParameterReferenceOperation param => param.Parameter,
+            IInvocationOperation invocation => invocation.TargetMethod,
             _ => null
         };
     }
@@ -383,6 +390,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (info.State == SyntaxState.Present)
         {
             return info;
+        }
+
+        // Method invocations are only resolvable when the method opts in via
+        // [ReturnSyntax]. Without it, treat the result as Unknown (not NotPresent) —
+        // otherwise every helper returning a string would fire SSA002 at call sites.
+        if (symbol is IMethodSymbol)
+        {
+            return SyntaxInfo.Unknown;
         }
 
         // Records: a primary-constructor parameter with [StringSyntax] doesn't
@@ -430,10 +445,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return operation;
     }
 
-    readonly struct SyntaxTypes(INamedTypeSymbol stringSyntax, INamedTypeSymbol? unionSyntax)
+    readonly struct SyntaxTypes(
+        INamedTypeSymbol stringSyntax,
+        INamedTypeSymbol? unionSyntax,
+        INamedTypeSymbol? returnSyntax)
     {
         public INamedTypeSymbol StringSyntax { get; } = stringSyntax;
         public INamedTypeSymbol? UnionSyntax { get; } = unionSyntax;
+        public INamedTypeSymbol? ReturnSyntax { get; } = returnSyntax;
     }
 
     static SyntaxInfo GetSyntaxFromAttributes(
@@ -457,6 +476,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             {
                 var values = ExtractUnionOptions(attribute);
                 return SyntaxInfo.PresentUnion(values);
+            }
+
+            if (types.ReturnSyntax is not null &&
+                SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.ReturnSyntax))
+            {
+                if (attribute.ConstructorArguments.Length > 0 &&
+                    attribute.ConstructorArguments[0].Value is string s)
+                {
+                    return SyntaxInfo.Present(s);
+                }
+                return new(SyntaxState.Present, []);
             }
         }
 

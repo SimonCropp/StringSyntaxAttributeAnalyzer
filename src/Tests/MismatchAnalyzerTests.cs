@@ -861,6 +861,99 @@ public class MismatchAnalyzerTests
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
+    [Test]
+    public void ReturnSyntax_MatchingFormat_NoDiagnostic()
+    {
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                [ReturnSyntax(StringSyntaxAttribute.Regex)]
+                public string GetPattern() => "[a-z]+";
+
+                public void Use() => Consume(GetPattern());
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ReturnSyntax_MismatchedFormat_SSA001()
+    {
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                [ReturnSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                public string GetFormat() => "yyyy";
+
+                public void Use() => Consume(GetFormat());
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void ReturnSyntax_MethodWithoutAttribute_StaysUnknown()
+    {
+        // Without [ReturnSyntax], invocation results must remain Unknown — otherwise
+        // every helper returning a string would fire SSA002 at the call site.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public string GetPattern() => "[a-z]+";
+
+                public void Use() => Consume(GetPattern());
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ReturnSyntax_SourceAnnotated_TargetBare_SSA003()
+    {
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Consumer
+            {
+                public void Consume(string value) { }
+
+                [ReturnSyntax(StringSyntaxAttribute.Regex)]
+                public string GetPattern() => "[a-z]+";
+
+                public void Use() => Consume(GetPattern());
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA003", diagnostics[0].Id);
+    }
+
     static ImmutableArray<Diagnostic> GetDiagnostics(string source, string? editorConfig = null)
     {
         // Run the package's own source generator so test compilations see what real
