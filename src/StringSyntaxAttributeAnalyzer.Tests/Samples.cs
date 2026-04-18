@@ -70,4 +70,13 @@ public class Samples
         ConsumeRegexStrict("[a-z]+"); // no diagnostic — literal is Unknown
 
     #endregion
+
+    #region RecordPrimaryCtorParameter
+
+    public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string Pattern);
+
+    public void RecordCall(PatternRecord record) =>
+        ConsumeRegexStrict(record.Pattern); // no diagnostic — attribute flows to property
+
+    #endregion
 }

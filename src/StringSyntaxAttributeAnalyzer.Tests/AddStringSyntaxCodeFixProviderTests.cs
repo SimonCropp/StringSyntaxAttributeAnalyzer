@@ -4,7 +4,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA002_AddsAttributeToSourceProperty()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -27,7 +28,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA002_AddsAttributeToSourceField()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 public string Field;
@@ -47,7 +49,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA002_AddsAttributeToSourceParameter()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -64,7 +67,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA003_AddsAttributeToTargetParameter()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public static void Consume(string value) { }
@@ -87,7 +91,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA003_AddsAttributeToTargetProperty()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public string Value { get; set; }
@@ -111,7 +116,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA005_AddsAttributeToUnattributedEqualitySide()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -132,7 +138,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA006_ReplacesSingletonUnionWithStringSyntax()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 [UnionSyntax("html")]
@@ -152,7 +159,8 @@ public class AddStringSyntaxCodeFixProviderTests
         // Consumer opted out of the generator's global usings — no `SyntaxAttribute` alias
         // in scope. The fixer should emit the long form `[StringSyntax(...)]` so the
         // result compiles.
-        var source = """
+        var source =
+            """
             using System.Diagnostics.CodeAnalysis;
 
             public class Target
@@ -218,7 +226,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA002_CustomFormatValue()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 public string Value { get; set; }
@@ -237,7 +246,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task MultiDeclaratorField_NoFixRegistered()
     {
-        var source = """
+        var source =
+            """
             public class Holder
             {
                 public string a, b;
@@ -256,7 +266,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA002_ExactOutputShape_WithExistingUsings()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -283,7 +294,8 @@ public class AddStringSyntaxCodeFixProviderTests
         // Consumer has `global using System.Diagnostics.CodeAnalysis;` in another file, so
         // the fix-target file never had its own local using. A naive codefix would add a
         // redundant local using which later tooling strips, leaving blank trivia.
-        var targetSource = """
+        var targetSource =
+            """
             public class Target
             {
                 public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -353,7 +365,8 @@ public class AddStringSyntaxCodeFixProviderTests
     [Test]
     public async Task SSA002_ExactOutputShape_NoExistingUsings()
     {
-        var source = """
+        var source =
+            """
             public class Target
             {
                 public static void Consume([System.Diagnostics.CodeAnalysis.StringSyntax("Regex")] string value) { }

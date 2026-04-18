@@ -84,6 +84,24 @@ Other sources — string literals, interpolated strings, local variables, method
 Likewise, when the **target** is `object`, `params object?[]`, or a generic type parameter (`T`) without its own `StringSyntax`, the analyzer treats it as a generic value slot and suppresses SSA003/SSA005. That keeps logging calls like `logger.Info("processing {P}", pattern)` quiet — the logger was never going to honour a format contract on `pattern`.
 
 
+## Record primary-constructor parameters
+
+When a record is declared with a primary constructor, `[StringSyntax(...)]` written on a parameter applies to both the parameter and the auto-generated property. The C# compiler leaves the attribute physically on the parameter (its default target), so reading `record.Member` would otherwise look unattributed. The analyzer bridges this gap: a property synthesized from a primary-constructor parameter inherits the parameter's `[StringSyntax]` / `[UnionSyntax]` for analysis purposes.
+
+<!-- snippet: RecordPrimaryCtorParameter -->
+<a id='snippet-RecordPrimaryCtorParameter'></a>
+```cs
+public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string Pattern);
+
+public void RecordCall(PatternRecord record) =>
+    ConsumeRegexStrict(record.Pattern); // no diagnostic — attribute flows to property
+```
+<sup><a href='/src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs#L74-L81' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+An explicit `[property: StringSyntax(...)]` on the property still wins — if both targets are attributed, the property's own attribute is used.
+
+
 ## Suppressed target namespaces
 
 SSA003 and SSA005 point at the *target* symbol's declaration as the fix site. When the target lives in a namespace the consumer can't edit (the BCL, third-party packages), the warning is unfixable noise. The analyzer skips those diagnostics when the target's containing namespace matches one of the configured patterns.

@@ -4,20 +4,21 @@ public class MismatchAnalyzerTests
     [Test]
     public void FormatMismatch_ArgumentToParameter()
     {
-        var source = """
-                     public class Target
-                     {
-                         public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
-                     }
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
 
-                     public class Holder
-                     {
-                         [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
-                         public string Value { get; set; }
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                public string Value { get; set; }
 
-                         public void Use(Target target) => target.Consume(Value);
-                     }
-                     """;
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -31,18 +32,19 @@ public class MismatchAnalyzerTests
     [Test]
     public void FormatMismatch_PropertyToProperty_Assignment()
     {
-        var source = """
-                     public class Holder
-                     {
-                         [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
-                         public string Format { get; set; }
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                public string Format { get; set; }
 
-                         [StringSyntax(StringSyntaxAttribute.Regex)]
-                         public string Pattern { get; set; }
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
 
-                         public void Copy() => Format = Pattern;
-                     }
-                     """;
+                public void Copy() => Format = Pattern;
+            }
+            """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -78,16 +80,17 @@ public class MismatchAnalyzerTests
     [Test]
     public void MethodReturnSource_IsUnknown()
     {
-        var source = """
-                     public class Holder
-                     {
-                         public string GetValue() => "";
+        var source =
+            """
+            public class Holder
+            {
+                public string GetValue() => "";
 
-                         public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
 
-                         public void Use() => Consume(GetValue());
-                     }
-                     """;
+                public void Use() => Consume(GetValue());
+            }
+            """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -97,19 +100,20 @@ public class MismatchAnalyzerTests
     [Test]
     public void MissingSourceFormat_ArgumentToParameter()
     {
-        var source = """
-                     public class Target
-                     {
-                         public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
-                     }
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
 
-                     public class Holder
-                     {
-                         public string Value { get; set; }
+            public class Holder
+            {
+                public string Value { get; set; }
 
-                         public void Use(Target target) => target.Consume(Value);
-                     }
-                     """;
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -121,20 +125,21 @@ public class MismatchAnalyzerTests
     [Test]
     public void MissingSourceFormat_PropertyInitializer()
     {
-        var source = """
-                     public class Source
-                     {
-                         public string Raw { get; set; }
-                     }
+        var source =
+            """
+            public class Source
+            {
+                public string Raw { get; set; }
+            }
 
-                     public class Holder
-                     {
-                         [StringSyntax(StringSyntaxAttribute.Regex)]
-                         public string Pattern { get; set; }
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
 
-                         public void Use(Source src) => Pattern = src.Raw;
-                     }
-                     """;
+                public void Use(Source src) => Pattern = src.Raw;
+            }
+            """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -145,20 +150,21 @@ public class MismatchAnalyzerTests
     [Test]
     public void DroppedFormat_AssignPropertyToUnattributed()
     {
-        var source = """
-                     public class Target
-                     {
-                         public string Value { get; set; }
-                     }
+        var source =
+            """
+            public class Target
+            {
+                public string Value { get; set; }
+            }
 
-                     public class Holder
-                     {
-                         [StringSyntax(StringSyntaxAttribute.Regex)]
-                         public string Pattern { get; set; }
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
 
-                         public void Use(Target target) => target.Value = Pattern;
-                     }
-                     """;
+                public void Use(Target target) => target.Value = Pattern;
+            }
+            """;
 
         var diagnostics = GetDiagnostics(source);
 
@@ -814,6 +820,47 @@ public class MismatchAnalyzerTests
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
+    [Test]
+    public void RecordPrimaryCtorParameterAttribute_AppliesToGeneratedProperty()
+    {
+        var source =
+            """
+            public record Holder([StringSyntax(StringSyntaxAttribute.Regex)] string Pattern);
+
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use(Holder holder) => Consume(holder.Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void RecordPrimaryCtorParameterAttribute_PropertyMismatchAgainstTarget()
+    {
+        var source =
+            """
+            public record Holder([StringSyntax(StringSyntaxAttribute.DateTimeFormat)] string Pattern);
+
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use(Holder holder) => Consume(holder.Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
     static ImmutableArray<Diagnostic> GetDiagnostics(string source, string? editorConfig = null)
     {
         // Run the package's own source generator so test compilations see what real
@@ -822,7 +869,7 @@ public class MismatchAnalyzerTests
         // have to declare any of these themselves.
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
-        var trustedAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+        var trustedAssemblies = ((string) AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
             .Select(_ => MetadataReference.CreateFromFile(_))
             .ToList();

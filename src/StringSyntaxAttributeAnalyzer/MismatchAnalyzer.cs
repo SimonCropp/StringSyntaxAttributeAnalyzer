@@ -196,7 +196,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var sourceInfo = GetSyntax(sourceSymbol, types);
         foreach (var property in init.InitializedProperties)
         {
-            var targetInfo = GetSyntaxFromAttributes(property.GetAttributes(), types);
+            var targetInfo = GetSyntax(property, types);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -370,10 +370,54 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         };
     }
 
-    static SyntaxInfo GetSyntax(ISymbol? symbol, SyntaxTypes types) =>
-        symbol is null
-            ? SyntaxInfo.Unknown
-            : GetSyntaxFromAttributes(symbol.GetAttributes(), types);
+    static SyntaxInfo GetSyntax(ISymbol? symbol, SyntaxTypes types)
+    {
+        if (symbol is null)
+        {
+            return SyntaxInfo.Unknown;
+        }
+
+        var info = GetSyntaxFromAttributes(symbol.GetAttributes(), types);
+        if (info.State == SyntaxState.Present)
+        {
+            return info;
+        }
+
+        // Records: a primary-constructor parameter with [StringSyntax] doesn't
+        // propagate the attribute to the synthesized property (the default
+        // attribute target for such parameters is the parameter itself). Treat
+        // the parameter's attribute as also applying to the generated property.
+        if (symbol is IPropertySymbol property &&
+            FindPrimaryConstructorParameter(property) is { } parameter)
+        {
+            return GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+        }
+
+        return info;
+    }
+
+    static IParameterSymbol? FindPrimaryConstructorParameter(IPropertySymbol property)
+    {
+        var type = property.ContainingType;
+        if (type is null || !type.IsRecord)
+        {
+            return null;
+        }
+
+        foreach (var constructor in type.InstanceConstructors)
+        {
+            foreach (var parameter in constructor.Parameters)
+            {
+                if (parameter.Name == property.Name &&
+                    SymbolEqualityComparer.Default.Equals(parameter.Type, property.Type))
+                {
+                    return parameter;
+                }
+            }
+        }
+
+        return null;
+    }
 
     static IOperation UnwrapConversions(IOperation operation)
     {
