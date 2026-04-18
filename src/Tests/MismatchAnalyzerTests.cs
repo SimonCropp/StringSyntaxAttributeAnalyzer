@@ -78,6 +78,33 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void GenericExtensionMethodReturnSource_InConstructor_IsUnknown()
+    {
+        var source =
+            """
+            public static class ConfigExtensions
+            {
+                public static T GetRequiredValue<T>(this Config c, string key) => default!;
+            }
+            public class Config { }
+            public class AppSettings
+            {
+                [StringSyntax(StringSyntaxAttribute.Uri)]
+                public string Url { get; set; }
+
+                public AppSettings(Config configuration)
+                {
+                    Url = configuration.GetRequiredValue<string>("URL");
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
     public void MissingSourceFormat_ArgumentToParameter()
     {
         var source =

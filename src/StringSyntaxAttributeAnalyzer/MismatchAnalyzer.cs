@@ -352,7 +352,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             IPropertyReferenceOperation prop => prop.Property,
             IFieldReferenceOperation field => field.Field,
             IParameterReferenceOperation param => param.Parameter,
-            IInvocationOperation invocation => invocation.TargetMethod,
+            // Generic methods returning T can't be usefully attributed with [ReturnSyntax]
+            // — the annotation would apply to every substitution, not just string. Treat
+            // as null so GetSyntax maps the source to Unknown and suppresses SSA002/003.
+            IInvocationOperation invocation
+                when invocation.TargetMethod.OriginalDefinition.ReturnType.TypeKind != TypeKind.TypeParameter
+                => invocation.TargetMethod,
             ILocalReferenceOperation local => local.Local,
             _ => null
         };
