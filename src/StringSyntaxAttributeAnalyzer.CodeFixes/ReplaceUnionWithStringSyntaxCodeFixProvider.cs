@@ -1,8 +1,7 @@
-namespace StringSyntaxAttributeAnalyzer;
-
 [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(ReplaceUnionWithStringSyntaxCodeFixProvider))]
 [Shared]
-public class ReplaceUnionWithStringSyntaxCodeFixProvider : CodeFixProvider
+public class ReplaceUnionWithStringSyntaxCodeFixProvider :
+    CodeFixProvider
 {
     const string valueKey = "StringSyntaxValue";
     const string singletonUnionId = "SSA006";
@@ -17,6 +16,7 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider : CodeFixProvider
         var root = await context.Document
             .GetSyntaxRootAsync(context.CancellationToken)
             .ConfigureAwait(false);
+
         if (root is null)
         {
             return;
@@ -40,6 +40,7 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider : CodeFixProvider
             var compilation = await context.Document.Project
                 .GetCompilationAsync(context.CancellationToken)
                 .ConfigureAwait(false);
+
             var attributeName = ResolveAttributeName(compilation);
 
             context.RegisterCodeFix(
@@ -87,7 +88,12 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider : CodeFixProvider
         foreach (var tree in compilation.SyntaxTrees)
         {
             var root = tree.GetRoot();
-            foreach (var usingDirective in root.DescendantNodes(_ => _ is CompilationUnitSyntax or NamespaceDeclarationSyntax or FileScopedNamespaceDeclarationSyntax).OfType<UsingDirectiveSyntax>())
+            foreach (var usingDirective in root
+                         .DescendantNodes(_ =>
+                             _ is CompilationUnitSyntax or
+                                 NamespaceDeclarationSyntax or
+                                 FileScopedNamespaceDeclarationSyntax)
+                         .OfType<UsingDirectiveSyntax>())
             {
                 if (usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
                     usingDirective.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")

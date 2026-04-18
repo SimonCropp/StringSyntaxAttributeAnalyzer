@@ -12,8 +12,6 @@
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <Using Include="NUnit.Framework.Legacy.ClassicAssert" Static="True" />
-  </ItemGroup>
-  <ItemGroup>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>AnalyzerPackageVersion</_Parameter1>
       <_Parameter2>$(Version)</_Parameter2>

@@ -1,5 +1,3 @@
-namespace StringSyntaxAttributeAnalyzer;
-
 [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(AddStringSyntaxCodeFixProvider))]
 [Shared]
 public class AddStringSyntaxCodeFixProvider : CodeFixProvider
@@ -52,6 +50,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                 .GetRootAsync(context.CancellationToken)
                 .ConfigureAwait(false);
             var declarationNode = declarationRoot.FindNode(declarationLocation.SourceSpan);
+
             if (FindAttributeHost(declarationNode) is null)
             {
                 continue;
@@ -74,11 +73,11 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
     static async Task<Solution> AddAttributeAsync(
         Solution solution,
-        Location declarationLocation,
+        Location location,
         string value,
         Cancel cancel)
     {
-        var document = solution.GetDocument(declarationLocation.SourceTree);
+        var document = solution.GetDocument(location.SourceTree);
         if (document is null)
         {
             return solution;
@@ -92,7 +91,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
-        var declarationNode = root.FindNode(declarationLocation.SourceSpan);
+        var declarationNode = root.FindNode(location.SourceSpan);
         var targetNode = FindAttributeHost(declarationNode);
         if (targetNode is null)
         {
@@ -150,21 +149,25 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             }
 
             return declarator.FirstAncestorOrSelf<SyntaxNode>(ancestor =>
-                ancestor is FieldDeclarationSyntax or LocalDeclarationStatementSyntax);
+                ancestor is
+                    FieldDeclarationSyntax or
+                    LocalDeclarationStatementSyntax);
         }
 
         return node.FirstAncestorOrSelf<SyntaxNode>(ancestor =>
-            ancestor is PropertyDeclarationSyntax
-                or ParameterSyntax
-                or MethodDeclarationSyntax
-                or LocalFunctionStatementSyntax
-                or DelegateDeclarationSyntax);
+            ancestor is
+                PropertyDeclarationSyntax or
+                ParameterSyntax or
+                MethodDeclarationSyntax or
+                LocalFunctionStatementSyntax or
+                DelegateDeclarationSyntax);
     }
 
     static bool IsMethodHost(SyntaxNode? host) =>
-        host is MethodDeclarationSyntax
-            or LocalFunctionStatementSyntax
-            or DelegateDeclarationSyntax;
+        host is
+            MethodDeclarationSyntax or
+            LocalFunctionStatementSyntax or
+            DelegateDeclarationSyntax;
 
     static (string Title, string EquivalenceKey) BuildFixMetadata(SyntaxNode? host, string value) =>
         host switch
@@ -183,10 +186,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     // Rider docs spell regex as `regexp`. Normalizing on write means the emitted
     // comment lights up Rider's own highlighting; MismatchAnalyzer's read path maps
     // `regexp` back to `Regex` so the round-trip matches the BCL constant.
-    static string ToRiderToken(string value) =>
-        value.Equals("Regex", StringComparison.Ordinal)
-            ? "regexp"
-            : value.ToLowerInvariant();
+    static string ToRiderToken(string value)
+    {
+        if (value.Equals("Regex", StringComparison.Ordinal))
+        {
+            return "regexp";
+        }
+
+        return value.ToLowerInvariant();
+    }
 
     // Emits the Rider/IntelliJ-compatible `//language=<token>` comment above the
     // declaration. The value is lowercased to match the convention used in Rider's
@@ -216,10 +224,12 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         for (var i = trivia.Count - 1; i >= 0; i--)
         {
             var item = trivia[i];
+
             if (item.IsKind(SyntaxKind.WhitespaceTrivia))
             {
                 return item;
             }
+
             if (item.IsKind(SyntaxKind.EndOfLineTrivia))
             {
                 break;
@@ -239,17 +249,17 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         var attribute = Attribute(IdentifierName(attributeName))
             .WithArgumentList(AttributeArgumentList(SingletonSeparatedList(argument)));
 
-        var attributeList = AttributeList(SingletonSeparatedList(attribute))
+        var attributes = AttributeList(SingletonSeparatedList(attribute))
             .WithAdditionalAnnotations(Formatter.Annotation);
 
         return host switch
         {
-            PropertyDeclarationSyntax property => property.AddAttributeLists(attributeList),
-            FieldDeclarationSyntax field => field.AddAttributeLists(attributeList),
-            ParameterSyntax parameter => parameter.AddAttributeLists(attributeList),
-            MethodDeclarationSyntax method => method.AddAttributeLists(attributeList),
-            LocalFunctionStatementSyntax local => local.AddAttributeLists(attributeList),
-            DelegateDeclarationSyntax del => del.AddAttributeLists(attributeList),
+            PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
+            FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
+            ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
+            MethodDeclarationSyntax method => method.AddAttributeLists(attributes),
+            LocalFunctionStatementSyntax local => local.AddAttributeLists(attributes),
+            DelegateDeclarationSyntax del => del.AddAttributeLists(attributes),
             _ => null
         };
     }
@@ -267,7 +277,12 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         foreach (var tree in compilation.SyntaxTrees)
         {
             var root = tree.GetRoot();
-            foreach (var usingDirective in root.DescendantNodes(_ => _ is CompilationUnitSyntax or NamespaceDeclarationSyntax or FileScopedNamespaceDeclarationSyntax).OfType<UsingDirectiveSyntax>())
+            foreach (var usingDirective in root
+                         .DescendantNodes(_ => _ is
+                             CompilationUnitSyntax or
+                             NamespaceDeclarationSyntax or
+                             FileScopedNamespaceDeclarationSyntax)
+                         .OfType<UsingDirectiveSyntax>())
             {
                 if (usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
                     usingDirective.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")

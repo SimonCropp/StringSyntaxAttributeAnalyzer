@@ -1,5 +1,3 @@
-namespace StringSyntaxAttributeAnalyzer;
-
 [Generator]
 public class SyntaxConstantsGenerator :
     IIncrementalGenerator

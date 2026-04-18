@@ -1,17 +1,7 @@
-namespace StringSyntaxAttributeAnalyzer;
-
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class MismatchAnalyzer : DiagnosticAnalyzer
 {
     const string valueKey = "StringSyntaxValue";
-
-    // EditorConfig knob: comma-separated namespace patterns whose types, when they
-    // appear as the *target* of a format-dropping flow, should be ignored. Defaults
-    // cover the BCL since its APIs can't be attributed retroactively. Patterns support
-    // a trailing `*` wildcard (prefix match). Example override:
-    //   stringsyntax.suppressed_target_namespaces = System*,Microsoft*,MyCompany.Legacy*
-    const string suppressedNamespacesKey = "stringsyntax.suppressed_target_namespaces";
-    const string defaultSuppressedNamespaces = "System*,Microsoft*";
 
     static readonly DiagnosticDescriptor formatMismatchRule = new(
         id: "SSA001",
@@ -100,7 +90,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 .GetTypeByMetadataName("StringSyntaxAttributeAnalyzer.ReturnSyntaxAttribute");
             var types = new SyntaxTypes(stringSyntaxType, unionSyntaxType, returnSyntaxType);
 
-            var suppressedNamespaces = ReadSuppressedNamespaces(start.Options);
+            var suppressedNamespaces = NamespaceSuppression.ReadPatterns(start.Options);
 
             start.RegisterOperationAction(
                 _ => AnalyzeArgument(_, types, suppressedNamespaces),
@@ -126,20 +116,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     SymbolKind.Field);
             }
         });
-    }
-
-    static string[] ReadSuppressedNamespaces(AnalyzerOptions options)
-    {
-        var raw = options.AnalyzerConfigOptionsProvider.GlobalOptions
-            .TryGetValue(suppressedNamespacesKey, out var configured)
-            ? configured
-            : defaultSuppressedNamespaces;
-
-        return raw
-            .Split(',')
-            .Select(_ => _.Trim())
-            .Where(_ => _.Length > 0)
-            .ToArray();
     }
 
     static void AnalyzeArgument(
@@ -298,7 +274,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.Present)
         {
-            if (ValuesMatch(leftInfo.Values, rightInfo.Values))
+            if (SyntaxValueMatcher.ValuesMatch(leftInfo.Values, rightInfo.Values))
             {
                 return;
             }
@@ -308,8 +284,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(
                 equalityMismatchRule,
                 binary.Syntax.GetLocation(),
-                FormatValues(leftInfo.Values),
-                FormatValues(rightInfo.Values)));
+                SyntaxValueMatcher.FormatValues(leftInfo.Values),
+                SyntaxValueMatcher.FormatValues(rightInfo.Values)));
             return;
         }
 
@@ -319,7 +295,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(rightSymbol!)) ||
-                IsInSuppressedNamespace(rightSymbol, suppressedNamespaces))
+                NamespaceSuppression.Matches(rightSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -334,7 +310,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                  leftInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(leftSymbol!)) ||
-                IsInSuppressedNamespace(leftSymbol, suppressedNamespaces))
+                NamespaceSuppression.Matches(leftSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -396,7 +372,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // Doc: https://www.jetbrains.com/help/rider/Language_Injections.html
         if (symbol is ILocalSymbol local)
         {
-            return TryReadLanguageComment(local, out var comment)
+            return LanguageCommentReader.TryRead(local, out var comment)
                 ? SyntaxInfo.Present(comment)
                 : SyntaxInfo.NotPresent;
         }
@@ -442,87 +418,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         return null;
     }
-
-    // Rider/IntelliJ-compatible injection comment: `//language=<name>` or
-    // `/*language=<name>*/`, optionally followed by `prefix=`/`postfix=` options which
-    // we ignore here (those are renderer hints, not relevant to syntax identity).
-    // Keyword is case-insensitive; the value preserves its case so PascalCase BCL
-    // constants like `Regex` round-trip cleanly.
-    static readonly Regex languageCommentRegex = new(
-        @"\blanguage\s*=\s*([A-Za-z0-9_]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    static bool TryReadLanguageComment(ILocalSymbol local, out string syntax)
-    {
-        foreach (var reference in local.DeclaringSyntaxReferences)
-        {
-            var node = reference.GetSyntax();
-            var statement = node.FirstAncestorOrSelf<LocalDeclarationStatementSyntax>();
-            if (statement is null)
-            {
-                continue;
-            }
-
-            // Preceding-line form — `// language=regex` on the line above the statement.
-            // Lives in the statement's own leading trivia.
-            if (TryMatchLanguageComment(statement.GetLeadingTrivia(), out syntax))
-            {
-                return true;
-            }
-
-            // Inline form — `var x = /*language=regex*/ "..."`. Roslyn attaches the
-            // block comment to the `=` token's trailing trivia (same-line trivia before
-            // a token sticks to the previous token in Roslyn's default policy), so a
-            // targeted check of the initializer's leading trivia misses it. Scan every
-            // trivia within the statement and take the first match.
-            foreach (var trivia in statement.DescendantTrivia())
-            {
-                if (!trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) &&
-                    !trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
-                {
-                    continue;
-                }
-
-                var match = languageCommentRegex.Match(trivia.ToString());
-                if (match.Success)
-                {
-                    syntax = NormalizeLanguageToken(match.Groups[1].Value);
-                    return true;
-                }
-            }
-        }
-
-        syntax = "";
-        return false;
-    }
-
-    static bool TryMatchLanguageComment(SyntaxTriviaList trivia, out string syntax)
-    {
-        foreach (var item in trivia)
-        {
-            if (!item.IsKind(SyntaxKind.SingleLineCommentTrivia) &&
-                !item.IsKind(SyntaxKind.MultiLineCommentTrivia))
-            {
-                continue;
-            }
-
-            var match = languageCommentRegex.Match(item.ToString());
-            if (match.Success)
-            {
-                syntax = NormalizeLanguageToken(match.Groups[1].Value);
-                return true;
-            }
-        }
-
-        syntax = "";
-        return false;
-    }
-
-    // Rider doc examples spell regex as `regexp`; the BCL constant is `Regex`. Bridge
-    // the two so `//language=regexp` matches `[StringSyntax(StringSyntaxAttribute.Regex)]`
-    // without the user having to know the naming history.
-    static string NormalizeLanguageToken(string raw) =>
-        raw.Equals("regexp", StringComparison.OrdinalIgnoreCase) ? "Regex" : raw;
 
     static IOperation UnwrapConversions(IOperation operation)
     {
@@ -632,13 +527,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (source.State == SyntaxState.Present &&
             target.State == SyntaxState.Present)
         {
-            if (!ValuesMatch(source.Values, target.Values))
+            if (!SyntaxValueMatcher.ValuesMatch(source.Values, target.Values))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     formatMismatchRule,
                     location,
-                    FormatValues(source.Values),
-                    FormatValues(target.Values)));
+                    SyntaxValueMatcher.FormatValues(source.Values),
+                    SyntaxValueMatcher.FormatValues(target.Values)));
             }
 
             return;
@@ -650,7 +545,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // Source in a suppressed namespace (BCL etc.) can't be annotated by the
             // consumer — skip rather than surfacing an unfixable SSA002. Mirrors the
             // target-side check on the SSA003 branch below.
-            if (IsInSuppressedNamespace(sourceSymbol, suppressedNamespaces))
+            if (NamespaceSuppression.Matches(sourceSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -671,7 +566,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             // SSA003: the target can't be fixed if it's in a namespace the user can't
             // edit (BCL by default). Bail rather than showing an unfixable warning.
-            if (IsInSuppressedNamespace(targetSymbol, suppressedNamespaces))
+            if (NamespaceSuppression.Matches(targetSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -683,104 +578,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 targetSymbol,
                 source.PrimaryValue));
         }
-    }
-
-    static string FormatValues(ImmutableArray<string> values) =>
-        values.IsDefaultOrEmpty ? "" : string.Join("|", values);
-
-    static bool IsInSuppressedNamespace(ISymbol? symbol, string[] patterns)
-    {
-        if (symbol is null || patterns.Length == 0)
-        {
-            return false;
-        }
-
-        // For parameters, check the containing method's type's namespace; for
-        // properties/fields, check the containing type's namespace.
-        var owner = symbol.ContainingType ?? symbol.ContainingSymbol as INamedTypeSymbol;
-        var ns = owner?.ContainingNamespace;
-        if (ns is null || ns.IsGlobalNamespace)
-        {
-            return false;
-        }
-
-        var fullName = ns.ToDisplayString();
-        foreach (var pattern in patterns)
-        {
-            if (pattern.Length == 0)
-            {
-                continue;
-            }
-
-            if (pattern[pattern.Length - 1] == '*')
-            {
-                var prefix = pattern.Substring(0, pattern.Length - 1);
-                if (fullName.StartsWith(prefix, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-            else if (fullName == pattern)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    // Only the first character is compared case-insensitively — the BCL constants
-    // (Regex, Json, Xml, DateTimeFormat, ...) are PascalCase, and we want "json" and
-    // "Json" to be treated as the same format. "jSon" vs "json" is still a mismatch.
-    // Two value-sets "match" if they overlap on at least one value. `[StringSyntax(x)]`
-    // ↔ `[UnionSyntax(x, y)]` matches via `x`. Union ↔ union passes when the intersection
-    // is non-empty.
-    static bool ValuesMatch(ImmutableArray<string> a, ImmutableArray<string> b)
-    {
-        foreach (var va in a)
-        {
-            foreach (var vb in b)
-            {
-                if (SingleValueMatches(va, vb))
-                {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    // First character compared case-insensitively — the BCL constants (Regex, Json, Xml,
-    // DateTimeFormat, ...) are PascalCase, and we want "json" and "Json" to be treated
-    // as the same format. "jSon" vs "json" is still a mismatch.
-    static bool SingleValueMatches(string? a, string? b)
-    {
-        if (ReferenceEquals(a, b))
-        {
-            return true;
-        }
-
-        if (a is null || b is null)
-        {
-            return false;
-        }
-
-        if (a.Length != b.Length)
-        {
-            return false;
-        }
-
-        if (a.Length == 0)
-        {
-            return true;
-        }
-
-        if (char.ToLowerInvariant(a[0]) != char.ToLowerInvariant(b[0]))
-        {
-            return false;
-        }
-
-        return string.CompareOrdinal(a, 1, b, 1, a.Length - 1) == 0;
     }
 
     static Diagnostic CreateFixableDiagnostic(
@@ -806,30 +603,4 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return [Location.Create(declaration.SyntaxTree, declaration.Span)];
     }
 
-    enum SyntaxState
-    {
-        Unknown,
-        NotPresent,
-        Present
-    }
-
-    readonly struct SyntaxInfo(SyntaxState state, ImmutableArray<string> values)
-    {
-        public SyntaxState State { get; } = state;
-
-        // The set of accepted syntax values. Single-valued for `[StringSyntax(x)]`,
-        // multi-valued for `[UnionSyntax(a, b, c)]`. Empty when State != Present.
-        public ImmutableArray<string> Values { get; } = values;
-
-        // Primary value to surface in messages and codefixes. For a union, takes the
-        // first option — consistent but arbitrary; consumers overriding to a specific
-        // value is expected.
-        public string? PrimaryValue => Values.IsDefaultOrEmpty ? null : Values[0];
-
-        public static SyntaxInfo Unknown { get; } = new(SyntaxState.Unknown, []);
-        public static SyntaxInfo NotPresent { get; } = new(SyntaxState.NotPresent, []);
-        public static SyntaxInfo Present(string value) => new(SyntaxState.Present, [value]);
-        public static SyntaxInfo PresentUnion(ImmutableArray<string> values) =>
-            new(SyntaxState.Present, values);
-    }
 }
