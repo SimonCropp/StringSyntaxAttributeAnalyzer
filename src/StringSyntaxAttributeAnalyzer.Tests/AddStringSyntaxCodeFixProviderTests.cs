@@ -5,8 +5,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA002_AddsAttributeToSourceProperty()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -30,8 +28,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA002_AddsAttributeToSourceField()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 public string Field;
@@ -52,8 +48,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA002_AddsAttributeToSourceParameter()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -71,8 +65,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA003_AddsAttributeToTargetParameter()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public static void Consume(string value) { }
@@ -96,8 +88,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA003_AddsAttributeToTargetProperty()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public string Value { get; set; }
@@ -122,8 +112,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA005_AddsAttributeToUnattributedEqualitySide()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -145,8 +133,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA002_CustomFormatValue()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 public string Value { get; set; }
@@ -166,8 +152,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task MultiDeclaratorField_NoFixRegistered()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 public string a, b;
@@ -187,8 +171,6 @@ public class AddStringSyntaxCodeFixProviderTests
     public async Task SSA002_ExactOutputShape_WithExistingUsings()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -362,7 +344,11 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var solution = workspace.CurrentSolution.AddProject(projectInfo);
         var documentId = DocumentId.CreateNewId(projectInfo.Id);
-        solution = solution.AddDocument(documentId, "Test.cs", source);
+        var globalUsingId = DocumentId.CreateNewId(projectInfo.Id);
+        // Mirror the generator-injected global using so test sources don't need their own.
+        solution = solution
+            .AddDocument(globalUsingId, "GlobalUsings.cs", "global using System.Diagnostics.CodeAnalysis;")
+            .AddDocument(documentId, "Test.cs", source);
 
         var document = solution.GetDocument(documentId)!;
         var compilation = (await document.Project.GetCompilationAsync())!;

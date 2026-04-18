@@ -5,8 +5,6 @@ public class MismatchAnalyzerTests
     public void FormatMismatch_ArgumentToParameter()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -34,8 +32,6 @@ public class MismatchAnalyzerTests
     public void FormatMismatch_PropertyToProperty_Assignment()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
@@ -58,8 +54,6 @@ public class MismatchAnalyzerTests
     public void FormatMismatch_ObjectInitializer()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -85,8 +79,6 @@ public class MismatchAnalyzerTests
     public void MethodReturnSource_IsUnknown()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 public string GetValue() => "";
@@ -106,8 +98,6 @@ public class MismatchAnalyzerTests
     public void MissingSourceFormat_ArgumentToParameter()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -132,8 +122,6 @@ public class MismatchAnalyzerTests
     public void MissingSourceFormat_PropertyInitializer()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Source
             {
                 public string Raw { get; set; }
@@ -158,8 +146,6 @@ public class MismatchAnalyzerTests
     public void DroppedFormat_AssignPropertyToUnattributed()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public string Value { get; set; }
@@ -185,8 +171,6 @@ public class MismatchAnalyzerTests
     public void DroppedFormat_ArgumentToParameter()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume(string value) { }
@@ -211,8 +195,6 @@ public class MismatchAnalyzerTests
     public void MatchingFormats_NoDiagnostic()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -236,8 +218,6 @@ public class MismatchAnalyzerTests
     public void StringLiteralSource_NoDiagnostic()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -258,8 +238,6 @@ public class MismatchAnalyzerTests
     public void LocalVariableSource_NoDiagnostic()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
@@ -306,8 +284,6 @@ public class MismatchAnalyzerTests
     public void CustomFormatString_Mismatch()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax("custom-a")] string value) { }
@@ -332,8 +308,6 @@ public class MismatchAnalyzerTests
     public void FirstCharCaseInsensitive_NoDiagnostic()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax("json")] string value) { }
@@ -357,8 +331,6 @@ public class MismatchAnalyzerTests
     public void MidStringCaseDifference_StillMismatch()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Target
             {
                 public void Consume([StringSyntax("json")] string value) { }
@@ -383,8 +355,6 @@ public class MismatchAnalyzerTests
     public void EqualityMismatch_FiresOnEqualsOperator()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -410,8 +380,6 @@ public class MismatchAnalyzerTests
     public void EqualityMismatch_FiresOnNotEqualsOperator()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -434,8 +402,6 @@ public class MismatchAnalyzerTests
     public void EqualityMatching_NoDiagnostic()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -457,8 +423,6 @@ public class MismatchAnalyzerTests
     public void EqualityWithLiteral_NoDiagnostic()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -477,8 +441,6 @@ public class MismatchAnalyzerTests
     public void EqualityWithUnattributed_FiresSSA005()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -501,8 +463,6 @@ public class MismatchAnalyzerTests
     public void EqualityWithUnattributed_RightSide_FiresSSA005()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 public string Raw { get; set; }
@@ -521,11 +481,101 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void DroppedFormat_ObjectParameter_NoDiagnostic()
+    {
+        var source = """
+            public class Logger
+            {
+                public static void Log(string message, object value) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public void Use() => Logger.Log("processing {Pattern}", Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void DroppedFormat_ParamsObjectArray_NoDiagnostic()
+    {
+        var source = """
+            public class Logger
+            {
+                public static void Log(string message, params object?[] args) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public void Use() => Logger.Log("processing {Pattern} and {Other}", Pattern, 42);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void DroppedFormat_GenericParameter_NoDiagnostic()
+    {
+        var source = """
+            public static class Extensions
+            {
+                public static T Echo<T>(T value) => value;
+            }
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public string Use() => Extensions.Echo(Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void DroppedFormat_StringParameter_StillFires()
+    {
+        // Regression guard: SSA003 must still fire for genuine string-typed slots —
+        // the generic-slot suppression shouldn't swallow real dropped-format cases.
+        var source = """
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public static void Consume(string value) { }
+
+                public void Use() => Consume(Pattern);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA003", diagnostics[0].Id);
+    }
+
+    [Test]
     public void FieldSource_Mismatch()
     {
         var source = """
-            using System.Diagnostics.CodeAnalysis;
-
             public class Holder
             {
                 [StringSyntax(StringSyntaxAttribute.Regex)]
@@ -545,7 +595,12 @@ public class MismatchAnalyzerTests
 
     static ImmutableArray<Diagnostic> GetDiagnostics(string source)
     {
+        // Mirror the real consumer environment: our source generator ships a
+        // `global using System.Diagnostics.CodeAnalysis;`, so test sources don't need
+        // their own local using. Injected here as a second syntax tree.
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var globalUsingTree = CSharpSyntaxTree.ParseText(
+            "global using System.Diagnostics.CodeAnalysis;");
 
         var trustedAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
@@ -554,7 +609,7 @@ public class MismatchAnalyzerTests
 
         var compilation = CSharpCompilation.Create(
             "Tests",
-            [syntaxTree],
+            [syntaxTree, globalUsingTree],
             trustedAssemblies,
             new(OutputKind.DynamicallyLinkedLibrary));
 

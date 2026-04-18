@@ -205,9 +205,16 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         // One side Present, the other NotPresent — fixable: add the present side's
-        // StringSyntax value to the bare side's declaration.
+        // StringSyntax value to the bare side's declaration. Suppress when the bare side
+        // is an object/T slot — equality to a generic value is usually reference-style
+        // comparison, not a missed format annotation.
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
         {
+            if (IsGenericValueSlot(GetTargetType(rightSymbol!)))
+            {
+                return;
+            }
+
             context.ReportDiagnostic(CreateFixableDiagnostic(
                 EqualityMissingFormatRule,
                 binary.Syntax.GetLocation(),
@@ -216,6 +223,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
         else if (rightInfo.State == SyntaxState.Present && leftInfo.State == SyntaxState.NotPresent)
         {
+            if (IsGenericValueSlot(GetTargetType(leftSymbol!)))
+            {
+                return;
+            }
+
             context.ReportDiagnostic(CreateFixableDiagnostic(
                 EqualityMissingFormatRule,
                 binary.Syntax.GetLocation(),
@@ -223,6 +235,27 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 rightInfo.Value));
         }
     }
+
+    // A "value slot" is a typed-object or generic-T target where strings flow as plain
+    // values (logging, collections, generic extension methods). Passing a StringSyntax-
+    // attributed value into such a slot doesn't meaningfully "drop" the format — the
+    // receiver was never going to honour it. Skip SSA001/003/004/005 in those cases.
+    static bool IsGenericValueSlot(ITypeSymbol? type) =>
+        type is not null &&
+        (type.SpecialType == SpecialType.System_Object ||
+         type.TypeKind == TypeKind.TypeParameter ||
+         (type is IArrayTypeSymbol array && IsGenericValueSlot(array.ElementType)));
+
+    // Use OriginalDefinition so a generic method's `T value` parameter reads as TypeKind
+    // TypeParameter even when the call site has substituted T=string.
+    static ITypeSymbol? GetTargetType(ISymbol symbol) =>
+        symbol.OriginalDefinition switch
+        {
+            IParameterSymbol p => p.Type,
+            IPropertySymbol p => p.Type,
+            IFieldSymbol f => f.Type,
+            _ => null
+        };
 
     static ISymbol? GetSymbol(IOperation operation)
     {
@@ -284,6 +317,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         if (source.State == SyntaxState.Unknown ||
             target.State == SyntaxState.Unknown)
+        {
+            return;
+        }
+
+        // Target is object/T/params object[] without StringSyntax — treat as a generic
+        // value slot (log methods, collections, println, ToString-ers). The source's
+        // format info isn't being meaningfully "dropped", so suppress SSA003/SSA001.
+        if (target.State == SyntaxState.NotPresent &&
+            IsGenericValueSlot(GetTargetType(targetSymbol)))
         {
             return;
         }
