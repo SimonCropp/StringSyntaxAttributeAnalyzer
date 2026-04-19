@@ -816,7 +816,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void UnionSyntax_CrossAssembly_FiresSSA003()
+    public async Task UnionSyntax_CrossAssembly_FiresSSA003()
     {
         // Reproduces the real-world case where the UnionSyntax-attributed property lives
         // in a separate assembly (messages package). Each assembly gets its own internal
@@ -841,7 +841,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetCrossAssemblyDiagnostics(messagesSource, consumerSource);
+        var diagnostics = await GetCrossAssemblyDiagnostics(messagesSource, consumerSource);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
@@ -1550,7 +1550,7 @@ public class MismatchAnalyzerTests
             .GetResult();
     }
 
-    static ImmutableArray<Diagnostic> GetCrossAssemblyDiagnostics(
+    static Task<ImmutableArray<Diagnostic>> GetCrossAssemblyDiagnostics(
         string messagesSource,
         string consumerSource)
     {
@@ -1570,6 +1570,7 @@ public class MismatchAnalyzerTests
             var errors = string.Join('\n', emit.Diagnostics.Where(_ => _.Severity == DiagnosticSeverity.Error));
             throw new($"Messages compilation failed:\n{errors}");
         }
+
         messagesStream.Position = 0;
         var messagesReference = MetadataReference.CreateFromStream(messagesStream);
 
@@ -1584,9 +1585,7 @@ public class MismatchAnalyzerTests
 
         return consumerCompilation
             .WithAnalyzers([new MismatchAnalyzer()])
-            .GetAnalyzerDiagnosticsAsync()
-            .GetAwaiter()
-            .GetResult();
+            .GetAnalyzerDiagnosticsAsync();
     }
 
     static Dictionary<string, string> ParseEditorConfig(string content)

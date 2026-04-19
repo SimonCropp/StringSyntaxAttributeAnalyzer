@@ -1,6 +1,7 @@
 sealed class OptOutOptionsProvider(
     string? emitGlobalUsingsValue = null,
-    string? emitShortcutAttributesValue = null) : AnalyzerConfigOptionsProvider
+    string? emitShortcutAttributesValue = null) :
+    AnalyzerConfigOptionsProvider
 {
     public override AnalyzerConfigOptions GlobalOptions { get; } =
         new OptOutOptions(emitGlobalUsingsValue, emitShortcutAttributesValue);

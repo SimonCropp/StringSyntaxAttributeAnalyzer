@@ -1,6 +1,7 @@
 sealed class OptOutOptions(
     string? emitGlobalUsingsValue = null,
-    string? emitShortcutAttributesValue = null) : AnalyzerConfigOptions
+    string? emitShortcutAttributesValue = null) :
+    AnalyzerConfigOptions
 {
     public override bool TryGetValue(string key, [NotNullWhen(true)] out string? value)
     {
