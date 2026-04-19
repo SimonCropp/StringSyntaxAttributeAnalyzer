@@ -70,4 +70,4 @@ The `ProjectDefaults` nuget (Simon's shared conventions) is referenced by every 
 
 ### Readme and snippets
 
-`readme.md` uses [mdsnippets](https://github.com/SimonCropp/MarkdownSnippets) — `<!-- snippet: Name -->` ... `<!-- endSnippet -->` blocks get filled from `#region Name` blocks in `src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs`. Running `dotnet build` on the tests project refreshes the readme (the test csproj references `MarkdownSnippets.MsBuild`). If you add a snippet to the readme, add a matching `#region` to `Samples.cs`.
+`readme.md` uses [mdsnippets](https://github.com/SimonCropp/MarkdownSnippets) — `<!-- snippet: Name -->` ... `<!-- endSnippet -->` blocks get filled from `#region Name` blocks in `src/StringSyntaxAttributeAnalyzer.Tests/Samples.cs`. Running `dotnet build` on the tests project refreshes the readme (the test csproj references `MarkdownSnippets.MsBuild`). To add a snippet to the readme, add a matching `#region` to `Samples.cs`.

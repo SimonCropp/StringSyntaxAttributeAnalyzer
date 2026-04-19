@@ -40,7 +40,7 @@ In strict codebases that prefer explicit imports, set this MSBuild property:
 </PropertyGroup>
 ```
 
-With the property set to `false`, the `Syntax.Globals.g.cs` file is not emitted. `UnionSyntaxAttribute` and `Syntax` are still generated (you need them for the feature to exist), just no longer globally in scope — add `using System.Diagnostics.CodeAnalysis;` and `using StringSyntaxAttributeAnalyzer;` in the files that reference them.
+With the property set to `false`, the `Syntax.Globals.g.cs` file is not emitted. `UnionSyntaxAttribute` and `Syntax` are still generated (they are required for the feature to exist), but are no longer globally in scope — add `using System.Diagnostics.CodeAnalysis;` and `using StringSyntaxAttributeAnalyzer;` in the files that reference them.
 
 The property is wired via a `build/StringSyntaxAttributeAnalyzer.props` file that ships in the package and is imported automatically by NuGet.
 
@@ -67,7 +67,7 @@ A `[UnionSyntax("x")]` with a single option is always a mistake — use `[String
 Diagnostics fire on:
 
  * Method, constructor, indexer, and delegate arguments
- * Simple assignments (`=`), including inside object initializers
+ * Assignment expressions (`=`), including inside object initializers
  * Property and field inline initializers
 
 
