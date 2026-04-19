@@ -89,6 +89,9 @@ public class SyntaxConstantsGenerator :
             /// <summary>The syntax identifier for strings containing HTML.</summary>
             public const string Html = nameof(Html);
 
+            /// <summary>The syntax identifier for strings containing Text.</summary>
+            public const string Text = nameof(Text);
+
             /// <summary>The syntax identifier for strings containing email addresses.</summary>
             public const string Email = nameof(Email);
 
