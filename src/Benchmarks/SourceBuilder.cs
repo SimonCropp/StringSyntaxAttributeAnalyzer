@@ -6,25 +6,28 @@ static class SourceBuilder
     public static string Build(int callSites)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("using System.Diagnostics.CodeAnalysis;");
-        builder.AppendLine("public class Target");
-        builder.AppendLine("{");
-        builder.AppendLine("    [StringSyntax(StringSyntaxAttribute.Regex)]");
-        builder.AppendLine("    public string Pattern { get; set; } = \"\";");
-        builder.AppendLine("    public void ConsumeRegex([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }");
-        builder.AppendLine("}");
-        builder.AppendLine("public class Holder");
-        builder.AppendLine("{");
-        builder.AppendLine("    [StringSyntax(StringSyntaxAttribute.Regex)]");
-        builder.AppendLine("    public string RegexValue { get; set; } = \"\";");
-        builder.AppendLine("    [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]");
-        builder.AppendLine("    public string DateValue { get; set; } = \"\";");
-        builder.AppendLine("    public string Untyped { get; set; } = \"\";");
-        builder.AppendLine("}");
-        builder.AppendLine("public class CallSites");
-        builder.AppendLine("{");
-        builder.AppendLine("    public void Run(Target target, Holder holder)");
-        builder.AppendLine("    {");
+        builder.AppendLine(
+            """
+            using System.Diagnostics.CodeAnalysis;
+            public class Target
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; } = "";
+                public void ConsumeRegex([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string RegexValue { get; set; } = "";
+                [StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+                public string DateValue { get; set; } = "";
+                public string Untyped { get; set; } = "";
+            }
+            public class CallSites
+            {
+                public void Run(Target target, Holder holder)
+                {
+            """);
         for (var i = 0; i < callSites; i++)
         {
             // Rotate through four shapes so the analyzer exercises each OperationKind.
