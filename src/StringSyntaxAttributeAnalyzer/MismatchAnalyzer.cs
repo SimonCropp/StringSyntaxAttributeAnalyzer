@@ -533,7 +533,19 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (symbol is IPropertySymbol property &&
             FindPrimaryConstructorParameter(property) is { } parameter)
         {
-            return GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+            var fromParameter = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+            if (fromParameter.State == SyntaxState.Present)
+            {
+                return fromParameter;
+            }
+        }
+
+        // Fallback: well-known annotations harvested at build time from common
+        // assemblies whose own [StringSyntax] is missing (older targets, third-party
+        // libs). See KnownStringSyntax.cs / KnownStringSyntaxGenerationTests.
+        if (KnownStringSyntax.TryLookup(symbol, out var known))
+        {
+            return SyntaxInfo.Present(known);
         }
 
         return info;

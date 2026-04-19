@@ -1,0 +1,205 @@
+using System.Collections.Generic;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Xml;
+
+[TestFixture]
+public class KnownStringSyntaxGenerationTests
+{
+    // Assemblies to scan for [StringSyntax(...)] annotations. The whole point of
+    // pre-computing this lookup is that these annotations rarely change, so the
+    // dictionary is checked into source rather than rebuilt on each compilation.
+    // Add an assembly here, re-run the test, commit the regenerated file.
+    static readonly Assembly[] assemblies =
+    [
+        typeof(string).Assembly,           // System.Private.CoreLib
+        typeof(Uri).Assembly,              // System.Private.Uri (or CoreLib, depending on tfm)
+        typeof(Regex).Assembly,            // System.Text.RegularExpressions
+        typeof(JsonDocument).Assembly,     // System.Text.Json
+        typeof(XmlDocument).Assembly       // System.Xml.ReaderWriter
+    ];
+
+    const string targetFileName = "KnownStringSyntax.Generated.cs";
+    const string stringSyntaxAttributeFullName =
+        "System.Diagnostics.CodeAnalysis.StringSyntaxAttribute";
+
+    [Test]
+    public void GeneratedFileIsUpToDate()
+    {
+        var entries = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var assembly in assemblies.Distinct())
+        {
+            Harvest(assembly, entries);
+        }
+
+        var generated = Render(entries);
+        var path = LocateTargetFile();
+        var existing = File.ReadAllText(path);
+
+        if (existing == generated)
+        {
+            return;
+        }
+
+        File.WriteAllText(path, generated);
+        Assert.Fail(
+            $"{targetFileName} was out of date and has been rewritten. Re-run the test to confirm green, then commit.");
+    }
+
+    static void Harvest(Assembly assembly, SortedDictionary<string, string> entries)
+    {
+        Type[] types;
+        try
+        {
+            types = assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            types = ex.Types.Where(_ => _ is not null).ToArray()!;
+        }
+
+        foreach (var type in types)
+        {
+            if (type is null || !type.IsPublic && !type.IsNestedPublic)
+            {
+                continue;
+            }
+
+            const BindingFlags flags =
+                BindingFlags.Public |
+                BindingFlags.NonPublic |
+                BindingFlags.Static |
+                BindingFlags.Instance |
+                BindingFlags.DeclaredOnly;
+
+            foreach (var field in type.GetFields(flags))
+            {
+                if (TryReadStringSyntax(field.GetCustomAttributesData(), out var v))
+                {
+                    entries[ReflectionDocId.ForField(field)] = v;
+                }
+            }
+
+            foreach (var property in type.GetProperties(flags))
+            {
+                if (TryReadStringSyntax(property.GetCustomAttributesData(), out var v))
+                {
+                    entries[ReflectionDocId.ForProperty(property)] = v;
+                }
+            }
+
+            foreach (var method in type.GetMethods(flags))
+            {
+                HarvestMethod(method, entries);
+            }
+
+            foreach (var ctor in type.GetConstructors(flags))
+            {
+                HarvestMethod(ctor, entries);
+            }
+        }
+    }
+
+    static void HarvestMethod(MethodBase method, SortedDictionary<string, string> entries)
+    {
+        var methodId = ReflectionDocId.ForMethod(method);
+
+        foreach (var parameter in method.GetParameters())
+        {
+            if (TryReadStringSyntax(parameter.GetCustomAttributesData(), out var v))
+            {
+                entries[$"{methodId}#{parameter.Name}"] = v;
+            }
+        }
+
+        if (method is MethodInfo info)
+        {
+            var returnAttrs = info.ReturnParameter?.GetCustomAttributesData();
+            if (returnAttrs is not null &&
+                TryReadStringSyntax(returnAttrs, out var v))
+            {
+                entries[$"{methodId}#return"] = v;
+            }
+        }
+    }
+
+    static bool TryReadStringSyntax(IList<CustomAttributeData> attributes, out string value)
+    {
+        foreach (var attribute in attributes)
+        {
+            if (attribute.AttributeType.FullName != stringSyntaxAttributeFullName)
+            {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Count == 0)
+            {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments[0].Value is string s)
+            {
+                value = s;
+                return true;
+            }
+        }
+
+        value = "";
+        return false;
+    }
+
+    static string Render(SortedDictionary<string, string> entries)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("// <auto-generated>");
+        sb.AppendLine("//   Generated by KnownStringSyntaxGenerationTests. Do not edit by hand —");
+        sb.AppendLine("//   re-run `dotnet test src/StringSyntaxAttributeAnalyzer.slnx --filter");
+        sb.AppendLine("//   \"FullyQualifiedName~KnownStringSyntaxGenerationTests\"` to refresh.");
+        sb.AppendLine("// </auto-generated>");
+        sb.AppendLine();
+        sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine();
+        sb.AppendLine("public static partial class KnownStringSyntax");
+        sb.AppendLine("{");
+        sb.AppendLine("    public static readonly Dictionary<string, string> Lookup = new(System.StringComparer.Ordinal)");
+        sb.AppendLine("    {");
+        foreach (var pair in entries)
+        {
+            sb.Append("        [\"")
+              .Append(Escape(pair.Key))
+              .Append("\"] = \"")
+              .Append(Escape(pair.Value))
+              .AppendLine("\",");
+        }
+        sb.AppendLine("    };");
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    static string Escape(string value) =>
+        value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    static string LocateTargetFile()
+    {
+        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "StringSyntaxAttributeAnalyzer",
+                targetFileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException(
+            $"Could not locate {targetFileName} walking up from {TestContext.CurrentContext.TestDirectory}");
+    }
+}
