@@ -178,7 +178,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
             value = s;
         }
-        else if (IsAttributeNamed(attribute, returnSyntaxMetadataName))
+        else if (IsAttributeNamed(attribute, returnSyntaxAttributeName))
         {
             // Only the single-value ReturnSyntax case maps to a shortcut. Multi-value
             // unions can't collapse to a single `[return: X]`.
@@ -243,6 +243,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             sourceInfo,
             parameter,
             targetInfo,
+            suppression,
             suppression.GetPatterns(context.Operation.Syntax.SyntaxTree));
     }
 
@@ -268,6 +269,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             sourceInfo,
             targetSymbol,
             targetInfo,
+            suppression,
             suppression.GetPatterns(context.Operation.Syntax.SyntaxTree));
     }
 
@@ -290,6 +292,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 sourceInfo,
                 property,
                 targetInfo,
+                suppression,
                 patterns);
         }
     }
@@ -313,6 +316,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 sourceInfo,
                 field,
                 targetInfo,
+                suppression,
                 patterns);
         }
     }
@@ -321,7 +325,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         foreach (var attribute in context.Symbol.GetAttributes())
         {
-            if (!IsAttributeNamed(attribute, unionSyntaxMetadataName))
+            if (!IsAttributeNamed(attribute, unionSyntaxAttributeName))
             {
                 continue;
             }
@@ -402,7 +406,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(rightSymbol!)) ||
-                NamespaceSuppression.Matches(rightSymbol, suppressedNamespaces))
+                suppression.Matches(rightSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -417,7 +421,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                  leftInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(leftSymbol!)) ||
-                NamespaceSuppression.Matches(leftSymbol, suppressedNamespaces))
+                suppression.Matches(leftSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -557,8 +561,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return operation;
     }
 
-    const string unionSyntaxMetadataName = "StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute";
-    const string returnSyntaxMetadataName = "StringSyntaxAttributeAnalyzer.ReturnSyntaxAttribute";
+    const string unionSyntaxAttributeName = "UnionSyntaxAttribute";
+    const string returnSyntaxAttributeName = "ReturnSyntaxAttribute";
     const string shortcutAttributeNamespace = "StringSyntaxAttributeAnalyzer";
 
     // Names of shortcut-per-constant attributes emitted by SyntaxConstantsGenerator when
@@ -592,7 +596,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         public INamedTypeSymbol StringSyntax { get; } = stringSyntax;
     }
 
-    static bool IsAttributeNamed(AttributeData attribute, string fullMetadataName)
+    static bool IsAttributeNamed(AttributeData attribute, string typeName)
     {
         var type = attribute.AttributeClass;
         if (type is null)
@@ -600,10 +604,18 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        // ToDisplayString with the fully-qualified format yields "Namespace.TypeName"
-        // for non-generic types, which matches our metadata-name constants.
-        return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-                   .Equals("global::" + fullMetadataName, StringComparison.Ordinal);
+        return type.Name == typeName && IsInShortcutNamespace(type);
+    }
+
+    static bool IsInShortcutNamespace(INamedTypeSymbol type)
+    {
+        var ns = type.ContainingNamespace;
+        if (ns is null || ns.Name != shortcutAttributeNamespace)
+        {
+            return false;
+        }
+
+        return ns.ContainingNamespace?.IsGlobalNamespace ?? false;
     }
 
     static SyntaxInfo GetSyntaxFromAttributes(
@@ -622,13 +634,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return new(SyntaxState.Present, []);
             }
 
-            if (IsAttributeNamed(attribute, unionSyntaxMetadataName))
+            if (IsAttributeNamed(attribute, unionSyntaxAttributeName))
             {
                 var values = ExtractUnionOptions(attribute);
                 return SyntaxInfo.PresentUnion(values);
             }
 
-            if (IsAttributeNamed(attribute, returnSyntaxMetadataName))
+            if (IsAttributeNamed(attribute, returnSyntaxAttributeName))
             {
                 var values = ExtractUnionOptions(attribute);
                 if (values.Length == 1)
@@ -660,7 +672,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        if (type.ContainingNamespace?.ToDisplayString() != shortcutAttributeNamespace)
+        if (!IsInShortcutNamespace(type))
         {
             return false;
         }
@@ -712,6 +724,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         SyntaxInfo source,
         ISymbol targetSymbol,
         SyntaxInfo target,
+        NamespaceSuppression suppression,
         string[] suppressedNamespaces)
     {
         if (source.State == SyntaxState.Unknown ||
@@ -750,7 +763,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // Source in a suppressed namespace (BCL etc.) can't be annotated by the
             // consumer — skip rather than surfacing an unfixable SSA002. Mirrors the
             // target-side check on the SSA003 branch below.
-            if (NamespaceSuppression.Matches(sourceSymbol, suppressedNamespaces))
+            if (suppression.Matches(sourceSymbol, suppressedNamespaces))
             {
                 return;
             }
@@ -771,7 +784,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             // SSA003: the target can't be fixed if it's in a namespace the user can't
             // edit (BCL by default). Bail rather than showing an unfixable warning.
-            if (NamespaceSuppression.Matches(targetSymbol, suppressedNamespaces))
+            if (suppression.Matches(targetSymbol, suppressedNamespaces))
             {
                 return;
             }
