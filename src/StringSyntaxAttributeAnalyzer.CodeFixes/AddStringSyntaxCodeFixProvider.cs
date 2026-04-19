@@ -69,7 +69,14 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             }
 
             var host = FindAttributeHost(declarationNode);
-            var values = value.Split('|');
+            // Normalize each raw value to its canonical PascalCase form (e.g. `"html"`
+            // → `"Html"`) so downstream `IsKnown`/shortcut/`Syntax.X` lookups succeed
+            // for case-insensitive variants. Unknown values pass through unchanged so
+            // custom format strings still emit as literals.
+            var values = value
+                .Split('|')
+                .Select(_ => KnownSyntaxConstants.TryGetCanonical(_, out var canonical) ? canonical : _)
+                .ToArray();
 
             // For a union source (multiple values), offer one fix per option — and, when
             // the host can carry UnionSyntax (property/field/parameter), an additional

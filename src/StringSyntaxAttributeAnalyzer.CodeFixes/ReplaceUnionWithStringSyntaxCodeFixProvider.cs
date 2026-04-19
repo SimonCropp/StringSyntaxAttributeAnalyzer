@@ -29,6 +29,13 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
                 continue;
             }
 
+            // Normalize to canonical PascalCase so a UnionSyntax option spelled
+            // `"html"` resolves to `Syntax.Html` rather than degrading to `"html"`.
+            if (KnownSyntaxConstants.TryGetCanonical(value, out var canonical))
+            {
+                value = canonical;
+            }
+
             var attribute = root
                 .FindNode(diagnostic.Location.SourceSpan)
                 .FirstAncestorOrSelf<AttributeSyntax>();

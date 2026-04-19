@@ -149,7 +149,10 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix<ReplaceUnionWithStringSyntaxCodeFixProvider>(source);
 
-        Contains(fixedSource, "[Syntax(\"html\")]");
+        // Lowercase `"html"` resolves to the canonical `Html` constant — same logic
+        // as the rest of the codefix, kept consistent so the singleton-union rewrite
+        // doesn't degrade to a string literal when a known constant exists.
+        Contains(fixedSource, "[Syntax(Syntax.Html)]");
         IsFalse(fixedSource.Contains("[UnionSyntax"), $"Expected UnionSyntax removed:\n{fixedSource}");
     }
 
@@ -721,6 +724,114 @@ public class AddStringSyntaxCodeFixProviderTests
 
         Contains(fixedSource, "[Html]");
         IsFalse(fixedSource.Contains("[StringSyntax(\"Html\")]"));
+    }
+
+    [Test]
+    public async Task SSA002_LowercaseValue_NormalizesToCanonicalConstant()
+    {
+        // Target spelled lowercase `"html"` (matches via SyntaxValueMatcher's
+        // first-char case-insensitive rule). Without shortcut opt-in, the codefix
+        // should still surface `Syntax.Html` rather than degrading to a literal.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("html")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[Syntax(Syntax.Html)]");
+    }
+
+    [Test]
+    public async Task SSA002_LowercaseValueWithShortcutsOptedIn_UsesParameterlessShortcut()
+    {
+        // Reproduces the LegislationApi scenario: the consumer writes
+        // `[Syntax("html")]` (lowercase) on the target and has opted into shortcut
+        // attributes. The codefix should resolve `"html"` → canonical `Html` and
+        // emit `[Html]`, not fall back to `[Syntax("html")]`.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Target
+            {
+                public void Consume([StringSyntax("html")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[Html]");
+        IsFalse(fixedSource.Contains("[Syntax(\"html\")]"));
+        IsFalse(fixedSource.Contains("[Syntax(Syntax.Html)]"));
+    }
+
+    [Test]
+    public async Task SSA003_LowercaseUnionOption_NormalizesToCanonical()
+    {
+        // Union option spelled lowercase should still produce the canonical
+        // `Syntax.Html` / `Syntax.Xml` references (and a `[Html]` shortcut for the
+        // single-value branch when shortcuts are opted in is covered separately).
+        var source =
+            """
+            public class Target
+            {
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [UnionSyntax("html", "xml")]
+                public string Body { get; set; }
+
+                public Target Create() => new Target { Body = Body };
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 0);
+
+        Contains(fixedSource, "[UnionSyntax(Syntax.Html, Syntax.Xml)]");
+    }
+
+    [Test]
+    public async Task SSA006_LowercaseSingletonUnion_NormalizesToCanonical()
+    {
+        // Singleton-union rewrite (`[UnionSyntax("html")]` → `[Syntax(...)]`) should
+        // resolve to the canonical `Syntax.Html` constant rather than the literal
+        // string the user wrote.
+        var source =
+            """
+            public class Holder
+            {
+                [UnionSyntax("html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var fixedSource = await ApplyFix<ReplaceUnionWithStringSyntaxCodeFixProvider>(source);
+
+        Contains(fixedSource, "[Syntax(Syntax.Html)]");
     }
 
     static Task<string> ApplyFix(string source) =>
