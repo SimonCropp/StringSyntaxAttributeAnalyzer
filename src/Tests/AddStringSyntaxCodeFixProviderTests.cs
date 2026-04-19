@@ -780,11 +780,40 @@ public class AddStringSyntaxCodeFixProviderTests
             }
             """;
 
-        var fixedSource = await ApplyFix(source);
+        // Multiple diagnostics now fire: SSA002 on the source Holder.Value (what this
+        // test exercises) and SSA007 on the lowercase `[StringSyntax("html")]` itself
+        // (covered separately by the AddShortcut test).
+        var fixedSource = await ApplyFix(source, "SSA002");
 
         Contains(fixedSource, "[Html]");
         IsFalse(fixedSource.Contains("[Syntax(\"html\")]"));
         IsFalse(fixedSource.Contains("[Syntax(Syntax.Html)]"));
+    }
+
+    [Test]
+    public async Task SSA007_LowercaseValue_ReplacesWithShortcut()
+    {
+        // Opted-in consumer has written `[StringSyntax("html")]` (lowercase). SSA007
+        // fires with the canonical `Html`, codefix rewrites it as `[Html]`.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [StringSyntax("html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source, "SSA007");
+
+        Contains(fixedSource, "[Html]");
+        IsFalse(fixedSource.Contains("StringSyntax(\"html\")"));
     }
 
     [Test]
@@ -834,13 +863,13 @@ public class AddStringSyntaxCodeFixProviderTests
         Contains(fixedSource, "[Syntax(Syntax.Html)]");
     }
 
-    static Task<string> ApplyFix(string source) =>
-        ApplyFix<AddStringSyntaxCodeFixProvider>(source);
+    static Task<string> ApplyFix(string source, string? diagnosticId = null) =>
+        ApplyFix<AddStringSyntaxCodeFixProvider>(source, diagnosticId);
 
-    static async Task<string> ApplyFix<TProvider>(string source)
+    static async Task<string> ApplyFix<TProvider>(string source, string? diagnosticId = null)
         where TProvider : CodeFixProvider, new()
     {
-        var (document, diagnostic) = await PrepareFixAsync(source);
+        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
 
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
         var context = new CodeFixContext(
@@ -875,7 +904,7 @@ public class AddStringSyntaxCodeFixProviderTests
         return actions.ToImmutable();
     }
 
-    static async Task<(Document Document, Diagnostic Diagnostic)> PrepareFixAsync(string source)
+    static async Task<(Document Document, Diagnostic Diagnostic)> PrepareFixAsync(string source, string? diagnosticId = null)
     {
         var workspace = new AdhocWorkspace();
         var projectInfo = ProjectInfo.Create(
@@ -916,7 +945,10 @@ public class AddStringSyntaxCodeFixProviderTests
             .WithAnalyzers([new MismatchAnalyzer()])
             .GetAnalyzerDiagnosticsAsync();
 
-        return (document, diagnostics.Single());
+        var filtered = diagnosticId is null
+            ? diagnostics
+            : diagnostics.Where(_ => _.Id == diagnosticId).ToImmutableArray();
+        return (document, filtered.Single());
     }
 
     static IEnumerable<MetadataReference> TrustedReferences() =>

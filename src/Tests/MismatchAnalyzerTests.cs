@@ -1192,6 +1192,26 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void ShortcutAttribute_OptedIn_StringSyntaxWithLowercaseValue_ReportsSSA007()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA007", diagnostics[0].Id);
+        IsTrue(diagnostics[0].GetMessage().Contains("Html"));
+        AreEqual("Html", diagnostics[0].Properties["StringSyntaxValue"]);
+    }
+
+    [Test]
     public void ShortcutAttribute_NotOptedIn_StringSyntaxWithKnownValue_NoDiagnostic()
     {
         var source =

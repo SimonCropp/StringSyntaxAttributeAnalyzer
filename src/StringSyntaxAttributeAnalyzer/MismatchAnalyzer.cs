@@ -96,11 +96,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             // Shortcut attributes present in this compilation (empty unless the consumer
             // opted in with `StringSyntaxAnalyzer_EmitShortcutAttributes=true`). Used by
-            // SSA007 to offer `[Html]` in place of `[StringSyntax("Html")]`.
+            // SSA007 to offer `[Html]` in place of `[StringSyntax("Html")]`. Keyed by
+            // first-char-folded name so `"html"` also resolves to `Html`, matching the
+            // case folding used elsewhere (SyntaxValueMatcher, KnownSyntaxConstants).
             var availableShortcuts = shortcutAttributeNames
                 .Where(_ => start.Compilation
                     .GetTypeByMetadataName($"{shortcutAttributeNamespace}.{_}Attribute") is not null)
-                .ToImmutableHashSet();
+                .ToImmutableDictionary(FoldShortcutKey, _ => _);
 
             var suppression = new NamespaceSuppression(start.Options);
 
@@ -125,7 +127,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 SymbolKind.Property,
                 SymbolKind.Field);
 
-            if (!availableShortcuts.IsEmpty)
+            if (availableShortcuts.Count > 0)
             {
                 start.RegisterSymbolAction(
                     _ => AnalyzeSymbolForRedundantStringSyntax(_, types, availableShortcuts),
@@ -139,7 +141,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzeSymbolForRedundantStringSyntax(
         SymbolAnalysisContext context,
         SyntaxTypes types,
-        ImmutableHashSet<string> availableShortcuts)
+        ImmutableDictionary<string, string> availableShortcuts)
     {
         foreach (var attribute in context.Symbol.GetAttributes())
         {
@@ -154,7 +156,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (!availableShortcuts.Contains(value))
+            // First-char-folded lookup so `"html"` and `"Html"` both resolve to the
+            // canonical `Html` shortcut. The canonical form is what we report in the
+            // message and put in the properties bag, so the codefix emits `[Html]`.
+            if (!availableShortcuts.TryGetValue(FoldShortcutKey(value), out var canonical))
             {
                 continue;
             }
@@ -167,14 +172,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, value);
+            var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, canonical);
             context.ReportDiagnostic(Diagnostic.Create(
                 redundantStringSyntaxRule,
                 location,
                 properties: properties,
-                messageArgs: value));
+                messageArgs: canonical));
         }
     }
+
+    static string FoldShortcutKey(string name) =>
+        name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name.Substring(1);
 
     static void AnalyzeArgument(
         OperationAnalysisContext context,
