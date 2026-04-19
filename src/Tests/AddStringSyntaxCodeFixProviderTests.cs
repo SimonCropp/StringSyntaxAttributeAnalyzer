@@ -809,6 +809,79 @@ public class AddStringSyntaxCodeFixProviderTests
     }
 
     [Test]
+    public async Task SSA007_ReturnSyntaxOnMethod_ReplacesWithReturnTargetShortcut()
+    {
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class JsonAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Json")]
+                public string Build() => "{}";
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source, "SSA007");
+
+        Contains(fixedSource, "[return: Json]");
+        IsFalse(fixedSource.Contains("[ReturnSyntax("));
+    }
+
+    [Test]
+    public async Task SSA007_ReturnSyntaxOnMethod_TitleUsesReturnTarget()
+    {
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class JsonAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Json")]
+                public string Build() => "{}";
+            }
+            """;
+
+        var actions = await GetCodeActions(source, "SSA007");
+
+        AreEqual(1, actions.Length);
+        AreEqual("Replace with [return: Json]", actions[0].Title);
+    }
+
+    [Test]
+    public async Task SSA007_StringSyntaxOnProperty_TitleUsesBareShortcut()
+    {
+        // Sanity-check that the non-method path still reports the original title.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var actions = await GetCodeActions(source, "SSA007");
+
+        AreEqual(1, actions.Length);
+        AreEqual("Replace with [Html]", actions[0].Title);
+    }
+
+    [Test]
     public async Task SSA002_LowercaseValue_NormalizesToCanonicalConstant()
     {
         // Target spelled lowercase `"html"` (matches via SyntaxValueMatcher's
@@ -971,9 +1044,9 @@ public class AddStringSyntaxCodeFixProviderTests
         return text.ToString();
     }
 
-    static async Task<ImmutableArray<CodeAction>> GetCodeActions(string source)
+    static async Task<ImmutableArray<CodeAction>> GetCodeActions(string source, string? diagnosticId = null)
     {
-        var (document, diagnostic) = await PrepareFixAsync(source);
+        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
 
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
         var context = new CodeFixContext(

@@ -31,7 +31,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         {
             if (diagnostic.Id == redundantStringSyntaxId)
             {
-                RegisterReplaceWithShortcut(context, diagnostic);
+                await RegisterReplaceWithShortcut(context, diagnostic).ConfigureAwait(false);
                 continue;
             }
 
@@ -116,16 +116,24 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         }
     }
 
-    static void RegisterReplaceWithShortcut(CodeFixContext context, Diagnostic diagnostic)
+    static async Task RegisterReplaceWithShortcut(CodeFixContext context, Diagnostic diagnostic)
     {
         if (!diagnostic.Properties.TryGetValue(valueKey, out var value) || value is null)
         {
             return;
         }
 
+        var root = await context.Document
+            .GetSyntaxRootAsync(context.CancellationToken)
+            .ConfigureAwait(false);
+        var isReturn = root is not null && IsMethodAttribute(root, diagnostic.Location);
+        var title = isReturn
+            ? $"Replace with [return: {value}]"
+            : $"Replace with [{value}]";
+
         context.RegisterCodeFix(
             CodeAction.Create(
-                $"Replace with [{value}]",
+                title,
                 cancel => ReplaceWithShortcutAsync(
                     context.Document.Project.Solution,
                     diagnostic.Location,
@@ -133,6 +141,16 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                     cancel),
                 equivalenceKey: $"ReplaceWithShortcut:{value}"),
             diagnostic);
+    }
+
+    static bool IsMethodAttribute(SyntaxNode root, Location location)
+    {
+        var node = root.FindNode(location.SourceSpan);
+        var attribute = node as AttributeSyntax ?? node.FirstAncestorOrSelf<AttributeSyntax>();
+        return attribute?.FirstAncestorOrSelf<AttributeListSyntax>()?.Parent is
+            MethodDeclarationSyntax or
+            LocalFunctionStatementSyntax or
+            DelegateDeclarationSyntax;
     }
 
     static async Task<Solution> ReplaceWithShortcutAsync(
@@ -153,7 +171,8 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
-        // The diagnostic location is the `[StringSyntax(...)]` AttributeSyntax itself.
+        // The diagnostic location is the `[StringSyntax(...)]` (or `[ReturnSyntax(...)]`)
+        // AttributeSyntax itself.
         var node = root.FindNode(location.SourceSpan);
         var attribute = node as AttributeSyntax ?? node.FirstAncestorOrSelf<AttributeSyntax>();
         if (attribute is null)
@@ -161,12 +180,31 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
-        var replacement = Attribute(IdentifierName(name))
-            .WithLeadingTrivia(attribute.GetLeadingTrivia())
-            .WithTrailingTrivia(attribute.GetTrailingTrivia())
-            .WithAdditionalAnnotations(Formatter.Annotation);
+        var list = attribute.FirstAncestorOrSelf<AttributeListSyntax>();
+        SyntaxNode newRoot;
+        if (list is not null &&
+            list.Parent is MethodDeclarationSyntax or LocalFunctionStatementSyntax or DelegateDeclarationSyntax &&
+            list.Attributes.Count == 1)
+        {
+            // Shortcut attributes on methods compile as `[return: Name]` — their
+            // AttributeUsage targets ReturnValue, not Method. Rebuild the whole list
+            // with the `return:` target specifier so the output is legal C#.
+            var replacementList = AttributeList(SingletonSeparatedList(Attribute(IdentifierName(name))))
+                .WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword)))
+                .WithLeadingTrivia(list.GetLeadingTrivia())
+                .WithTrailingTrivia(list.GetTrailingTrivia())
+                .WithAdditionalAnnotations(Formatter.Annotation);
+            newRoot = root.ReplaceNode(list, replacementList);
+        }
+        else
+        {
+            var replacement = Attribute(IdentifierName(name))
+                .WithLeadingTrivia(attribute.GetLeadingTrivia())
+                .WithTrailingTrivia(attribute.GetTrailingTrivia())
+                .WithAdditionalAnnotations(Formatter.Annotation);
 
-        var newRoot = root.ReplaceNode(attribute, replacement);
+            newRoot = root.ReplaceNode(attribute, replacement);
+        }
         var newDocument = await Formatter
             .FormatAsync(document.WithSyntaxRoot(newRoot), Formatter.Annotation, cancellationToken: cancel)
             .ConfigureAwait(false);

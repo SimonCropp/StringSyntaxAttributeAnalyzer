@@ -159,7 +159,7 @@ public class SyntaxConstantsGenerator :
                 /// StringSyntaxAttributeAnalyzer — other analyzers (BCL, Roslyn) that look
                 /// for <see cref="StringSyntaxAttribute"/> will not see this attribute.
                 /// </summary>
-                [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property, AllowMultiple = false)]
+                [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue, AllowMultiple = false)]
                 [ExcludeFromCodeCoverage]
                 [DebuggerNonUserCode]
                 sealed class {name}Attribute : System.Attribute;
