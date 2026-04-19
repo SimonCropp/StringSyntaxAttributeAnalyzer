@@ -183,8 +183,9 @@ public class KnownStringSyntaxGenerationTests
 
         foreach (var pair in entries)
         {
-            sb.Append($$"""
-                        ["{{Escape(pair.Key)}}"] = "{{Escape(pair.Value)}}",
+            sb.Append(
+                $"""
+                        ["{Escape(pair.Key)}"] = "{Escape(pair.Value)}",
 
                 """);
         }
