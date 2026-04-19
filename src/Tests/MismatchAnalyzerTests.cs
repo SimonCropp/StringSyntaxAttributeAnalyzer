@@ -816,6 +816,39 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void UnionSyntax_CrossAssembly_FiresSSA003()
+    {
+        // Reproduces the real-world case where the UnionSyntax-attributed property lives
+        // in a separate assembly (messages package). Each assembly gets its own internal
+        // UnionSyntaxAttribute from the generator, so symbol-identity comparison would
+        // miss the attribute. Matching by metadata name fixes it.
+        var messagesSource =
+            """
+            public class Message
+            {
+                [UnionSyntax("html", "xml")]
+                public string Body { get; set; }
+            }
+            """;
+
+        var consumerSource =
+            """
+            public class Receiver
+            {
+                public string Body { get; set; }
+
+                public void Copy(Message message) => Body = message.Body;
+            }
+            """;
+
+        var diagnostics = GetCrossAssemblyDiagnostics(messagesSource, consumerSource);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA003", diagnostics[0].Id);
+        IsTrue(diagnostics[0].GetMessage().Contains("html"));
+    }
+
+    [Test]
     public void FieldSource_Mismatch()
     {
         var source =
@@ -1175,6 +1208,50 @@ public class MismatchAnalyzerTests
 
         return compilation
             .WithAnalyzers([analyzer], analyzerOptions)
+            .GetAnalyzerDiagnosticsAsync()
+            .GetAwaiter()
+            .GetResult();
+    }
+
+    static ImmutableArray<Diagnostic> GetCrossAssemblyDiagnostics(
+        string messagesSource,
+        string consumerSource)
+    {
+        var trustedAssemblies = ((string) AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+            .Split(Path.PathSeparator)
+            .Select(_ => MetadataReference.CreateFromFile(_))
+            .ToList();
+
+        var messagesBase = CSharpCompilation.Create(
+            "Messages",
+            [CSharpSyntaxTree.ParseText(messagesSource)],
+            trustedAssemblies,
+            new(OutputKind.DynamicallyLinkedLibrary));
+        CSharpGeneratorDriver
+            .Create(new SyntaxConstantsGenerator())
+            .RunGeneratorsAndUpdateCompilation(messagesBase, out var messagesCompilation, out _);
+
+        using var messagesStream = new MemoryStream();
+        var emit = messagesCompilation.Emit(messagesStream);
+        if (!emit.Success)
+        {
+            var errors = string.Join("\n", emit.Diagnostics.Where(_ => _.Severity == DiagnosticSeverity.Error));
+            throw new($"Messages compilation failed:\n{errors}");
+        }
+        messagesStream.Position = 0;
+        var messagesReference = MetadataReference.CreateFromStream(messagesStream);
+
+        var consumerBase = CSharpCompilation.Create(
+            "Consumer",
+            [CSharpSyntaxTree.ParseText(consumerSource)],
+            [..trustedAssemblies, messagesReference],
+            new(OutputKind.DynamicallyLinkedLibrary));
+        CSharpGeneratorDriver
+            .Create(new SyntaxConstantsGenerator())
+            .RunGeneratorsAndUpdateCompilation(consumerBase, out var consumerCompilation, out _);
+
+        return consumerCompilation
+            .WithAnalyzers([new MismatchAnalyzer()])
             .GetAnalyzerDiagnosticsAsync()
             .GetAwaiter()
             .GetResult();

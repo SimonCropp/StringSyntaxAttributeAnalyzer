@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <StringSyntaxAnalyzer_EmitGlobalUsings>false</StringSyntaxAnalyzer_EmitGlobalUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StringSyntaxAttributeAnalyzer" />
+  </ItemGroup>
+</Project>

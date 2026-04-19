@@ -78,17 +78,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            // UnionSyntaxAttribute is ours (source-generated, internal per-assembly). Null
-            // if the generator hasn't run — in that case we just behave as before.
-            var unionSyntaxType = start.Compilation
-                .GetTypeByMetadataName("StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute");
-            // ReturnSyntaxAttribute fills the BCL gap (StringSyntaxAttribute can't target
-            // return values). Also source-generated, also null if the generator hasn't run.
-            // TODO: retire this lookup when https://github.com/dotnet/runtime/issues/76203
-            // ships — StringSyntaxAttribute will then target Method/ReturnValue directly.
-            var returnSyntaxType = start.Compilation
-                .GetTypeByMetadataName("StringSyntaxAttributeAnalyzer.ReturnSyntaxAttribute");
-            var types = new SyntaxTypes(stringSyntaxType, unionSyntaxType, returnSyntaxType);
+            // UnionSyntaxAttribute and ReturnSyntaxAttribute are source-generated as
+            // internal per-assembly, so the same metadata name can resolve to distinct
+            // symbols in different compilations (and GetTypeByMetadataName returns null
+            // when multiple references define it). Match by fully-qualified name
+            // instead of symbol identity so cross-assembly attribute use still works.
+            var types = new SyntaxTypes(stringSyntaxType);
 
             var suppression = new NamespaceSuppression(start.Options);
 
@@ -107,14 +102,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             start.RegisterOperationAction(
                 _ => AnalyzeBinaryOperator(_, types, suppression),
                 OperationKind.BinaryOperator);
-            if (unionSyntaxType is not null)
-            {
-                start.RegisterSymbolAction(
-                    _ => AnalyzeSymbolForSingletonUnion(_, unionSyntaxType),
-                    SymbolKind.Parameter,
-                    SymbolKind.Property,
-                    SymbolKind.Field);
-            }
+            start.RegisterSymbolAction(
+                AnalyzeSymbolForSingletonUnion,
+                SymbolKind.Parameter,
+                SymbolKind.Property,
+                SymbolKind.Field);
         });
     }
 
@@ -214,11 +206,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    static void AnalyzeSymbolForSingletonUnion(SymbolAnalysisContext context, INamedTypeSymbol unionSyntaxType)
+    static void AnalyzeSymbolForSingletonUnion(SymbolAnalysisContext context)
     {
         foreach (var attribute in context.Symbol.GetAttributes())
         {
-            if (!SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, unionSyntaxType))
+            if (!IsAttributeNamed(attribute, unionSyntaxMetadataName))
             {
                 continue;
             }
@@ -441,14 +433,26 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return operation;
     }
 
-    readonly struct SyntaxTypes(
-        INamedTypeSymbol stringSyntax,
-        INamedTypeSymbol? unionSyntax,
-        INamedTypeSymbol? returnSyntax)
+    const string unionSyntaxMetadataName = "StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute";
+    const string returnSyntaxMetadataName = "StringSyntaxAttributeAnalyzer.ReturnSyntaxAttribute";
+
+    readonly struct SyntaxTypes(INamedTypeSymbol stringSyntax)
     {
         public INamedTypeSymbol StringSyntax { get; } = stringSyntax;
-        public INamedTypeSymbol? UnionSyntax { get; } = unionSyntax;
-        public INamedTypeSymbol? ReturnSyntax { get; } = returnSyntax;
+    }
+
+    static bool IsAttributeNamed(AttributeData attribute, string fullMetadataName)
+    {
+        var type = attribute.AttributeClass;
+        if (type is null)
+        {
+            return false;
+        }
+
+        // ToDisplayString with the fully-qualified format yields "Namespace.TypeName"
+        // for non-generic types, which matches our metadata-name constants.
+        return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                   .Equals("global::" + fullMetadataName, StringComparison.Ordinal);
     }
 
     static SyntaxInfo GetSyntaxFromAttributes(
@@ -467,15 +471,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return new(SyntaxState.Present, []);
             }
 
-            if (types.UnionSyntax is not null &&
-                SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.UnionSyntax))
+            if (IsAttributeNamed(attribute, unionSyntaxMetadataName))
             {
                 var values = ExtractUnionOptions(attribute);
                 return SyntaxInfo.PresentUnion(values);
             }
 
-            if (types.ReturnSyntax is not null &&
-                SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.ReturnSyntax))
+            if (IsAttributeNamed(attribute, returnSyntaxMetadataName))
             {
                 if (attribute.ConstructorArguments.Length > 0 &&
                     attribute.ConstructorArguments[0].Value is string s)

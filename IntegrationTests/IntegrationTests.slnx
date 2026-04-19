@@ -6,4 +6,5 @@
     <File Path="nuget.config" />
   </Folder>
   <Project Path="IntegrationTests/IntegrationTests.csproj" />
+  <Project Path="NoGlobalUsingsConsumer/NoGlobalUsingsConsumer.csproj" />
 </Solution>

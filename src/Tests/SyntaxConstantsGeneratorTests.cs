@@ -12,7 +12,7 @@ public class SyntaxConstantsGeneratorTests
             .Single(_ => _.FilePath.EndsWith("Syntax.Types.g.cs"));
         var types = typesTree.ToString();
         IsTrue(types.Contains("static class Syntax"));
-        IsTrue(types.Contains("public const string Json = SyntaxAttribute.Json;"));
+        IsTrue(types.Contains("public const string Json = StringSyntaxAttribute.Json;"));
         IsTrue(types.Contains("public const string Html = nameof(Html);"));
 
         var globalsTree = runResult.GeneratedTrees

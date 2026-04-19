@@ -51,34 +51,34 @@ public class SyntaxConstantsGenerator :
         static class Syntax
         {
             /// <summary>The syntax identifier for strings containing composite formats for string formatting.</summary>
-            public const string CompositeFormat = SyntaxAttribute.CompositeFormat;
+            public const string CompositeFormat = StringSyntaxAttribute.CompositeFormat;
 
             /// <summary>The syntax identifier for strings containing date format specifiers.</summary>
-            public const string DateOnlyFormat = SyntaxAttribute.DateOnlyFormat;
+            public const string DateOnlyFormat = StringSyntaxAttribute.DateOnlyFormat;
 
             /// <summary>The syntax identifier for strings containing date and time format specifiers.</summary>
-            public const string DateTimeFormat = SyntaxAttribute.DateTimeFormat;
+            public const string DateTimeFormat = StringSyntaxAttribute.DateTimeFormat;
 
             /// <summary>The syntax identifier for strings containing <see cref="System.Enum"/> format specifiers.</summary>
-            public const string EnumFormat = SyntaxAttribute.EnumFormat;
+            public const string EnumFormat = StringSyntaxAttribute.EnumFormat;
 
             /// <summary>The syntax identifier for strings containing <see cref="System.Guid"/> format specifiers.</summary>
-            public const string GuidFormat = SyntaxAttribute.GuidFormat;
+            public const string GuidFormat = StringSyntaxAttribute.GuidFormat;
 
             /// <summary>The syntax identifier for strings containing JavaScript Object Notation (JSON).</summary>
-            public const string Json = SyntaxAttribute.Json;
+            public const string Json = StringSyntaxAttribute.Json;
 
             /// <summary>The syntax identifier for strings containing numeric format specifiers.</summary>
-            public const string NumericFormat = SyntaxAttribute.NumericFormat;
+            public const string NumericFormat = StringSyntaxAttribute.NumericFormat;
 
             /// <summary>The syntax identifier for strings containing regular expressions.</summary>
-            public const string Regex = SyntaxAttribute.Regex;
+            public const string Regex = StringSyntaxAttribute.Regex;
 
             /// <summary>The syntax identifier for strings containing time format specifiers.</summary>
-            public const string TimeOnlyFormat = SyntaxAttribute.TimeOnlyFormat;
+            public const string TimeOnlyFormat = StringSyntaxAttribute.TimeOnlyFormat;
 
             /// <summary>The syntax identifier for strings containing <see cref="System.TimeSpan"/> format specifiers.</summary>
-            public const string TimeSpanFormat = SyntaxAttribute.TimeSpanFormat;
+            public const string TimeSpanFormat = StringSyntaxAttribute.TimeSpanFormat;
 
             /// <summary>The syntax identifier for strings containing URIs.</summary>
             public const string Uri = nameof(Uri);
