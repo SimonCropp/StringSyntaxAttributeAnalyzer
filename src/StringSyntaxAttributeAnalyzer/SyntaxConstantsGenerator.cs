@@ -43,7 +43,7 @@ public class SyntaxConstantsGenerator :
         [ExcludeFromCodeCoverage]
         [DebuggerNonUserCode]
         #pragma warning disable CS9113
-        sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
+        sealed class ReturnSyntaxAttribute(params string[] syntax) : System.Attribute;
         #pragma warning restore CS9113
 
         [ExcludeFromCodeCoverage]
@@ -159,7 +159,7 @@ public class SyntaxConstantsGenerator :
                 /// StringSyntaxAttributeAnalyzer — other analyzers (BCL, Roslyn) that look
                 /// for <see cref="StringSyntaxAttribute"/> will not see this attribute.
                 /// </summary>
-                [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property, AllowMultiple = false)]
+                [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue, AllowMultiple = false)]
                 [ExcludeFromCodeCoverage]
                 [DebuggerNonUserCode]
                 sealed class {name}Attribute : System.Attribute;

@@ -45,7 +45,7 @@ public class SyntaxConstantsGeneratorTests
         AreEqual(
             0,
             errors.Length,
-            string.Join("\n", errors.Select(_ => _.ToString())));
+            string.Join('\n', errors.Select(_ => _.ToString())));
     }
 
     [Test]
@@ -82,7 +82,7 @@ public class SyntaxConstantsGeneratorTests
         AreEqual(
             0,
             errors.Length,
-            string.Join("\n", errors.Select(_ => _.ToString())));
+            string.Join('\n', errors.Select(_ => _.ToString())));
     }
 
     [Test]

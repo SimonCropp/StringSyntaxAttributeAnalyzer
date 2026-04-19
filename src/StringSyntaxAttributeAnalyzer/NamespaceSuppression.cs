@@ -8,24 +8,18 @@
 // Per-tree resolution: patterns are read from the file-scoped options first
 // (`.editorconfig` `[*.cs]`), falling back to GlobalOptions (`.globalconfig` /
 // `is_global = true`), then the BCL default. Per-tree results are cached.
-sealed class NamespaceSuppression
+sealed class NamespaceSuppression(AnalyzerOptions options)
 {
     const string optionsKey = "stringsyntax.suppressed_target_namespaces";
     const string defaultPatterns = "System*,Microsoft*";
 
-    readonly AnalyzerOptions options;
-    readonly string[] globalPatterns;
-    readonly ConcurrentDictionary<SyntaxTree, string[]> perTreeCache = new();
+    string[] globalPatterns = Parse(
+        options.AnalyzerConfigOptionsProvider.GlobalOptions
+            .TryGetValue(optionsKey, out var configured)
+            ? configured
+            : null);
 
-    public NamespaceSuppression(AnalyzerOptions options)
-    {
-        this.options = options;
-        globalPatterns = Parse(
-            options.AnalyzerConfigOptionsProvider.GlobalOptions
-                .TryGetValue(optionsKey, out var configured)
-                ? configured
-                : null);
-    }
+    ConcurrentDictionary<SyntaxTree, string[]> perTreeCache = new();
 
     public string[] GetPatterns(SyntaxTree? tree)
     {
@@ -34,15 +28,18 @@ sealed class NamespaceSuppression
             return globalPatterns;
         }
 
-        return perTreeCache.GetOrAdd(tree, t =>
-        {
-            var fileOptions = options.AnalyzerConfigOptionsProvider.GetOptions(t);
-            if (fileOptions.TryGetValue(optionsKey, out var configured))
+        return perTreeCache.GetOrAdd(
+            tree,
+            _ =>
             {
-                return Parse(configured);
-            }
-            return globalPatterns;
-        });
+                var fileOptions = options.AnalyzerConfigOptionsProvider.GetOptions(_);
+                if (fileOptions.TryGetValue(optionsKey, out var configured))
+                {
+                    return Parse(configured);
+                }
+
+                return globalPatterns;
+            });
     }
 
     static string[] Parse(string? raw)
@@ -57,7 +54,8 @@ sealed class NamespaceSuppression
 
     public static bool Matches(ISymbol? symbol, string[] patterns)
     {
-        if (symbol is null || patterns.Length == 0)
+        if (symbol is null ||
+            patterns.Length == 0)
         {
             return false;
         }
@@ -66,7 +64,8 @@ sealed class NamespaceSuppression
         // properties/fields, check the containing type's namespace.
         var owner = symbol.ContainingType ?? symbol.ContainingSymbol as INamedTypeSymbol;
         var ns = owner?.ContainingNamespace;
-        if (ns is null || ns.IsGlobalNamespace)
+        if (ns is null ||
+            ns.IsGlobalNamespace)
         {
             return false;
         }

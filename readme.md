@@ -74,7 +74,7 @@ This feature is **opt-in**:
 </PropertyGroup>
 ```
 
-When enabled, the generator emits `Syntax.Shortcuts.g.cs` with one `internal sealed class <Name>Attribute : System.Attribute` per known constant in the `StringSyntaxAttributeAnalyzer` namespace. The SSA002/SSA003/SSA005 codefixes also switch over: instead of offering `[Syntax(Syntax.Html)]`, they offer `[Html]`. A dedicated **SSA007** warning flags existing `[StringSyntax("Html")]` / `[StringSyntax(Syntax.Html)]` attributes and offers a one-click "Replace with `[Html]`" fix — so a whole codebase can be migrated in a single apply-all. Usage is then:
+When enabled, the generator emits `Syntax.Shortcuts.g.cs` with one `internal sealed class <Name>Attribute : System.Attribute` per known constant in the `StringSyntaxAttributeAnalyzer` namespace. Their `AttributeUsage` covers `Field | Parameter | Property | ReturnValue`, so `[return: Json]` on a method is legal and is read by the analyzer as the equivalent of `[ReturnSyntax(Syntax.Json)]`. The SSA002/SSA003/SSA005 codefixes also switch over: instead of offering `[Syntax(Syntax.Html)]`, they offer `[Html]`. A dedicated **SSA007** warning flags existing `[StringSyntax("Html")]` / `[StringSyntax(Syntax.Html)]` / `[ReturnSyntax(Syntax.Json)]` attributes and offers a one-click "Replace with `[Html]`" (or "Replace with `[return: Json]`" for methods) fix — so a whole codebase can be migrated in a single apply-all. Usage is then:
 
 ```csharp
 public class Messages
@@ -83,6 +83,9 @@ public class Messages
     public string Body { get; set; } = "";
 
     public void Render([Regex] string pattern) { }
+
+    [return: Json]
+    public string Build() => "{}";
 }
 ```
 
@@ -190,6 +193,8 @@ public void Use() => ConsumePattern(GetPattern()); // no diagnostic — invocati
 ```
 
 With the annotation, calls to `GetPattern()` are treated as `[StringSyntax("Regex")]`-attributed at every call site. A call passing the result into a mismatched target fires SSA001; passing it into a bare `string` parameter fires SSA003; passing it into the matching target is silent.
+
+When shortcut attributes are opted in (see [Shortcut attributes](#shortcut-attributes-opt-in)), the single-value form `[ReturnSyntax(Syntax.Regex)]` can be written more concisely as `[return: Regex]`. SSA007 offers a codefix to migrate existing `[ReturnSyntax(...)]` declarations.
 
 ### Unannotated methods fire SSA002
 

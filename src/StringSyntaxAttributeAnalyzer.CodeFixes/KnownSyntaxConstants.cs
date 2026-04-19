@@ -31,5 +31,34 @@ static class KnownSyntaxConstants
         "Sql"
     ];
 
-    public static bool IsKnown(string value) => Names.Contains(value);
+    // Lookup keyed by `lower(first-char) + rest`. Mirrors SyntaxValueMatcher's
+    // first-character-case-insensitive comparison so values written as `"html"` (e.g.
+    // from a Rider-style `// language=html` convention) resolve to the canonical
+    // `Html` and pick up the shortcut attribute / `Syntax.Html` constant the same
+    // way `"Html"` would.
+    static readonly ImmutableDictionary<string, string> canonicalByFoldedKey =
+        Names.ToImmutableDictionary(FoldKey, name => name);
+
+    static string FoldKey(string name) =>
+        name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name.Substring(1);
+
+    public static bool TryGetCanonical(string? value, out string canonical)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            canonical = value!;
+            return false;
+        }
+
+        if (canonicalByFoldedKey.TryGetValue(FoldKey(value!), out var resolved))
+        {
+            canonical = resolved;
+            return true;
+        }
+
+        canonical = value!;
+        return false;
+    }
+
+    public static bool IsKnown(string? value) => TryGetCanonical(value, out _);
 }

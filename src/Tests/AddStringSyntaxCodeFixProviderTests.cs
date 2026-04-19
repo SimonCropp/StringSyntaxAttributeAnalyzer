@@ -149,7 +149,10 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix<ReplaceUnionWithStringSyntaxCodeFixProvider>(source);
 
-        Contains(fixedSource, "[Syntax(\"html\")]");
+        // Lowercase `"html"` resolves to the canonical `Html` constant — same logic
+        // as the rest of the codefix, kept consistent so the singleton-union rewrite
+        // doesn't degrade to a string literal when a known constant exists.
+        Contains(fixedSource, "[Syntax(Syntax.Html)]");
         IsFalse(fixedSource.Contains("[UnionSyntax"), $"Expected UnionSyntax removed:\n{fixedSource}");
     }
 
@@ -612,6 +615,88 @@ public class AddStringSyntaxCodeFixProviderTests
         Contains(fixedSource, "[Syntax(Syntax.Xml)]");
     }
 
+    [Test]
+    public async Task SSA002_UnionTarget_MethodSource_OffersReturnSyntaxUnionAndPerValueFixes()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        AreEqual(3, actions.Length);
+        AreEqual(
+            "Add [ReturnSyntax(Syntax.Html, Syntax.Xml)] to method 'Build'",
+            actions[0].Title);
+        AreEqual(
+            "Add [ReturnSyntax(Syntax.Html)] to method 'Build'",
+            actions[1].Title);
+        AreEqual(
+            "Add [ReturnSyntax(Syntax.Xml)] to method 'Build'",
+            actions[2].Title);
+    }
+
+    [Test]
+    public async Task SSA002_UnionTarget_MethodSource_ApplyUnionFix()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 0);
+
+        Contains(fixedSource, "[ReturnSyntax(Syntax.Html, Syntax.Xml)]");
+        Contains(fixedSource, "public string Build()");
+    }
+
+    [Test]
+    public async Task SSA002_UnionTarget_MethodSource_ApplySingleValueFix()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 1);
+
+        Contains(fixedSource, "[ReturnSyntax(Syntax.Html)]");
+    }
+
     static void Contains(string actual, string expected) =>
         IsTrue(
             actual.Contains(expected),
@@ -723,13 +808,223 @@ public class AddStringSyntaxCodeFixProviderTests
         IsFalse(fixedSource.Contains("[StringSyntax(\"Html\")]"));
     }
 
-    static Task<string> ApplyFix(string source) =>
-        ApplyFix<AddStringSyntaxCodeFixProvider>(source);
+    [Test]
+    public async Task SSA007_ReturnSyntaxOnMethod_ReplacesWithReturnTargetShortcut()
+    {
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class JsonAttribute : System.Attribute;
+            }
 
-    static async Task<string> ApplyFix<TProvider>(string source)
+            public class Holder
+            {
+                [ReturnSyntax("Json")]
+                public string Build() => "{}";
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source, "SSA007");
+
+        Contains(fixedSource, "[return: Json]");
+        IsFalse(fixedSource.Contains("[ReturnSyntax("));
+    }
+
+    [Test]
+    public async Task SSA007_ReturnSyntaxOnMethod_TitleUsesReturnTarget()
+    {
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class JsonAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Json")]
+                public string Build() => "{}";
+            }
+            """;
+
+        var actions = await GetCodeActions(source, "SSA007");
+
+        AreEqual(1, actions.Length);
+        AreEqual("Replace with [return: Json]", actions[0].Title);
+    }
+
+    [Test]
+    public async Task SSA007_StringSyntaxOnProperty_TitleUsesBareShortcut()
+    {
+        // Sanity-check that the non-method path still reports the original title.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var actions = await GetCodeActions(source, "SSA007");
+
+        AreEqual(1, actions.Length);
+        AreEqual("Replace with [Html]", actions[0].Title);
+    }
+
+    [Test]
+    public async Task SSA002_LowercaseValue_NormalizesToCanonicalConstant()
+    {
+        // Target spelled lowercase `"html"` (matches via SyntaxValueMatcher's
+        // first-char case-insensitive rule). Without shortcut opt-in, the codefix
+        // should still surface `Syntax.Html` rather than degrading to a literal.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("html")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[Syntax(Syntax.Html)]");
+    }
+
+    [Test]
+    public async Task SSA002_LowercaseValueWithShortcutsOptedIn_UsesParameterlessShortcut()
+    {
+        // Reproduces the LegislationApi scenario: the consumer writes
+        // `[Syntax("html")]` (lowercase) on the target and has opted into shortcut
+        // attributes. The codefix should resolve `"html"` → canonical `Html` and
+        // emit `[Html]`, not fall back to `[Syntax("html")]`.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Target
+            {
+                public void Consume([StringSyntax("html")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        // Multiple diagnostics now fire: SSA002 on the source Holder.Value (what this
+        // test exercises) and SSA007 on the lowercase `[StringSyntax("html")]` itself
+        // (covered separately by the AddShortcut test).
+        var fixedSource = await ApplyFix(source, "SSA002");
+
+        Contains(fixedSource, "[Html]");
+        IsFalse(fixedSource.Contains("[Syntax(\"html\")]"));
+        IsFalse(fixedSource.Contains("[Syntax(Syntax.Html)]"));
+    }
+
+    [Test]
+    public async Task SSA007_LowercaseValue_ReplacesWithShortcut()
+    {
+        // Opted-in consumer has written `[StringSyntax("html")]` (lowercase). SSA007
+        // fires with the canonical `Html`, codefix rewrites it as `[Html]`.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [StringSyntax("html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source, "SSA007");
+
+        Contains(fixedSource, "[Html]");
+        IsFalse(fixedSource.Contains("StringSyntax(\"html\")"));
+    }
+
+    [Test]
+    public async Task SSA003_LowercaseUnionOption_NormalizesToCanonical()
+    {
+        // Union option spelled lowercase should still produce the canonical
+        // `Syntax.Html` / `Syntax.Xml` references (and a `[Html]` shortcut for the
+        // single-value branch when shortcuts are opted in is covered separately).
+        var source =
+            """
+            public class Target
+            {
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [UnionSyntax("html", "xml")]
+                public string Body { get; set; }
+
+                public Target Create() => new Target { Body = Body };
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 0);
+
+        Contains(fixedSource, "[UnionSyntax(Syntax.Html, Syntax.Xml)]");
+    }
+
+    [Test]
+    public async Task SSA006_LowercaseSingletonUnion_NormalizesToCanonical()
+    {
+        // Singleton-union rewrite (`[UnionSyntax("html")]` → `[Syntax(...)]`) should
+        // resolve to the canonical `Syntax.Html` constant rather than the literal
+        // string the user wrote.
+        var source =
+            """
+            public class Holder
+            {
+                [UnionSyntax("html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var fixedSource = await ApplyFix<ReplaceUnionWithStringSyntaxCodeFixProvider>(source);
+
+        Contains(fixedSource, "[Syntax(Syntax.Html)]");
+    }
+
+    static Task<string> ApplyFix(string source, string? diagnosticId = null) =>
+        ApplyFix<AddStringSyntaxCodeFixProvider>(source, diagnosticId);
+
+    static async Task<string> ApplyFix<TProvider>(string source, string? diagnosticId = null)
         where TProvider : CodeFixProvider, new()
     {
-        var (document, diagnostic) = await PrepareFixAsync(source);
+        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
 
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
         var context = new CodeFixContext(
@@ -749,9 +1044,9 @@ public class AddStringSyntaxCodeFixProviderTests
         return text.ToString();
     }
 
-    static async Task<ImmutableArray<CodeAction>> GetCodeActions(string source)
+    static async Task<ImmutableArray<CodeAction>> GetCodeActions(string source, string? diagnosticId = null)
     {
-        var (document, diagnostic) = await PrepareFixAsync(source);
+        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
 
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
         var context = new CodeFixContext(
@@ -764,7 +1059,7 @@ public class AddStringSyntaxCodeFixProviderTests
         return actions.ToImmutable();
     }
 
-    static async Task<(Document Document, Diagnostic Diagnostic)> PrepareFixAsync(string source)
+    static async Task<(Document Document, Diagnostic Diagnostic)> PrepareFixAsync(string source, string? diagnosticId = null)
     {
         var workspace = new AdhocWorkspace();
         var projectInfo = ProjectInfo.Create(
@@ -795,7 +1090,7 @@ public class AddStringSyntaxCodeFixProviderTests
                 sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
 
                 [System.AttributeUsage(System.AttributeTargets.Method | System.AttributeTargets.Delegate, AllowMultiple = false)]
-                sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
+                sealed class ReturnSyntaxAttribute(params string[] syntax) : System.Attribute;
                 """)
             .AddDocument(documentId, "Test.cs", source);
 
@@ -805,7 +1100,10 @@ public class AddStringSyntaxCodeFixProviderTests
             .WithAnalyzers([new MismatchAnalyzer()])
             .GetAnalyzerDiagnosticsAsync();
 
-        return (document, diagnostics.Single());
+        var filtered = diagnosticId is null
+            ? diagnostics
+            : diagnostics.Where(_ => _.Id == diagnosticId).ToImmutableArray();
+        return (document, filtered.Single());
     }
 
     static IEnumerable<MetadataReference> TrustedReferences() =>

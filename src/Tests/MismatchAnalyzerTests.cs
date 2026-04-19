@@ -1005,6 +1005,64 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void ReturnSyntax_UnionValues_MatchingUnionTarget_NoDiagnostic()
+    {
+        // ReturnSyntax(params string[]) lets a method return-type carry union semantics.
+        // Matching [UnionSyntax(...)] on the receiving parameter/property should round-trip
+        // cleanly — no mismatch diagnostic.
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Html", "Xml")]
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ReturnSyntax_UnionValues_MismatchedUnionTarget_SSA001()
+    {
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Json", "Regex")]
+                public string Build() => "{}";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
+    [Test]
     public void ReturnSyntax_SourceAnnotated_TargetBare_SSA003()
     {
         var source =
@@ -1192,6 +1250,118 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void ShortcutAttribute_OptedIn_StringSyntaxWithLowercaseValue_ReportsSSA007()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA007", diagnostics[0].Id);
+        IsTrue(diagnostics[0].GetMessage().Contains("Html"));
+        AreEqual("Html", diagnostics[0].Properties["StringSyntaxValue"]);
+    }
+
+    [Test]
+    public void ShortcutAttribute_OptedIn_ReturnShortcutOnMethod_MatchingTarget_NoDiagnostic()
+    {
+        // `[return: Json]` on a method should round-trip against `[Json]` on the
+        // consuming parameter.
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Consumer
+            {
+                public void Consume([Json] string value) { }
+
+                [return: Json]
+                public string Build() => "{}";
+
+                public void Use() => Consume(Build());
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ShortcutAttribute_OptedIn_ReturnShortcutOnMethod_MismatchedTarget_SSA001()
+    {
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Consumer
+            {
+                public void Consume([Regex] string value) { }
+
+                [return: Json]
+                public string Build() => "{}";
+
+                public void Use() => Consume(Build());
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
+    [Test]
+    public void ShortcutAttribute_OptedIn_ReturnSyntaxKnownValue_ReportsSSA007()
+    {
+        // [ReturnSyntax("Json")] with the Json shortcut available — SSA007 should fire
+        // suggesting the `[return: Json]` replacement.
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Holder
+            {
+                [ReturnSyntax("Json")]
+                public string Build() => "{}";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA007", diagnostics[0].Id);
+        AreEqual("Json", diagnostics[0].Properties["StringSyntaxValue"]);
+    }
+
+    [Test]
+    public void ShortcutAttribute_OptedIn_ReturnSyntaxUnionValue_NoSSA007()
+    {
+        // Multi-value ReturnSyntax can't collapse to a single shortcut — SSA007 stays silent.
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Holder
+            {
+                [ReturnSyntax("Json", "Html")]
+                public string Build() => "{}";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(0, diagnostics.Count(_ => _.Id == "SSA007"));
+    }
+
+    [Test]
     public void ShortcutAttribute_NotOptedIn_StringSyntaxWithKnownValue_NoDiagnostic()
     {
         var source =
@@ -1350,7 +1520,7 @@ public class MismatchAnalyzerTests
         var emit = messagesCompilation.Emit(messagesStream);
         if (!emit.Success)
         {
-            var errors = string.Join("\n", emit.Diagnostics.Where(_ => _.Severity == DiagnosticSeverity.Error));
+            var errors = string.Join('\n', emit.Diagnostics.Where(_ => _.Severity == DiagnosticSeverity.Error));
             throw new($"Messages compilation failed:\n{errors}");
         }
         messagesStream.Position = 0;

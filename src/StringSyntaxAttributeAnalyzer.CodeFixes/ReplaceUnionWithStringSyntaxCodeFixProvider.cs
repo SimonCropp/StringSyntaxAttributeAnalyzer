@@ -29,6 +29,13 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
                 continue;
             }
 
+            // Normalize to canonical PascalCase so a UnionSyntax option spelled
+            // `"html"` resolves to `Syntax.Html` rather than degrading to `"html"`.
+            if (KnownSyntaxConstants.TryGetCanonical(value, out var canonical))
+            {
+                value = canonical;
+            }
+
             var attribute = root
                 .FindNode(diagnostic.Location.SourceSpan)
                 .FirstAncestorOrSelf<AttributeSyntax>();
@@ -45,9 +52,7 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
             var useConstant = attributeName == "Syntax" && KnownSyntaxConstants.IsKnown(value);
             var argumentText = useConstant ? $"Syntax.{value}" : $"\"{value}\"";
 
-            var title = HostDescription.FindAttributeOwner(attribute) is { } owner
-                ? $"Replace [UnionSyntax] on {HostDescription.Describe(owner)} with [{attributeName}({argumentText})]"
-                : $"Replace with [{attributeName}({argumentText})]";
+            var title = GetTitle(attribute, attributeName, argumentText);
 
             context.RegisterCodeFix(
                 CodeAction.Create(
@@ -56,6 +61,16 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
                     equivalenceKey: $"ReplaceUnionWithSyntax:{value}"),
                 diagnostic);
         }
+    }
+
+    static string GetTitle(AttributeSyntax attribute, string attributeName, string argumentText)
+    {
+        if (HostDescription.FindAttributeOwner(attribute) is { } owner)
+        {
+            return $"Replace [UnionSyntax] on {HostDescription.Describe(owner)} with [{attributeName}({argumentText})]";
+        }
+
+        return $"Replace with [{attributeName}({argumentText})]";
     }
 
     static async Task<Document> ReplaceAttributeAsync(
@@ -72,8 +87,8 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
             return document;
         }
 
-        var expression = useConstant
-            ? (ExpressionSyntax)MemberAccessExpression(
+        ExpressionSyntax expression = useConstant
+            ? MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
                 IdentifierName("Syntax"),
                 IdentifierName(value))

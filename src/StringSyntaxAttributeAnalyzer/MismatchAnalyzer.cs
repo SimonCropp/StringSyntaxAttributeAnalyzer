@@ -96,11 +96,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             // Shortcut attributes present in this compilation (empty unless the consumer
             // opted in with `StringSyntaxAnalyzer_EmitShortcutAttributes=true`). Used by
-            // SSA007 to offer `[Html]` in place of `[StringSyntax("Html")]`.
+            // SSA007 to offer `[Html]` in place of `[StringSyntax("Html")]`. Keyed by
+            // first-char-folded name so `"html"` also resolves to `Html`, matching the
+            // case folding used elsewhere (SyntaxValueMatcher, KnownSyntaxConstants).
             var availableShortcuts = shortcutAttributeNames
                 .Where(_ => start.Compilation
                     .GetTypeByMetadataName($"{shortcutAttributeNamespace}.{_}Attribute") is not null)
-                .ToImmutableHashSet();
+                .ToImmutableDictionary(FoldShortcutKey, _ => _);
 
             var suppression = new NamespaceSuppression(start.Options);
 
@@ -125,13 +127,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 SymbolKind.Property,
                 SymbolKind.Field);
 
-            if (!availableShortcuts.IsEmpty)
+            if (availableShortcuts.Count > 0)
             {
                 start.RegisterSymbolAction(
                     _ => AnalyzeSymbolForRedundantStringSyntax(_, types, availableShortcuts),
                     SymbolKind.Parameter,
                     SymbolKind.Property,
-                    SymbolKind.Field);
+                    SymbolKind.Field,
+                    SymbolKind.Method);
             }
         });
     }
@@ -139,42 +142,84 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzeSymbolForRedundantStringSyntax(
         SymbolAnalysisContext context,
         SyntaxTypes types,
-        ImmutableHashSet<string> availableShortcuts)
+        ImmutableDictionary<string, string> availableShortcuts)
     {
         foreach (var attribute in context.Symbol.GetAttributes())
         {
-            if (!SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
-            {
-                continue;
-            }
+            TryReportRedundant(context, types, availableShortcuts, attribute);
+        }
 
-            if (attribute.ConstructorArguments.Length == 0 ||
-                attribute.ConstructorArguments[0].Value is not string value)
+        // A `[StringSyntax("X")]` at `[return: ...]` position lives on return-value
+        // attributes, not method-target attributes — sweep those too so SSA007 covers
+        // the `[return: StringSyntax(...)]` case. `[ReturnSyntax("X")]` itself is
+        // already covered by the method-target loop above.
+        if (context.Symbol is IMethodSymbol method)
+        {
+            foreach (var attribute in method.GetReturnTypeAttributes())
             {
-                continue;
+                TryReportRedundant(context, types, availableShortcuts, attribute);
             }
-
-            if (!availableShortcuts.Contains(value))
-            {
-                continue;
-            }
-
-            var location = attribute.ApplicationSyntaxReference?
-                .GetSyntax(context.CancellationToken)
-                .GetLocation();
-            if (location is null)
-            {
-                continue;
-            }
-
-            var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, value);
-            context.ReportDiagnostic(Diagnostic.Create(
-                redundantStringSyntaxRule,
-                location,
-                properties: properties,
-                messageArgs: value));
         }
     }
+
+    static void TryReportRedundant(
+        SymbolAnalysisContext context,
+        SyntaxTypes types,
+        ImmutableDictionary<string, string> availableShortcuts,
+        AttributeData attribute)
+    {
+        string value;
+        if (SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
+        {
+            if (attribute.ConstructorArguments.Length == 0 ||
+                attribute.ConstructorArguments[0].Value is not string s)
+            {
+                return;
+            }
+            value = s;
+        }
+        else if (IsAttributeNamed(attribute, returnSyntaxMetadataName))
+        {
+            // Only the single-value ReturnSyntax case maps to a shortcut. Multi-value
+            // unions can't collapse to a single `[return: X]`.
+            var options = ExtractUnionOptions(attribute);
+            if (options.Length != 1)
+            {
+                return;
+            }
+            value = options[0];
+        }
+        else
+        {
+            return;
+        }
+
+        // First-char-folded lookup so `"html"` and `"Html"` both resolve to the
+        // canonical `Html` shortcut. The canonical form is what we report in the
+        // message and put in the properties bag, so the codefix emits `[Html]`.
+        if (!availableShortcuts.TryGetValue(FoldShortcutKey(value), out var canonical))
+        {
+            return;
+        }
+
+        var location = attribute.ApplicationSyntaxReference?
+            .GetSyntax(context.CancellationToken)
+            .GetLocation();
+        if (location is null)
+        {
+            return;
+        }
+
+        var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, canonical);
+        context.ReportDiagnostic(Diagnostic.Create(
+            redundantStringSyntaxRule,
+            location,
+            properties: properties,
+            messageArgs: canonical));
+    }
+
+    static string FoldShortcutKey(string name) =>
+        name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name.Substring(1);
 
     static void AnalyzeArgument(
         OperationAnalysisContext context,
@@ -453,6 +498,19 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return info;
         }
 
+        // `[return: Json]` (and other shortcut attributes) lives on the method's return
+        // value, not the method symbol — `IMethodSymbol.GetAttributes()` won't surface it.
+        // Check `GetReturnTypeAttributes()` as a fallback so `[return: Json]` is treated
+        // the same as `[ReturnSyntax(Syntax.Json)]`.
+        if (symbol is IMethodSymbol method)
+        {
+            var returnInfo = GetSyntaxFromAttributes(method.GetReturnTypeAttributes(), types);
+            if (returnInfo.State == SyntaxState.Present)
+            {
+                return returnInfo;
+            }
+        }
+
         // Records: a primary-constructor parameter with [StringSyntax] doesn't
         // propagate the attribute to the synthesized property (the default
         // attribute target for such parameters is the parameter itself). Treat
@@ -572,12 +630,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             if (IsAttributeNamed(attribute, returnSyntaxMetadataName))
             {
-                if (attribute.ConstructorArguments.Length > 0 &&
-                    attribute.ConstructorArguments[0].Value is string s)
+                var values = ExtractUnionOptions(attribute);
+                if (values.Length == 1)
                 {
-                    return SyntaxInfo.Present(s);
+                    return SyntaxInfo.Present(values[0]);
                 }
-                return new(SyntaxState.Present, []);
+                return SyntaxInfo.PresentUnion(values);
             }
 
             if (TryMatchShortcutAttribute(attribute, out var shortcutValue))

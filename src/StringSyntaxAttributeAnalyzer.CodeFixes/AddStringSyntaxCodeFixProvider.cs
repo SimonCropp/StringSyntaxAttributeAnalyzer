@@ -31,7 +31,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         {
             if (diagnostic.Id == redundantStringSyntaxId)
             {
-                RegisterReplaceWithShortcut(context, diagnostic);
+                await RegisterReplaceWithShortcut(context, diagnostic).ConfigureAwait(false);
                 continue;
             }
 
@@ -69,7 +69,14 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             }
 
             var host = FindAttributeHost(declarationNode);
-            var values = value.Split('|');
+            // Normalize each raw value to its canonical PascalCase form (e.g. `"html"`
+            // → `"Html"`) so downstream `IsKnown`/shortcut/`Syntax.X` lookups succeed
+            // for case-insensitive variants. Unknown values pass through unchanged so
+            // custom format strings still emit as literals.
+            var values = value
+                .Split('|')
+                .Select(_ => KnownSyntaxConstants.TryGetCanonical(_, out var canonical) ? canonical : _)
+                .ToArray();
 
             // For a union source (multiple values), offer one fix per option — and, when
             // the host can carry UnionSyntax (property/field/parameter), an additional
@@ -109,16 +116,24 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         }
     }
 
-    static void RegisterReplaceWithShortcut(CodeFixContext context, Diagnostic diagnostic)
+    static async Task RegisterReplaceWithShortcut(CodeFixContext context, Diagnostic diagnostic)
     {
         if (!diagnostic.Properties.TryGetValue(valueKey, out var value) || value is null)
         {
             return;
         }
 
+        var root = await context.Document
+            .GetSyntaxRootAsync(context.CancellationToken)
+            .ConfigureAwait(false);
+        var isReturn = root is not null && IsMethodAttribute(root, diagnostic.Location);
+        var title = isReturn
+            ? $"Replace with [return: {value}]"
+            : $"Replace with [{value}]";
+
         context.RegisterCodeFix(
             CodeAction.Create(
-                $"Replace with [{value}]",
+                title,
                 cancel => ReplaceWithShortcutAsync(
                     context.Document.Project.Solution,
                     diagnostic.Location,
@@ -126,6 +141,16 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                     cancel),
                 equivalenceKey: $"ReplaceWithShortcut:{value}"),
             diagnostic);
+    }
+
+    static bool IsMethodAttribute(SyntaxNode root, Location location)
+    {
+        var node = root.FindNode(location.SourceSpan);
+        var attribute = node as AttributeSyntax ?? node.FirstAncestorOrSelf<AttributeSyntax>();
+        return attribute?.FirstAncestorOrSelf<AttributeListSyntax>()?.Parent is
+            MethodDeclarationSyntax or
+            LocalFunctionStatementSyntax or
+            DelegateDeclarationSyntax;
     }
 
     static async Task<Solution> ReplaceWithShortcutAsync(
@@ -146,7 +171,8 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
-        // The diagnostic location is the `[StringSyntax(...)]` AttributeSyntax itself.
+        // The diagnostic location is the `[StringSyntax(...)]` (or `[ReturnSyntax(...)]`)
+        // AttributeSyntax itself.
         var node = root.FindNode(location.SourceSpan);
         var attribute = node as AttributeSyntax ?? node.FirstAncestorOrSelf<AttributeSyntax>();
         if (attribute is null)
@@ -154,12 +180,31 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
-        var replacement = Attribute(IdentifierName(name))
-            .WithLeadingTrivia(attribute.GetLeadingTrivia())
-            .WithTrailingTrivia(attribute.GetTrailingTrivia())
-            .WithAdditionalAnnotations(Formatter.Annotation);
+        var list = attribute.FirstAncestorOrSelf<AttributeListSyntax>();
+        SyntaxNode newRoot;
+        if (list is not null &&
+            list.Parent is MethodDeclarationSyntax or LocalFunctionStatementSyntax or DelegateDeclarationSyntax &&
+            list.Attributes.Count == 1)
+        {
+            // Shortcut attributes on methods compile as `[return: Name]` — their
+            // AttributeUsage targets ReturnValue, not Method. Rebuild the whole list
+            // with the `return:` target specifier so the output is legal C#.
+            var replacementList = AttributeList(SingletonSeparatedList(Attribute(IdentifierName(name))))
+                .WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword)))
+                .WithLeadingTrivia(list.GetLeadingTrivia())
+                .WithTrailingTrivia(list.GetTrailingTrivia())
+                .WithAdditionalAnnotations(Formatter.Annotation);
+            newRoot = root.ReplaceNode(list, replacementList);
+        }
+        else
+        {
+            var replacement = Attribute(IdentifierName(name))
+                .WithLeadingTrivia(attribute.GetLeadingTrivia())
+                .WithTrailingTrivia(attribute.GetTrailingTrivia())
+                .WithAdditionalAnnotations(Formatter.Annotation);
 
-        var newRoot = root.ReplaceNode(attribute, replacement);
+            newRoot = root.ReplaceNode(attribute, replacement);
+        }
         var newDocument = await Formatter
             .FormatAsync(document.WithSyntaxRoot(newRoot), Formatter.Annotation, cancellationToken: cancel)
             .ConfigureAwait(false);
@@ -170,7 +215,10 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         host is
             PropertyDeclarationSyntax or
             FieldDeclarationSyntax or
-            ParameterSyntax;
+            ParameterSyntax or
+            MethodDeclarationSyntax or
+            LocalFunctionStatementSyntax or
+            DelegateDeclarationSyntax;
 
     static async Task<Solution> AddAttributeAsync(
         Solution solution,
@@ -301,15 +349,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         // Known values surface as `Syntax.X` so the user gets a named constant rather
         // than a bare string literal; unknown values (e.g. "custom-format") fall back
         // to a literal. Titles mirror what the fix actually writes.
-        var argument = KnownSyntaxConstants.IsKnown(value)
-            ? $"Syntax.{value}"
-            : $"\"{value}\"";
         if (useShortcut)
         {
             return (
                 $"Add [{value}] to {description}",
                 $"AddShortcut:{value}");
         }
+        var argument = KnownSyntaxConstants.IsKnown(value)
+            ? $"Syntax.{value}"
+            : $"\"{value}\"";
         return host switch
         {
             LocalDeclarationStatementSyntax => (
@@ -338,7 +386,9 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return false;
         }
 
-        if (host is null || IsMethodHost(host) || host is LocalDeclarationStatementSyntax)
+        if (host is null ||
+            IsMethodHost(host) ||
+            host is LocalDeclarationStatementSyntax)
         {
             return false;
         }
@@ -426,9 +476,10 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     {
         var description = host is null ? "declaration" : HostDescription.Describe(host);
         var argumentList = string.Join(", ", values.Select(FormatArgument));
+        var attributeName = IsMethodHost(host) ? "ReturnSyntax" : "UnionSyntax";
         return (
-            $"Add [UnionSyntax({argumentList})] to {description}",
-            $"AddUnionSyntax:{string.Join("|", values)}");
+            $"Add [{attributeName}({argumentList})] to {description}",
+            $"Add{attributeName}:{string.Join('|', values)}");
     }
 
     static string FormatArgument(string value) =>
@@ -447,7 +498,8 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return AttributeArgument(expression);
         });
 
-        var attribute = Attribute(IdentifierName("UnionSyntax"))
+        var attributeName = IsMethodHost(host) ? "ReturnSyntax" : "UnionSyntax";
+        var attribute = Attribute(IdentifierName(attributeName))
             .WithArgumentList(AttributeArgumentList(SeparatedList(arguments)));
 
         var attributes = AttributeList(SingletonSeparatedList(attribute))
@@ -458,6 +510,9 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
             FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
             ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
+            MethodDeclarationSyntax method => method.AddAttributeLists(attributes),
+            LocalFunctionStatementSyntax local => local.AddAttributeLists(attributes),
+            DelegateDeclarationSyntax del => del.AddAttributeLists(attributes),
             _ => null
         };
     }
@@ -507,15 +562,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         foreach (var tree in compilation.SyntaxTrees)
         {
             var root = tree.GetRoot();
-            foreach (var usingDirective in root
+            foreach (var directive in root
                          .DescendantNodes(_ => _ is
                              CompilationUnitSyntax or
                              NamespaceDeclarationSyntax or
                              FileScopedNamespaceDeclarationSyntax)
                          .OfType<UsingDirectiveSyntax>())
             {
-                if (usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
-                    usingDirective.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")
+                if (directive.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
+                    directive.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")
                 {
                     return "Syntax";
                 }
