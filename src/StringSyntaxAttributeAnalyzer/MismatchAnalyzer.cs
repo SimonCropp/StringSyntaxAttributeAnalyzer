@@ -489,6 +489,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return SyntaxInfo.Present(comment);
             }
 
+            // `out var x`, `is string s`, `foreach (var x in ...)` and other
+            // pattern/designation locals aren't declared via a LocalDeclarationStatement,
+            // so there's no place for the codefix to attach `// language=<name>`. Treat
+            // them as Unknown rather than NotPresent — same reasoning as invocation
+            // results: the source isn't attributable, so SSA002 would be an unfixable
+            // warning. Only keep NotPresent for locals that can actually host the fix.
+            if (!CanHostLanguageComment(local))
+            {
+                return SyntaxInfo.Unknown;
+            }
+
             return SyntaxInfo.NotPresent;
         }
 
@@ -545,6 +556,19 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         return null;
+    }
+
+    static bool CanHostLanguageComment(ILocalSymbol local)
+    {
+        foreach (var reference in local.DeclaringSyntaxReferences)
+        {
+            if (reference.GetSyntax().FirstAncestorOrSelf<LocalDeclarationStatementSyntax>() is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     static IOperation UnwrapConversions(IOperation operation)

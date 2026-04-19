@@ -1206,6 +1206,63 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void LocalVariable_OutVar_NoDiagnostic()
+    {
+        // `out var` declares via SingleVariableDesignationSyntax, not
+        // LocalDeclarationStatementSyntax — there's no place to attach a
+        // `// language=<name>` comment, so the diagnostic would be unfixable.
+        // Treat as Unknown (same as an invocation result) rather than firing
+        // SSA002 with a codefix that silently lands on the wrong node.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Json)] string value) { }
+
+                public bool TryGet(string key, out string value) { value = ""; return true; }
+
+                public void Use()
+                {
+                    if (TryGet("k", out var payload))
+                    {
+                        Consume(payload);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void LocalVariable_PatternDesignation_NoDiagnostic()
+    {
+        // `is string s` also declares via SingleVariableDesignationSyntax. Same
+        // reasoning as out-var: no fixable host, so suppress rather than warn.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Json)] string value) { }
+
+                public void Use(object obj)
+                {
+                    if (obj is string s)
+                    {
+                        Consume(s);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
     public void LocalVariable_LanguageComment_PrefixOption_Ignored()
     {
         // Rider allows `//language=css prefix=body{ postfix=}`. We ignore the

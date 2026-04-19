@@ -306,6 +306,16 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
     static SyntaxNode? FindAttributeHost(SyntaxNode node)
     {
+        // `out var x`, `is string s`, and other pattern/designation-introduced locals
+        // declare via SingleVariableDesignationSyntax rather than VariableDeclaratorSyntax.
+        // There is no legal host for `[StringSyntax]` or a `// language=` comment on such
+        // a designation — bail so the codefix declines to register rather than walking
+        // up and attaching the attribute to the enclosing method by accident.
+        if (node.FirstAncestorOrSelf<SingleVariableDesignationSyntax>() is not null)
+        {
+            return null;
+        }
+
         // Both IFieldSymbol and ILocalSymbol DeclaringSyntaxReferences point at the
         // VariableDeclaratorSyntax (e.g. `a` in `public string a, b;` or `var a = 1`).
         // The host depends on context: FieldDeclarationSyntax for a field,
