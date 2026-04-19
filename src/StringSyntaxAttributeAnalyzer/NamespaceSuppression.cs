@@ -21,6 +21,9 @@ sealed class NamespaceSuppression(AnalyzerOptions options)
 
     ConcurrentDictionary<SyntaxTree, string[]> perTreeCache = new();
 
+    ConcurrentDictionary<INamespaceSymbol, string> namespaceNameCache =
+        new(SymbolEqualityComparer.Default);
+
     public string[] GetPatterns(SyntaxTree? tree)
     {
         if (tree is null)
@@ -52,7 +55,7 @@ sealed class NamespaceSuppression(AnalyzerOptions options)
             .ToArray();
     }
 
-    public static bool Matches(ISymbol? symbol, string[] patterns)
+    public bool Matches(ISymbol? symbol, string[] patterns)
     {
         if (symbol is null ||
             patterns.Length == 0)
@@ -70,7 +73,7 @@ sealed class NamespaceSuppression(AnalyzerOptions options)
             return false;
         }
 
-        var fullName = ns.ToDisplayString();
+        var fullName = namespaceNameCache.GetOrAdd(ns, static _ => _.ToDisplayString());
         foreach (var pattern in patterns)
         {
             if (pattern.Length == 0)

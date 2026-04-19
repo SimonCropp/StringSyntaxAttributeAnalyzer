@@ -182,8 +182,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
         var list = attribute.FirstAncestorOrSelf<AttributeListSyntax>();
         SyntaxNode newRoot;
-        if (list is not null &&
-            list.Parent is MethodDeclarationSyntax or LocalFunctionStatementSyntax or DelegateDeclarationSyntax &&
+        if (list?.Parent is MethodDeclarationSyntax or LocalFunctionStatementSyntax or DelegateDeclarationSyntax &&
             list.Attributes.Count == 1)
         {
             // Shortcut attributes on methods compile as `[return: Name]` — their
