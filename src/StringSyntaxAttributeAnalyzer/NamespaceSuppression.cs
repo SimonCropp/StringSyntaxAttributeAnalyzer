@@ -81,7 +81,7 @@ sealed class NamespaceSuppression
 
             if (pattern[^1] == '*')
             {
-                var prefix = pattern[..^1];
+                var prefix = pattern.Substring(0, pattern.Length - 1);
                 if (fullName.StartsWith(prefix, StringComparison.Ordinal))
                 {
                     return true;
