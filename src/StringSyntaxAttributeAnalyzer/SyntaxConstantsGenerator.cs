@@ -153,17 +153,16 @@ public class SyntaxConstantsGenerator :
         foreach (var name in shortcutNames)
         {
             builder.Append(
-                $$"""
+                $"""
                 /// <summary>
-                /// Shortcut for <c>[StringSyntax("{{name}}")]</c>. Only recognized by
+                /// Shortcut for <c>[StringSyntax("{name}")]</c>. Only recognized by
                 /// StringSyntaxAttributeAnalyzer — other analyzers (BCL, Roslyn) that look
                 /// for <see cref="StringSyntaxAttribute"/> will not see this attribute.
                 /// </summary>
                 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property, AllowMultiple = false)]
                 [ExcludeFromCodeCoverage]
                 [DebuggerNonUserCode]
-                sealed class {{name}}Attribute : System.Attribute;
-
+                sealed class {name}Attribute : System.Attribute;
 
                 """);
         }
