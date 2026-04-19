@@ -531,10 +531,113 @@ public class AddStringSyntaxCodeFixProviderTests
         Contains(fixedSource, "// language=json");
     }
 
+    [Test]
+    public async Task SSA003_UnionSource_OffersUnionAndPerValueFixes()
+    {
+        var source =
+            """
+            public class Target
+            {
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+
+                public Target Create() => new Target { Body = Body };
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        AreEqual(3, actions.Length);
+        AreEqual(
+            "Add [UnionSyntax(Syntax.Html, Syntax.Xml)] to property 'Body'",
+            actions[0].Title);
+        AreEqual(
+            "Add [Syntax(Syntax.Html)] to property 'Body'",
+            actions[1].Title);
+        AreEqual(
+            "Add [Syntax(Syntax.Xml)] to property 'Body'",
+            actions[2].Title);
+    }
+
+    [Test]
+    public async Task SSA003_UnionSource_ApplyUnionFix()
+    {
+        var source =
+            """
+            public class Target
+            {
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+
+                public Target Create() => new Target { Body = Body };
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 0);
+
+        Contains(fixedSource, "[UnionSyntax(Syntax.Html, Syntax.Xml)]");
+    }
+
+    [Test]
+    public async Task SSA003_UnionSource_ApplySingleValueFix()
+    {
+        var source =
+            """
+            public class Target
+            {
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+
+                public Target Create() => new Target { Body = Body };
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 2);
+
+        Contains(fixedSource, "[Syntax(Syntax.Xml)]");
+    }
+
     static void Contains(string actual, string expected) =>
         IsTrue(
             actual.Contains(expected),
             $"Expected fixed source to contain:\n{expected}\n\nActual:\n{actual}");
+
+    static async Task<string> ApplyFixAtIndex(string source, int index)
+    {
+        var (document, diagnostic) = await PrepareFixAsync(source);
+
+        var actions = ImmutableArray.CreateBuilder<CodeAction>();
+        var context = new CodeFixContext(
+            document,
+            diagnostic,
+            (action, _) => actions.Add(action),
+            Cancel.None);
+
+        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
+
+        var action = actions.ToImmutable()[index];
+        var operations = await action.GetOperationsAsync(Cancel.None);
+        var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
+
+        var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
+        var text = await newDocument.GetTextAsync();
+        return text.ToString();
+    }
 
     static Task<string> ApplyFix(string source) =>
         ApplyFix<AddStringSyntaxCodeFixProvider>(source);

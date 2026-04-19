@@ -605,7 +605,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             rule,
             location,
             additionalLocations: GetAdditionalLocations(fixTarget),
-            properties: ImmutableDictionary<string, string?>.Empty.Add(valueKey, info.PrimaryValue),
+            // Pipe-delimited so a UnionSyntax source can drive multiple codefix options
+            // (one per value + one combined). The pipe is the same separator used in the
+            // user-visible message — safe because values are identifier-like.
+            properties: ImmutableDictionary<string, string?>.Empty.Add(valueKey, SyntaxValueMatcher.FormatValues(info.Values)),
             messageArgs: SyntaxValueMatcher.FormatValues(info.Values));
 
     static Location[]? GetAdditionalLocations(ISymbol? fixTarget)

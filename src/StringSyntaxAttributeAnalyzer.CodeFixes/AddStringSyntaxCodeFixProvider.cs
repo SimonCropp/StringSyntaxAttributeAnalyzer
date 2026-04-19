@@ -57,24 +57,55 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             }
 
             var host = FindAttributeHost(declarationNode);
-            var (title, equivalenceKey) = BuildFixMetadata(host, value);
-            context.RegisterCodeFix(
-                CodeAction.Create(
-                    title,
-                    cancel => AddAttributeAsync(
-                        context.Document.Project.Solution,
-                        declarationLocation,
-                        value,
-                        cancel),
-                    equivalenceKey: equivalenceKey),
-                diagnostic);
+            var values = value.Split('|');
+
+            // For a union source (multiple values), offer one fix per option — and, when
+            // the host can carry UnionSyntax (property/field/parameter), an additional
+            // "matching union" fix that emits all options. Method/return and local
+            // language-comment hosts can't express a union, so we only surface the
+            // per-value fixes there.
+            if (values.Length > 1 && CanHostUnion(host))
+            {
+                var (unionTitle, unionKey) = BuildUnionFixMetadata(host, values);
+                context.RegisterCodeFix(
+                    CodeAction.Create(
+                        unionTitle,
+                        cancel => AddAttributeAsync(
+                            context.Document.Project.Solution,
+                            declarationLocation,
+                            values,
+                            cancel),
+                        equivalenceKey: unionKey),
+                    diagnostic);
+            }
+
+            foreach (var singleValue in values)
+            {
+                var (title, equivalenceKey) = BuildFixMetadata(host, singleValue);
+                context.RegisterCodeFix(
+                    CodeAction.Create(
+                        title,
+                        cancel => AddAttributeAsync(
+                            context.Document.Project.Solution,
+                            declarationLocation,
+                            [singleValue],
+                            cancel),
+                        equivalenceKey: equivalenceKey),
+                    diagnostic);
+            }
         }
     }
+
+    static bool CanHostUnion(SyntaxNode? host) =>
+        host is
+            PropertyDeclarationSyntax or
+            FieldDeclarationSyntax or
+            ParameterSyntax;
 
     static async Task<Solution> AddAttributeAsync(
         Solution solution,
         Location location,
-        string value,
+        string[] values,
         Cancel cancel)
     {
         var document = solution.GetDocument(location.SourceTree);
@@ -101,7 +132,11 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         SyntaxNode? newTargetNode;
         if (targetNode is LocalDeclarationStatementSyntax localHost)
         {
-            newTargetNode = AddLanguageCommentToLocal(localHost, value);
+            newTargetNode = AddLanguageCommentToLocal(localHost, values[0]);
+        }
+        else if (values.Length > 1)
+        {
+            newTargetNode = AddUnionSyntaxAttribute(targetNode, values);
         }
         else
         {
@@ -115,8 +150,8 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             // generator's global usings bring into scope alongside the alias. When
             // the consumer has opted out of globals, fall back to a literal so the
             // output compiles without a manual using directive.
-            var useConstant = resolvedName == "Syntax" && KnownSyntaxConstants.IsKnown(value);
-            newTargetNode = AddStringSyntaxAttribute(targetNode, value, attributeName, useConstant);
+            var useConstant = resolvedName == "Syntax" && KnownSyntaxConstants.IsKnown(values[0]);
+            newTargetNode = AddStringSyntaxAttribute(targetNode, values[0], attributeName, useConstant);
         }
 
         if (newTargetNode is null)
@@ -253,6 +288,46 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         }
 
         return default;
+    }
+
+    static (string Title, string EquivalenceKey) BuildUnionFixMetadata(SyntaxNode? host, string[] values)
+    {
+        var description = host is null ? "declaration" : HostDescription.Describe(host);
+        var argumentList = string.Join(", ", values.Select(FormatArgument));
+        return (
+            $"Add [UnionSyntax({argumentList})] to {description}",
+            $"AddUnionSyntax:{string.Join("|", values)}");
+    }
+
+    static string FormatArgument(string value) =>
+        KnownSyntaxConstants.IsKnown(value) ? $"Syntax.{value}" : $"\"{value}\"";
+
+    static SyntaxNode? AddUnionSyntaxAttribute(SyntaxNode host, string[] values)
+    {
+        var arguments = values.Select(value =>
+        {
+            ExpressionSyntax expression = KnownSyntaxConstants.IsKnown(value)
+                ? MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    IdentifierName("Syntax"),
+                    IdentifierName(value))
+                : LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value));
+            return AttributeArgument(expression);
+        });
+
+        var attribute = Attribute(IdentifierName("UnionSyntax"))
+            .WithArgumentList(AttributeArgumentList(SeparatedList(arguments)));
+
+        var attributes = AttributeList(SingletonSeparatedList(attribute))
+            .WithAdditionalAnnotations(Formatter.Annotation);
+
+        return host switch
+        {
+            PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
+            FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
+            ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
+            _ => null
+        };
     }
 
     static SyntaxNode? AddStringSyntaxAttribute(
