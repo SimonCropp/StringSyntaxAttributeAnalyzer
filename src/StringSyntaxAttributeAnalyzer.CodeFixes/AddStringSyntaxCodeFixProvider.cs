@@ -169,19 +169,22 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             LocalFunctionStatementSyntax or
             DelegateDeclarationSyntax;
 
-    static (string Title, string EquivalenceKey) BuildFixMetadata(SyntaxNode? host, string value) =>
-        host switch
+    static (string Title, string EquivalenceKey) BuildFixMetadata(SyntaxNode? host, string value)
+    {
+        var description = host is null ? "declaration" : HostDescription.Describe(host);
+        return host switch
         {
             LocalDeclarationStatementSyntax => (
-                $"Add //language={ToRiderToken(value)}",
+                $"Add //language={ToRiderToken(value)} to {description}",
                 $"AddLanguageComment:{value}"),
             _ when IsMethodHost(host) => (
-                $"Add [ReturnSyntax(\"{value}\")]",
+                $"Add [ReturnSyntax(\"{value}\")] to {description}",
                 $"AddReturnSyntax:{value}"),
             _ => (
-                $"Add [Syntax(\"{value}\")]",
+                $"Add [Syntax(\"{value}\")] to {description}",
                 $"AddSyntax:{value}")
         };
+    }
 
     // Rider docs spell regex as `regexp`. Normalizing on write means the emitted
     // comment lights up Rider's own highlighting; MismatchAnalyzer's read path maps

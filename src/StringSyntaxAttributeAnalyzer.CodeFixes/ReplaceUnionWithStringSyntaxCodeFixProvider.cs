@@ -43,9 +43,13 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
 
             var attributeName = ResolveAttributeName(compilation);
 
+            var title = HostDescription.FindAttributeOwner(attribute) is { } owner
+                ? $"Replace [UnionSyntax] on {HostDescription.Describe(owner)} with [{attributeName}(\"{value}\")]"
+                : $"Replace with [{attributeName}(\"{value}\")]";
+
             context.RegisterCodeFix(
                 CodeAction.Create(
-                    $"Replace with [{attributeName}(\"{value}\")]",
+                    title,
                     cancel => ReplaceAttributeAsync(context.Document, attribute, value, attributeName, cancel),
                     equivalenceKey: $"ReplaceUnionWithSyntax:{value}"),
                 diagnostic);

@@ -433,7 +433,7 @@ public class AddStringSyntaxCodeFixProviderTests
         var actions = await GetCodeActions(source);
 
         AreEqual(1, actions.Length);
-        AreEqual("Add [ReturnSyntax(\"Regex\")]", actions[0].Title);
+        AreEqual("Add [ReturnSyntax(\"Regex\")] to method 'GetPattern'", actions[0].Title);
     }
 
     [Test]
@@ -480,7 +480,7 @@ public class AddStringSyntaxCodeFixProviderTests
         var actions = await GetCodeActions(source);
 
         AreEqual(1, actions.Length);
-        AreEqual("Add //language=regexp", actions[0].Title);
+        AreEqual("Add //language=regexp to local 'pattern'", actions[0].Title);
     }
 
     [Test]
