@@ -12,6 +12,18 @@ public static partial class KnownStringSyntax
 {
     public static bool TryLookup(ISymbol symbol, out string value)
     {
+        value = "";
+
+        // Cheap gate: skip key construction (and the dictionary probe) for symbols
+        // from assemblies we never scanned. Most symbols flowing through the
+        // analyzer come from compilation-local code or assemblies outside the
+        // curated list, so this short-circuit is the common path.
+        var assemblyName = symbol.ContainingAssembly?.Name;
+        if (assemblyName is null || !ScannedAssemblies.Contains(assemblyName))
+        {
+            return false;
+        }
+
         var key = KeyFor(symbol);
         if (key is not null && Lookup.TryGetValue(key, out var found))
         {
@@ -19,7 +31,6 @@ public static partial class KnownStringSyntax
             return true;
         }
 
-        value = "";
         return false;
     }
 

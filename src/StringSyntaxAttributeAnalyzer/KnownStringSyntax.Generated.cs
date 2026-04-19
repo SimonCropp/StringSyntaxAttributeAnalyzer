@@ -8,6 +8,18 @@ using System.Collections.Generic;
 
 public static partial class KnownStringSyntax
 {
+    // Simple names (IAssemblySymbol.Name) of every assembly inspected by the
+    // generator. Used by TryLookup to short-circuit before building a doc-id
+    // key — symbols from any other assembly are guaranteed misses.
+    public static readonly HashSet<string> ScannedAssemblies = new(System.StringComparer.Ordinal)
+    {
+        "System.Private.CoreLib",
+        "System.Private.Uri",
+        "System.Private.Xml",
+        "System.Text.Json",
+        "System.Text.RegularExpressions",
+    };
+
     public static readonly Dictionary<string, string> Lookup = new(System.StringComparer.Ordinal)
     {
         ["F:System.Text.RegularExpressions.Regex.pattern"] = "Regex",
