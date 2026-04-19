@@ -580,12 +580,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             if (IsAttributeNamed(attribute, returnSyntaxMetadataName))
             {
-                if (attribute.ConstructorArguments.Length > 0 &&
-                    attribute.ConstructorArguments[0].Value is string s)
+                var values = ExtractUnionOptions(attribute);
+                if (values.Length == 1)
                 {
-                    return SyntaxInfo.Present(s);
+                    return SyntaxInfo.Present(values[0]);
                 }
-                return new(SyntaxState.Present, []);
+                return SyntaxInfo.PresentUnion(values);
             }
 
             if (TryMatchShortcutAttribute(attribute, out var shortcutValue))

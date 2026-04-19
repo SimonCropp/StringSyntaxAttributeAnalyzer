@@ -177,7 +177,10 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         host is
             PropertyDeclarationSyntax or
             FieldDeclarationSyntax or
-            ParameterSyntax;
+            ParameterSyntax or
+            MethodDeclarationSyntax or
+            LocalFunctionStatementSyntax or
+            DelegateDeclarationSyntax;
 
     static async Task<Solution> AddAttributeAsync(
         Solution solution,
@@ -435,9 +438,10 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     {
         var description = host is null ? "declaration" : HostDescription.Describe(host);
         var argumentList = string.Join(", ", values.Select(FormatArgument));
+        var attributeName = IsMethodHost(host) ? "ReturnSyntax" : "UnionSyntax";
         return (
-            $"Add [UnionSyntax({argumentList})] to {description}",
-            $"AddUnionSyntax:{string.Join('|', values)}");
+            $"Add [{attributeName}({argumentList})] to {description}",
+            $"Add{attributeName}:{string.Join('|', values)}");
     }
 
     static string FormatArgument(string value) =>
@@ -456,7 +460,8 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return AttributeArgument(expression);
         });
 
-        var attribute = Attribute(IdentifierName("UnionSyntax"))
+        var attributeName = IsMethodHost(host) ? "ReturnSyntax" : "UnionSyntax";
+        var attribute = Attribute(IdentifierName(attributeName))
             .WithArgumentList(AttributeArgumentList(SeparatedList(arguments)));
 
         var attributes = AttributeList(SingletonSeparatedList(attribute))
@@ -467,6 +472,9 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
             FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
             ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
+            MethodDeclarationSyntax method => method.AddAttributeLists(attributes),
+            LocalFunctionStatementSyntax local => local.AddAttributeLists(attributes),
+            DelegateDeclarationSyntax del => del.AddAttributeLists(attributes),
             _ => null
         };
     }

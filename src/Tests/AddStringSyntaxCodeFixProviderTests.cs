@@ -615,6 +615,88 @@ public class AddStringSyntaxCodeFixProviderTests
         Contains(fixedSource, "[Syntax(Syntax.Xml)]");
     }
 
+    [Test]
+    public async Task SSA002_UnionTarget_MethodSource_OffersReturnSyntaxUnionAndPerValueFixes()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        AreEqual(3, actions.Length);
+        AreEqual(
+            "Add [ReturnSyntax(Syntax.Html, Syntax.Xml)] to method 'Build'",
+            actions[0].Title);
+        AreEqual(
+            "Add [ReturnSyntax(Syntax.Html)] to method 'Build'",
+            actions[1].Title);
+        AreEqual(
+            "Add [ReturnSyntax(Syntax.Xml)] to method 'Build'",
+            actions[2].Title);
+    }
+
+    [Test]
+    public async Task SSA002_UnionTarget_MethodSource_ApplyUnionFix()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 0);
+
+        Contains(fixedSource, "[ReturnSyntax(Syntax.Html, Syntax.Xml)]");
+        Contains(fixedSource, "public string Build()");
+    }
+
+    [Test]
+    public async Task SSA002_UnionTarget_MethodSource_ApplySingleValueFix()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 1);
+
+        Contains(fixedSource, "[ReturnSyntax(Syntax.Html)]");
+    }
+
     static void Contains(string actual, string expected) =>
         IsTrue(
             actual.Contains(expected),
@@ -935,7 +1017,7 @@ public class AddStringSyntaxCodeFixProviderTests
                 sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
 
                 [System.AttributeUsage(System.AttributeTargets.Method | System.AttributeTargets.Delegate, AllowMultiple = false)]
-                sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
+                sealed class ReturnSyntaxAttribute(params string[] syntax) : System.Attribute;
                 """)
             .AddDocument(documentId, "Test.cs", source);
 

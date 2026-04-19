@@ -1005,6 +1005,64 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public void ReturnSyntax_UnionValues_MatchingUnionTarget_NoDiagnostic()
+    {
+        // ReturnSyntax(params string[]) lets a method return-type carry union semantics.
+        // Matching [UnionSyntax(...)] on the receiving parameter/property should round-trip
+        // cleanly — no mismatch diagnostic.
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Html", "Xml")]
+                public string Build() => "<x/>";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ReturnSyntax_UnionValues_MismatchedUnionTarget_SSA001()
+    {
+        var source =
+            """
+            using StringSyntaxAttributeAnalyzer;
+
+            public class Target
+            {
+                [UnionSyntax("Html", "Xml")]
+                public string Body { get; set; }
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Json", "Regex")]
+                public string Build() => "{}";
+
+                public void Use(Target target) => target.Body = Build();
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+    }
+
+    [Test]
     public void ReturnSyntax_SourceAnnotated_TargetBare_SSA003()
     {
         var source =

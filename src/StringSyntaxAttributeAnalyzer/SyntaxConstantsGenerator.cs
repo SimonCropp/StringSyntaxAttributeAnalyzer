@@ -43,7 +43,7 @@ public class SyntaxConstantsGenerator :
         [ExcludeFromCodeCoverage]
         [DebuggerNonUserCode]
         #pragma warning disable CS9113
-        sealed class ReturnSyntaxAttribute(string syntax) : System.Attribute;
+        sealed class ReturnSyntaxAttribute(params string[] syntax) : System.Attribute;
         #pragma warning restore CS9113
 
         [ExcludeFromCodeCoverage]
