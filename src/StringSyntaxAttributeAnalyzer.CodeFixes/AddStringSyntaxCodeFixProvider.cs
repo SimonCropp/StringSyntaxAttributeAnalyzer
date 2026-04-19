@@ -308,15 +308,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         // Known values surface as `Syntax.X` so the user gets a named constant rather
         // than a bare string literal; unknown values (e.g. "custom-format") fall back
         // to a literal. Titles mirror what the fix actually writes.
-        var argument = KnownSyntaxConstants.IsKnown(value)
-            ? $"Syntax.{value}"
-            : $"\"{value}\"";
         if (useShortcut)
         {
             return (
                 $"Add [{value}] to {description}",
                 $"AddShortcut:{value}");
         }
+        var argument = KnownSyntaxConstants.IsKnown(value)
+            ? $"Syntax.{value}"
+            : $"\"{value}\"";
         return host switch
         {
             LocalDeclarationStatementSyntax => (
@@ -345,7 +345,9 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return false;
         }
 
-        if (host is null || IsMethodHost(host) || host is LocalDeclarationStatementSyntax)
+        if (host is null ||
+            IsMethodHost(host) ||
+            host is LocalDeclarationStatementSyntax)
         {
             return false;
         }
@@ -435,7 +437,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         var argumentList = string.Join(", ", values.Select(FormatArgument));
         return (
             $"Add [UnionSyntax({argumentList})] to {description}",
-            $"AddUnionSyntax:{string.Join("|", values)}");
+            $"AddUnionSyntax:{string.Join('|', values)}");
     }
 
     static string FormatArgument(string value) =>
@@ -514,15 +516,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         foreach (var tree in compilation.SyntaxTrees)
         {
             var root = tree.GetRoot();
-            foreach (var usingDirective in root
+            foreach (var directive in root
                          .DescendantNodes(_ => _ is
                              CompilationUnitSyntax or
                              NamespaceDeclarationSyntax or
                              FileScopedNamespaceDeclarationSyntax)
                          .OfType<UsingDirectiveSyntax>())
             {
-                if (usingDirective.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
-                    usingDirective.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")
+                if (directive.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
+                    directive.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")
                 {
                     return "Syntax";
                 }

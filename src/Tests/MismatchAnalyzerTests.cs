@@ -1370,7 +1370,7 @@ public class MismatchAnalyzerTests
         var emit = messagesCompilation.Emit(messagesStream);
         if (!emit.Success)
         {
-            var errors = string.Join("\n", emit.Diagnostics.Where(_ => _.Severity == DiagnosticSeverity.Error));
+            var errors = string.Join('\n', emit.Diagnostics.Where(_ => _.Severity == DiagnosticSeverity.Error));
             throw new($"Messages compilation failed:\n{errors}");
         }
         messagesStream.Position = 0;

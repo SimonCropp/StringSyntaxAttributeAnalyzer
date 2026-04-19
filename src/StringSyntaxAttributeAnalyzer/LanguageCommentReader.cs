@@ -3,11 +3,14 @@
 // Optional `prefix=`/`postfix=` follow-on options are ignored — they're renderer
 // hints, irrelevant to syntax identity. Doc:
 // https://www.jetbrains.com/help/rider/Language_Injections.html
+
+using System.Diagnostics.CodeAnalysis;
+
 static class LanguageCommentReader
 {
     const string keyword = "language";
 
-    public static bool TryRead(ILocalSymbol local, out string syntax)
+    public static bool TryRead(ILocalSymbol local, [NotNullWhen(true)] out string? syntax)
     {
         foreach (var reference in local.DeclaringSyntaxReferences)
         {
@@ -44,11 +47,11 @@ static class LanguageCommentReader
             }
         }
 
-        syntax = "";
+        syntax = null;
         return false;
     }
 
-    static bool TryMatch(SyntaxTriviaList trivia, out string syntax)
+    static bool TryMatch(SyntaxTriviaList trivia, [NotNullWhen(true)] out string? syntax)
     {
         foreach (var item in trivia)
         {
@@ -63,7 +66,7 @@ static class LanguageCommentReader
             }
         }
 
-        syntax = "";
+        syntax = null;
         return false;
     }
 
@@ -75,7 +78,7 @@ static class LanguageCommentReader
     // word boundary (start-of-string or preceded by a non-word char). Emulates the
     // previous regex `\blanguage\s*=\s*([A-Za-z0-9_]+)` without the regex engine —
     // comments are short, so linear scanning is cheap and avoids the Regex cache.
-    static bool TryParse(string text, out string syntax)
+    static bool TryParse(string text, [NotNullWhen(true)] out string? syntax)
     {
         for (var i = 0; i <= text.Length - keyword.Length; i++)
         {
@@ -113,7 +116,7 @@ static class LanguageCommentReader
             return true;
         }
 
-        syntax = "";
+        syntax = null;
         return false;
     }
 
@@ -126,6 +129,7 @@ static class LanguageCommentReader
                 return false;
             }
         }
+
         return true;
     }
 
@@ -135,6 +139,7 @@ static class LanguageCommentReader
         {
             pos++;
         }
+
         return pos;
     }
 

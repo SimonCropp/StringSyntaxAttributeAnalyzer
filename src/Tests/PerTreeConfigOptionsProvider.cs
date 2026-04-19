@@ -5,11 +5,13 @@
 sealed class PerTreeConfigOptionsProvider(Dictionary<string, string> perFile) :
     AnalyzerConfigOptionsProvider
 {
-    static readonly AnalyzerConfigOptions empty = new TestConfigOptions(new());
+    static readonly AnalyzerConfigOptions empty = new TestConfigOptions([]);
 
     public override AnalyzerConfigOptions GlobalOptions => empty;
+
     public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) =>
         new TestConfigOptions(perFile);
+
     public override AnalyzerConfigOptions GetOptions(AdditionalText additionalText) =>
         empty;
 }
