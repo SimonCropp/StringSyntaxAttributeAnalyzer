@@ -8,4 +8,5 @@
   <Project Path="StringSyntaxAttributeAnalyzer/StringSyntaxAttributeAnalyzer.csproj" />
   <Project Path="StringSyntaxAttributeAnalyzer.CodeFixes/StringSyntaxAttributeAnalyzer.CodeFixes.csproj" />
   <Project Path="Tests/Tests.csproj" />
+  <Project Path="Benchmarks/Benchmarks.csproj" />
 </Solution>
