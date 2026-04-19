@@ -22,6 +22,23 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA006 rewrites the attribute in place. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
 
 
+## Code fix output — named constants vs. string literals
+
+When the value matches one of the constants on the source-generated `Syntax` class (`Regex`, `Json`, `Email`, `Uri`, `Html`, `Xml`, `Markdown`, `Yaml`, `Csv`, `Sql`, `Text`, `CompositeFormat`, `DateOnlyFormat`, `DateTimeFormat`, `EnumFormat`, `GuidFormat`, `NumericFormat`, `TimeOnlyFormat`, `TimeSpanFormat`), the code fix emits the named constant rather than a raw string:
+
+```cs
+// Value resolves to a known constant — emitted as Syntax.Regex
+[Syntax(Syntax.Regex)]
+public string Pattern { get; set; }
+
+// Value is project-specific — emitted as a literal
+[Syntax("custom-format")]
+public string Marker { get; set; }
+```
+
+Matching is case-sensitive against the constant name (`"Regex"` matches, `"regex"` does not). The short `Syntax`/`ReturnSyntax` attribute form and the `Syntax.X` constant reference both require the generator's global usings to be in scope — projects that opt out (see the next section) receive the long form with a string literal (`[StringSyntax("Regex")]`) so the result compiles without further imports.
+
+
 ## Opting out of the global usings
 
 The source generator emits three `global using` directives so `[StringSyntax]`, `[UnionSyntax]`, and `Syntax.*` are friction-free to reference without per-file imports:

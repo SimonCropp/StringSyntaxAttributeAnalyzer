@@ -106,10 +106,17 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         else
         {
             var compilation = await document.Project.GetCompilationAsync(cancel).ConfigureAwait(false);
+            var resolvedName = ResolveAttributeName(compilation);
             var attributeName = IsMethodHost(targetNode)
                 ? "ReturnSyntax"
-                : ResolveAttributeName(compilation);
-            newTargetNode = AddStringSyntaxAttribute(targetNode, value, attributeName);
+                : resolvedName;
+            // Emit `Syntax.X` only when the short alias is available — the `Syntax`
+            // class lives in the StringSyntaxAttributeAnalyzer namespace, which the
+            // generator's global usings bring into scope alongside the alias. When
+            // the consumer has opted out of globals, fall back to a literal so the
+            // output compiles without a manual using directive.
+            var useConstant = resolvedName == "Syntax" && KnownSyntaxConstants.IsKnown(value);
+            newTargetNode = AddStringSyntaxAttribute(targetNode, value, attributeName, useConstant);
         }
 
         if (newTargetNode is null)
@@ -172,16 +179,22 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     static (string Title, string EquivalenceKey) BuildFixMetadata(SyntaxNode? host, string value)
     {
         var description = host is null ? "declaration" : HostDescription.Describe(host);
+        // Known values surface as `Syntax.X` so the user gets a named constant rather
+        // than a bare string literal; unknown values (e.g. "custom-format") fall back
+        // to a literal. Titles mirror what the fix actually writes.
+        var argument = KnownSyntaxConstants.IsKnown(value)
+            ? $"Syntax.{value}"
+            : $"\"{value}\"";
         return host switch
         {
             LocalDeclarationStatementSyntax => (
                 $"Add //language={ToRiderToken(value)} to {description}",
                 $"AddLanguageComment:{value}"),
             _ when IsMethodHost(host) => (
-                $"Add [ReturnSyntax(\"{value}\")] to {description}",
+                $"Add [ReturnSyntax({argument})] to {description}",
                 $"AddReturnSyntax:{value}"),
             _ => (
-                $"Add [Syntax(\"{value}\")] to {description}",
+                $"Add [Syntax({argument})] to {description}",
                 $"AddSyntax:{value}")
         };
     }
@@ -242,12 +255,19 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         return default;
     }
 
-    static SyntaxNode? AddStringSyntaxAttribute(SyntaxNode host, string value, string attributeName)
+    static SyntaxNode? AddStringSyntaxAttribute(
+        SyntaxNode host,
+        string value,
+        string attributeName,
+        bool useConstant)
     {
-        var argument = AttributeArgument(
-            LiteralExpression(
-                SyntaxKind.StringLiteralExpression,
-                Literal(value)));
+        var expression = useConstant
+            ? (ExpressionSyntax)MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName("Syntax"),
+                IdentifierName(value))
+            : LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value));
+        var argument = AttributeArgument(expression);
 
         var attribute = Attribute(IdentifierName(attributeName))
             .WithArgumentList(AttributeArgumentList(SingletonSeparatedList(argument)));

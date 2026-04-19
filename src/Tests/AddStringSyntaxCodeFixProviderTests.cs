@@ -21,7 +21,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
         Contains(fixedSource, "public string Value { get; set; }");
     }
 
@@ -42,7 +42,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
         Contains(fixedSource, "public string Field;");
     }
 
@@ -61,7 +61,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(\"Regex\")] string input");
+        Contains(fixedSource, "[Syntax(Syntax.Regex)] string input");
     }
 
     [Test]
@@ -85,7 +85,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(\"Regex\")] string value");
+        Contains(fixedSource, "[Syntax(Syntax.Regex)] string value");
     }
 
     [Test]
@@ -109,7 +109,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
         Contains(fixedSource, "public string Value { get; set; }");
     }
 
@@ -131,7 +131,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(\"Regex\")]");
+        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
         Contains(fixedSource, "public string Raw { get; set; }");
     }
 
@@ -241,6 +241,32 @@ public class AddStringSyntaxCodeFixProviderTests
         var fixedSource = await ApplyFix(source);
 
         Contains(fixedSource, "[Syntax(\"custom-format\")]");
+    }
+
+    [Test]
+    public async Task SSA002_UnknownValue_TitleAndEmissionUseLiteral()
+    {
+        // Values outside the generator's Syntax class (checked via
+        // KnownSyntaxConstants) have no named constant to reference, so both the
+        // title and the emitted attribute fall back to a string literal.
+        var source =
+            """
+            public class Holder
+            {
+                public string Value { get; set; }
+
+                public static void Consume([StringSyntax("custom-format")] string value) { }
+
+                public void Use() => Consume(Value);
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        AreEqual(1, actions.Length);
+        AreEqual(
+            "Add [Syntax(\"custom-format\")] to property 'Value'",
+            actions[0].Title);
     }
 
     [Test]
@@ -408,7 +434,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[ReturnSyntax(\"Regex\")]");
+        Contains(fixedSource, "[ReturnSyntax(Syntax.Regex)]");
         Contains(fixedSource, "public string GetPattern()");
     }
 
@@ -433,7 +459,7 @@ public class AddStringSyntaxCodeFixProviderTests
         var actions = await GetCodeActions(source);
 
         AreEqual(1, actions.Length);
-        AreEqual("Add [ReturnSyntax(\"Regex\")] to method 'GetPattern'", actions[0].Title);
+        AreEqual("Add [ReturnSyntax(Syntax.Regex)] to method 'GetPattern'", actions[0].Title);
     }
 
     [Test]

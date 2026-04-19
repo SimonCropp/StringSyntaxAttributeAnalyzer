@@ -123,6 +123,37 @@ public class SyntaxConstantsGeneratorTests
 
         IsTrue(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs")));
     }
+    // Guards against adding a new constant to the generator's Syntax class and
+    // forgetting to mirror it in KnownSyntaxConstants — the codefix would silently
+    // degrade to emitting a string literal instead of `Syntax.<name>`.
+    [Test]
+    public void KnownSyntaxConstants_MatchesGeneratedSyntaxClass()
+    {
+        var runResult = RunGenerator("public class Dummy {}");
+        var typesTree = runResult.GeneratedTrees
+            .Single(_ => _.FilePath.EndsWith("Syntax.Types.g.cs"));
+
+        var syntaxClass = typesTree.GetRoot()
+            .DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .Single(_ => _.Identifier.Text == "Syntax");
+
+        var generatedNames = syntaxClass.Members
+            .OfType<FieldDeclarationSyntax>()
+            .SelectMany(_ => _.Declaration.Variables.Select(v => v.Identifier.Text))
+            .ToImmutableHashSet();
+
+        var missing = generatedNames.Except(KnownSyntaxConstants.Names);
+        IsTrue(
+            missing.IsEmpty,
+            $"KnownSyntaxConstants is missing: {string.Join(", ", missing)}");
+
+        var stale = KnownSyntaxConstants.Names.Except(generatedNames);
+        IsTrue(
+            stale.IsEmpty,
+            $"KnownSyntaxConstants has entries not in the generator: {string.Join(", ", stale)}");
+    }
+
     static GeneratorDriverRunResult RunGenerator(string source)
     {
         var compilation = BuildCompilation(source);

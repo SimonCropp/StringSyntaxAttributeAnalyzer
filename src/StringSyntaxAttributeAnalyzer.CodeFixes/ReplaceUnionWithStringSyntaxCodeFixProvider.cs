@@ -42,15 +42,17 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
                 .ConfigureAwait(false);
 
             var attributeName = ResolveAttributeName(compilation);
+            var useConstant = attributeName == "Syntax" && KnownSyntaxConstants.IsKnown(value);
+            var argumentText = useConstant ? $"Syntax.{value}" : $"\"{value}\"";
 
             var title = HostDescription.FindAttributeOwner(attribute) is { } owner
-                ? $"Replace [UnionSyntax] on {HostDescription.Describe(owner)} with [{attributeName}(\"{value}\")]"
-                : $"Replace with [{attributeName}(\"{value}\")]";
+                ? $"Replace [UnionSyntax] on {HostDescription.Describe(owner)} with [{attributeName}({argumentText})]"
+                : $"Replace with [{attributeName}({argumentText})]";
 
             context.RegisterCodeFix(
                 CodeAction.Create(
                     title,
-                    cancel => ReplaceAttributeAsync(context.Document, attribute, value, attributeName, cancel),
+                    cancel => ReplaceAttributeAsync(context.Document, attribute, value, attributeName, useConstant, cancel),
                     equivalenceKey: $"ReplaceUnionWithSyntax:{value}"),
                 diagnostic);
         }
@@ -61,6 +63,7 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
         AttributeSyntax oldAttribute,
         string value,
         string attributeName,
+        bool useConstant,
         Cancel cancel)
     {
         var root = await document.GetSyntaxRootAsync(cancel).ConfigureAwait(false);
@@ -69,8 +72,13 @@ public class ReplaceUnionWithStringSyntaxCodeFixProvider :
             return document;
         }
 
-        var argument = AttributeArgument(
-            LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value)));
+        var expression = useConstant
+            ? (ExpressionSyntax)MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName("Syntax"),
+                IdentifierName(value))
+            : LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value));
+        var argument = AttributeArgument(expression);
         var newAttribute = Attribute(IdentifierName(attributeName))
             .WithArgumentList(AttributeArgumentList(SingletonSeparatedList(argument)))
             .WithTriviaFrom(oldAttribute)
