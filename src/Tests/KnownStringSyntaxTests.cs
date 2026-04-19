@@ -1,7 +1,3 @@
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Xml;
-
 [TestFixture]
 public class KnownStringSyntaxTests
 {
@@ -29,8 +25,7 @@ public class KnownStringSyntaxTests
         var method = ResolveType(typeof(DateTime))
             .GetMembers("ToString")
             .OfType<IMethodSymbol>()
-            .Single(_ => _.Parameters.Length == 1 &&
-                         _.Parameters[0].Type.SpecialType == SpecialType.System_String);
+            .Single(_ => _.Parameters is [{ Type.SpecialType: SpecialType.System_String }]);
 
         AssertLookup(method.Parameters[0], "DateTimeFormat");
     }

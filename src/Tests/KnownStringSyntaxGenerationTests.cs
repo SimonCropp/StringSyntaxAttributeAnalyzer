@@ -1,10 +1,3 @@
-using System.Collections.Generic;
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Xml;
-
 [TestFixture]
 public class KnownStringSyntaxGenerationTests
 {
@@ -63,7 +56,7 @@ public class KnownStringSyntaxGenerationTests
 
         foreach (var type in types)
         {
-            if (type is null || !type.IsPublic && !type.IsNestedPublic)
+            if (type is { IsPublic: false, IsNestedPublic: false })
             {
                 continue;
             }
@@ -117,9 +110,8 @@ public class KnownStringSyntaxGenerationTests
 
         if (method is MethodInfo info)
         {
-            var returnAttrs = info.ReturnParameter?.GetCustomAttributesData();
-            if (returnAttrs is not null &&
-                TryReadStringSyntax(returnAttrs, out var v))
+            var returnAttrs = info.ReturnParameter.GetCustomAttributesData();
+            if (TryReadStringSyntax(returnAttrs, out var v))
             {
                 entries[$"{methodId}#return"] = v;
             }

@@ -1,6 +1,3 @@
-using System.Reflection;
-using System.Text;
-
 // Builds XML documentation comment IDs from reflection metadata, matching the
 // format produced by Roslyn's ISymbol.GetDocumentationCommentId() so generated
 // keys round-trip exactly between this generator and the analyzer's runtime
@@ -9,55 +6,55 @@ static class ReflectionDocId
 {
     public static string ForMethod(MethodBase method)
     {
-        var sb = new StringBuilder("M:");
-        AppendMemberPrefix(sb, method);
-        if (method is MethodInfo {IsGenericMethod: true} mi)
+        var builder = new StringBuilder("M:");
+        AppendMemberPrefix(builder, method);
+        if (method is MethodInfo {IsGenericMethod: true} methodInfo)
         {
-            sb.Append("``").Append(mi.GetGenericArguments().Length);
+            builder.Append("``").Append(methodInfo.GetGenericArguments().Length);
         }
-        AppendParameters(sb, method.GetParameters());
-        return sb.ToString();
+        AppendParameters(builder, method.GetParameters());
+        return builder.ToString();
     }
 
     public static string ForProperty(PropertyInfo property)
     {
-        var sb = new StringBuilder("P:");
-        AppendMemberPrefix(sb, property);
-        AppendParameters(sb, property.GetIndexParameters());
-        return sb.ToString();
+        var builder = new StringBuilder("P:");
+        AppendMemberPrefix(builder, property);
+        AppendParameters(builder, property.GetIndexParameters());
+        return builder.ToString();
     }
 
     public static string ForField(FieldInfo field) =>
         $"F:{TypeFullName(field.DeclaringType!)}.{field.Name}";
 
-    static void AppendMemberPrefix(StringBuilder sb, MemberInfo member)
+    static void AppendMemberPrefix(StringBuilder builder, MemberInfo member)
     {
-        sb.Append(TypeFullName(member.DeclaringType!));
-        sb.Append('.');
+        builder.Append(TypeFullName(member.DeclaringType!));
+        builder.Append('.');
         // Explicit interface implementations come back as "Namespace.IFoo.Bar" —
         // the dots in the leading qualifier are encoded as `#` in doc IDs.
-        sb.Append(member.Name.Replace('.', '#'));
+        builder.Append(member.Name.Replace('.', '#'));
     }
 
-    static void AppendParameters(StringBuilder sb, ParameterInfo[] parameters)
+    static void AppendParameters(StringBuilder builder, ParameterInfo[] parameters)
     {
         if (parameters.Length == 0)
         {
             return;
         }
 
-        sb.Append('(');
+        builder.Append('(');
         for (var i = 0; i < parameters.Length; i++)
         {
             if (i > 0)
             {
-                sb.Append(',');
+                builder.Append(',');
             }
 
-            sb.Append(TypeRef(parameters[i].ParameterType));
+            builder.Append(TypeRef(parameters[i].ParameterType));
         }
 
-        sb.Append(')');
+        builder.Append(')');
     }
 
     static string TypeFullName(Type type)
@@ -90,10 +87,10 @@ static class ReflectionDocId
             var inner = TypeRef(type.GetElementType()!);
             if (rank == 1)
             {
-                return inner + "[]";
+                return $"{inner}[]";
             }
 
-            return inner + "[" + string.Join(",", Enumerable.Repeat("0:", rank)) + "]";
+            return $"{inner}[{string.Join(',', Enumerable.Repeat("0:", rank))}]";
         }
 
         if (type.IsGenericParameter)
@@ -116,6 +113,6 @@ static class ReflectionDocId
     static string StripArity(string name)
     {
         var idx = name.LastIndexOf('`');
-        return idx < 0 ? name : name.Substring(0, idx);
+        return idx < 0 ? name : name[..idx];
     }
 }
