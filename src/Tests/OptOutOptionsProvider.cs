@@ -1,7 +1,9 @@
-﻿sealed class OptOutOptionsProvider(string emitGlobalUsingsValue) : AnalyzerConfigOptionsProvider
+sealed class OptOutOptionsProvider(
+    string? emitGlobalUsingsValue = null,
+    string? emitShortcutAttributesValue = null) : AnalyzerConfigOptionsProvider
 {
     public override AnalyzerConfigOptions GlobalOptions { get; } =
-        new OptOutOptions(emitGlobalUsingsValue);
+        new OptOutOptions(emitGlobalUsingsValue, emitShortcutAttributesValue);
 
     public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => GlobalOptions;
 

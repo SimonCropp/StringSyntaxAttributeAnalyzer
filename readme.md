@@ -62,6 +62,42 @@ With the property set to `false`, the `Syntax.Globals.g.cs` file is not emitted.
 The property is wired via a `build/StringSyntaxAttributeAnalyzer.props` file that ships in the package and is imported automatically by NuGet.
 
 
+## Shortcut attributes (opt-in)
+
+For a more concise syntax, the package can emit one attribute per known constant — `[Html]` as a shortcut for `[StringSyntax(Syntax.Html)]`, `[Regex]` for `[StringSyntax(Syntax.Regex)]`, and so on for every entry on the `Syntax` class (`Json`, `Xml`, `Sql`, `Yaml`, `Csv`, `Markdown`, `Email`, `Uri`, `Text`, and the BCL format names such as `DateTimeFormat`, `NumericFormat`, `CompositeFormat`, etc.).
+
+This feature is **opt-in**:
+
+```xml
+<PropertyGroup>
+  <StringSyntaxAnalyzer_EmitShortcutAttributes>true</StringSyntaxAnalyzer_EmitShortcutAttributes>
+</PropertyGroup>
+```
+
+When enabled, the generator emits `Syntax.Shortcuts.g.cs` with one `internal sealed class <Name>Attribute : System.Attribute` per known constant in the `StringSyntaxAttributeAnalyzer` namespace. The SSA002/SSA003/SSA005 codefixes also switch over: instead of offering `[Syntax(Syntax.Html)]`, they offer `[Html]`. A dedicated **SSA007** warning flags existing `[StringSyntax("Html")]` / `[StringSyntax(Syntax.Html)]` attributes and offers a one-click "Replace with `[Html]`" fix — so a whole codebase can be migrated in a single apply-all. Usage is then:
+
+```csharp
+public class Messages
+{
+    [Html]
+    public string Body { get; set; } = "";
+
+    public void Render([Regex] string pattern) { }
+}
+```
+
+### Tradeoffs — read before enabling
+
+These shortcut attributes are **recognized only by this analyzer**. They are independent types, not subclasses of `StringSyntaxAttribute` (which is `sealed` and cannot be inherited). That has two direct consequences:
+
+1. **Other tools see nothing.** The BCL, Roslyn's built-in string-syntax analyzers, Rider's language injection, and any third-party tooling that keys off `[StringSyntax(...)]` will ignore `[Html]`, `[Regex]`, etc. — those members appear unannotated to every consumer except this analyzer. Where `[StringSyntax]` is a standard contract that travels with the metadata, the shortcuts are a dialect local to projects that reference this package.
+2. **Cross-assembly surface needs coordination.** Because the attributes are source-generated as `internal` per assembly, a shortcut on a public API in assembly A is still seen by this analyzer in a consuming assembly B — but only if B *also* references this analyzer. A consumer that doesn't will see a bare string with no annotation at all.
+
+**Only recommended when every project in a domain uses this analyzer.** For a self-contained application or a set of libraries under one team's control where the team has standardized on this package, the shortcuts are a concise, readable win. For shipping a public library, a plug-in SDK, or anything consumed by projects outside that boundary, stick with `[StringSyntax(...)]` — it's the standard contract and the shortcut's terseness isn't worth the asymmetric visibility.
+
+If in doubt, leave this off. `[StringSyntax(Syntax.Html)]` already reads well and costs nothing in portability.
+
+
 ## `[UnionSyntax(...)]`
 
 Sometimes a member can legitimately hold any one of several syntaxes — a cell in a report that's either HTML or plain text, a payload field that's JSON or YAML. The package ships `[UnionSyntax("html", "xml")]` for that case.

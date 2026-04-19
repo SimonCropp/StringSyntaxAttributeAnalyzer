@@ -154,6 +154,38 @@ public class SyntaxConstantsGeneratorTests
             $"KnownSyntaxConstants has entries not in the generator: {string.Join(", ", stale)}");
     }
 
+    [Test]
+    public void EmitShortcutAttributes_NotSet_NoShortcutsFile()
+    {
+        var runResult = RunGenerator("public class Dummy {}");
+        IsFalse(
+            runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Shortcuts.g.cs")),
+            "Shortcuts file should be opt-in; default compilation must not emit it");
+    }
+
+    [Test]
+    public void EmitShortcutAttributes_True_EmitsShortcutsForKnownConstants()
+    {
+        var compilation = BuildCompilation("public class Dummy {}");
+        var options = new OptOutOptionsProvider(emitShortcutAttributesValue: "true");
+
+        var driver = CSharpGeneratorDriver.Create(
+            generators: [new SyntaxConstantsGenerator().AsSourceGenerator()],
+            additionalTexts: [],
+            parseOptions: null,
+            optionsProvider: options);
+
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+
+        var shortcutsTree = runResult.GeneratedTrees
+            .Single(_ => _.FilePath.EndsWith("Syntax.Shortcuts.g.cs"));
+        var text = shortcutsTree.ToString();
+        IsTrue(text.Contains("namespace StringSyntaxAttributeAnalyzer"));
+        IsTrue(text.Contains("sealed class HtmlAttribute"));
+        IsTrue(text.Contains("sealed class JsonAttribute"));
+        IsTrue(text.Contains("sealed class RegexAttribute"));
+    }
+
     static GeneratorDriverRunResult RunGenerator(string source)
     {
         var compilation = BuildCompilation(source);

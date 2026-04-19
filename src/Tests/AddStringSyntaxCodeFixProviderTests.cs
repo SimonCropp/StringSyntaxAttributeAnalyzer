@@ -639,6 +639,90 @@ public class AddStringSyntaxCodeFixProviderTests
         return text.ToString();
     }
 
+    [Test]
+    public async Task SSA002_WithShortcutsOptedIn_UsesParameterlessShortcut()
+    {
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                sealed class RegexAttribute : System.Attribute;
+            }
+
+            public class Target
+            {
+                public void Consume([StringSyntaxAttributeAnalyzer.Regex] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value { get; set; }
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[Regex]");
+        IsFalse(fixedSource.Contains("[Syntax(Syntax.Regex)]"));
+    }
+
+    [Test]
+    public async Task SSA003_WithShortcutsOptedIn_UsesParameterlessShortcutOnParameter()
+    {
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                sealed class RegexAttribute : System.Attribute;
+            }
+
+            public class Target
+            {
+                public static void Consume(string value) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntaxAttributeAnalyzer.Regex]
+                public string Pattern { get; set; }
+
+                public void Use() => Target.Consume(Pattern);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[Regex] string value");
+    }
+
+    [Test]
+    public async Task SSA007_ReplacesStringSyntaxWithShortcut()
+    {
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        Contains(fixedSource, "[Html]");
+        IsFalse(fixedSource.Contains("[StringSyntax(\"Html\")]"));
+    }
+
     static Task<string> ApplyFix(string source) =>
         ApplyFix<AddStringSyntaxCodeFixProvider>(source);
 

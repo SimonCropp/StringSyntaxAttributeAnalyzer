@@ -1172,10 +1172,116 @@ public class MismatchAnalyzerTests
         AreEqual(0, diagnostics.Length);
     }
 
+    [Test]
+    public void ShortcutAttribute_OptedIn_StringSyntaxWithKnownValue_ReportsSSA007()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA007", diagnostics[0].Id);
+        IsTrue(diagnostics[0].GetMessage().Contains("Html"));
+    }
+
+    [Test]
+    public void ShortcutAttribute_NotOptedIn_StringSyntaxWithKnownValue_NoDiagnostic()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string Body { get; set; } = "";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ShortcutAttribute_OptedIn_StringSyntaxWithUnknownValue_NoDiagnostic()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("my-custom-format")]
+                public string Value { get; set; } = "";
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ShortcutAttribute_MatchingTarget_NoDiagnostic()
+    {
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([Regex] string value) { }
+            }
+
+            public class Holder
+            {
+                [Regex]
+                public string Value { get; set; } = "";
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(0, diagnostics.Length);
+    }
+
+    [Test]
+    public void ShortcutAttribute_MismatchTarget_ReportsSSA001()
+    {
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([Regex] string value) { }
+            }
+
+            public class Holder
+            {
+                [Html]
+                public string Value { get; set; } = "";
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+
+        AreEqual(1, diagnostics.Length);
+        AreEqual("SSA001", diagnostics[0].Id);
+        var message = diagnostics[0].GetMessage();
+        IsTrue(message.Contains("Html"));
+        IsTrue(message.Contains("Regex"));
+    }
+
     static ImmutableArray<Diagnostic> GetDiagnostics(
         string source,
         string? editorConfig = null,
-        bool perTreeOnly = false)
+        bool perTreeOnly = false,
+        bool emitShortcutAttributes = false)
     {
         // Run the package's own source generator so test compilations see what real
         // consumers do: the `global using System.Diagnostics.CodeAnalysis;`, the
@@ -1194,7 +1300,14 @@ public class MismatchAnalyzerTests
             trustedAssemblies,
             new(OutputKind.DynamicallyLinkedLibrary));
 
-        var driver = CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
+        var driver = emitShortcutAttributes
+            ? CSharpGeneratorDriver.Create(
+                generators: [new SyntaxConstantsGenerator().AsSourceGenerator()],
+                additionalTexts: [],
+                parseOptions: null,
+                optionsProvider: new OptOutOptionsProvider(
+                    emitShortcutAttributesValue: "true"))
+            : CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
         driver.RunGeneratorsAndUpdateCompilation(baseCompilation, out var compilation, out _);
 
         var analyzer = new MismatchAnalyzer();

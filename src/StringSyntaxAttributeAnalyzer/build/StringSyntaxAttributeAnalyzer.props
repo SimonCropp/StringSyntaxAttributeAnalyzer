@@ -2,5 +2,6 @@
 <Project>
   <ItemGroup>
     <CompilerVisibleProperty Include="StringSyntaxAnalyzer_EmitGlobalUsings" />
+    <CompilerVisibleProperty Include="StringSyntaxAnalyzer_EmitShortcutAttributes" />
   </ItemGroup>
 </Project>

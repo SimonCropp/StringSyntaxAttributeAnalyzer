@@ -51,6 +51,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    static readonly DiagnosticDescriptor redundantStringSyntaxRule = new(
+        id: "SSA007",
+        title: "StringSyntax can be replaced with a shortcut attribute",
+        messageFormat: "[StringSyntax(\"{0}\")] can be replaced with [{0}]",
+        category: "StringSyntaxAttribute.Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
     [
         formatMismatchRule,
@@ -58,7 +66,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         droppedFormatRule,
         equalityMismatchRule,
         equalityMissingFormatRule,
-        singletonUnionRule
+        singletonUnionRule,
+        redundantStringSyntaxRule
     ];
 
     public override void Initialize(AnalysisContext context)
@@ -85,6 +94,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // instead of symbol identity so cross-assembly attribute use still works.
             var types = new SyntaxTypes(stringSyntaxType);
 
+            // Shortcut attributes present in this compilation (empty unless the consumer
+            // opted in with `StringSyntaxAnalyzer_EmitShortcutAttributes=true`). Used by
+            // SSA007 to offer `[Html]` in place of `[StringSyntax("Html")]`.
+            var availableShortcuts = shortcutAttributeNames
+                .Where(_ => start.Compilation
+                    .GetTypeByMetadataName($"{shortcutAttributeNamespace}.{_}Attribute") is not null)
+                .ToImmutableHashSet();
+
             var suppression = new NamespaceSuppression(start.Options);
 
             start.RegisterOperationAction(
@@ -107,7 +124,56 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 SymbolKind.Parameter,
                 SymbolKind.Property,
                 SymbolKind.Field);
+
+            if (!availableShortcuts.IsEmpty)
+            {
+                start.RegisterSymbolAction(
+                    _ => AnalyzeSymbolForRedundantStringSyntax(_, types, availableShortcuts),
+                    SymbolKind.Parameter,
+                    SymbolKind.Property,
+                    SymbolKind.Field);
+            }
         });
+    }
+
+    static void AnalyzeSymbolForRedundantStringSyntax(
+        SymbolAnalysisContext context,
+        SyntaxTypes types,
+        ImmutableHashSet<string> availableShortcuts)
+    {
+        foreach (var attribute in context.Symbol.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
+            {
+                continue;
+            }
+
+            if (attribute.ConstructorArguments.Length == 0 ||
+                attribute.ConstructorArguments[0].Value is not string value)
+            {
+                continue;
+            }
+
+            if (!availableShortcuts.Contains(value))
+            {
+                continue;
+            }
+
+            var location = attribute.ApplicationSyntaxReference?
+                .GetSyntax(context.CancellationToken)
+                .GetLocation();
+            if (location is null)
+            {
+                continue;
+            }
+
+            var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, value);
+            context.ReportDiagnostic(Diagnostic.Create(
+                redundantStringSyntaxRule,
+                location,
+                properties: properties,
+                messageArgs: value));
+        }
     }
 
     static void AnalyzeArgument(
@@ -435,6 +501,33 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     const string unionSyntaxMetadataName = "StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute";
     const string returnSyntaxMetadataName = "StringSyntaxAttributeAnalyzer.ReturnSyntaxAttribute";
+    const string shortcutAttributeNamespace = "StringSyntaxAttributeAnalyzer";
+
+    // Names of shortcut-per-constant attributes emitted by SyntaxConstantsGenerator when
+    // `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. E.g. `[Html]` is recognized as
+    // `[StringSyntax("Html")]`. Kept in sync with the generator's `shortcutNames` list.
+    static readonly ImmutableHashSet<string> shortcutAttributeNames =
+    [
+        "CompositeFormat",
+        "DateOnlyFormat",
+        "DateTimeFormat",
+        "EnumFormat",
+        "GuidFormat",
+        "Json",
+        "NumericFormat",
+        "Regex",
+        "TimeOnlyFormat",
+        "TimeSpanFormat",
+        "Uri",
+        "Xml",
+        "Html",
+        "Text",
+        "Email",
+        "Markdown",
+        "Yaml",
+        "Csv",
+        "Sql"
+    ];
 
     readonly struct SyntaxTypes(INamedTypeSymbol stringSyntax)
     {
@@ -486,9 +579,48 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 }
                 return new(SyntaxState.Present, []);
             }
+
+            if (TryMatchShortcutAttribute(attribute, out var shortcutValue))
+            {
+                return SyntaxInfo.Present(shortcutValue);
+            }
         }
 
         return SyntaxInfo.NotPresent;
+    }
+
+    // Recognize `[Html]`, `[Json]`, ... emitted by SyntaxConstantsGenerator when the
+    // consumer opts in with `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. The
+    // attribute is generated per-assembly (internal), so we match by fully-qualified
+    // name rather than symbol identity — same as UnionSyntax/ReturnSyntax.
+    static bool TryMatchShortcutAttribute(AttributeData attribute, out string value)
+    {
+        value = "";
+        var type = attribute.AttributeClass;
+        if (type is null)
+        {
+            return false;
+        }
+
+        if (type.ContainingNamespace?.ToDisplayString() != shortcutAttributeNamespace)
+        {
+            return false;
+        }
+
+        var name = type.Name;
+        if (!name.EndsWith("Attribute", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var baseName = name.Substring(0, name.Length - "Attribute".Length);
+        if (!shortcutAttributeNames.Contains(baseName))
+        {
+            return false;
+        }
+
+        value = baseName;
+        return true;
     }
 
     static ImmutableArray<string> ExtractUnionOptions(AttributeData attribute)

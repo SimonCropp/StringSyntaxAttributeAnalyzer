@@ -8,12 +8,14 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     const string missingSourceFormatId = "SSA002";
     const string droppedFormatId = "SSA003";
     const string equalityMissingFormatId = "SSA005";
+    const string redundantStringSyntaxId = "SSA007";
 
     public override ImmutableArray<string> FixableDiagnosticIds =>
     [
         missingSourceFormatId,
         droppedFormatId,
-        equalityMissingFormatId
+        equalityMissingFormatId,
+        redundantStringSyntaxId
     ];
 
     public override FixAllProvider GetFixAllProvider() =>
@@ -21,8 +23,18 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
     public override async Task RegisterCodeFixesAsync(CodeFixContext context)
     {
+        var compilation = await context.Document.Project
+            .GetCompilationAsync(context.CancellationToken)
+            .ConfigureAwait(false);
+
         foreach (var diagnostic in context.Diagnostics)
         {
+            if (diagnostic.Id == redundantStringSyntaxId)
+            {
+                RegisterReplaceWithShortcut(context, diagnostic);
+                continue;
+            }
+
             if (diagnostic.AdditionalLocations.Count == 0)
             {
                 continue;
@@ -81,7 +93,8 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
             foreach (var singleValue in values)
             {
-                var (title, equivalenceKey) = BuildFixMetadata(host, singleValue);
+                var useShortcut = CanUseShortcut(compilation, host, singleValue);
+                var (title, equivalenceKey) = BuildFixMetadata(host, singleValue, useShortcut);
                 context.RegisterCodeFix(
                     CodeAction.Create(
                         title,
@@ -94,6 +107,63 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                     diagnostic);
             }
         }
+    }
+
+    static void RegisterReplaceWithShortcut(CodeFixContext context, Diagnostic diagnostic)
+    {
+        if (!diagnostic.Properties.TryGetValue(valueKey, out var value) || value is null)
+        {
+            return;
+        }
+
+        context.RegisterCodeFix(
+            CodeAction.Create(
+                $"Replace with [{value}]",
+                cancel => ReplaceWithShortcutAsync(
+                    context.Document.Project.Solution,
+                    diagnostic.Location,
+                    value,
+                    cancel),
+                equivalenceKey: $"ReplaceWithShortcut:{value}"),
+            diagnostic);
+    }
+
+    static async Task<Solution> ReplaceWithShortcutAsync(
+        Solution solution,
+        Location location,
+        string name,
+        Cancel cancel)
+    {
+        var document = solution.GetDocument(location.SourceTree);
+        if (document is null)
+        {
+            return solution;
+        }
+
+        var root = await document.GetSyntaxRootAsync(cancel).ConfigureAwait(false);
+        if (root is null)
+        {
+            return solution;
+        }
+
+        // The diagnostic location is the `[StringSyntax(...)]` AttributeSyntax itself.
+        var node = root.FindNode(location.SourceSpan);
+        var attribute = node as AttributeSyntax ?? node.FirstAncestorOrSelf<AttributeSyntax>();
+        if (attribute is null)
+        {
+            return solution;
+        }
+
+        var replacement = Attribute(IdentifierName(name))
+            .WithLeadingTrivia(attribute.GetLeadingTrivia())
+            .WithTrailingTrivia(attribute.GetTrailingTrivia())
+            .WithAdditionalAnnotations(Formatter.Annotation);
+
+        var newRoot = root.ReplaceNode(attribute, replacement);
+        var newDocument = await Formatter
+            .FormatAsync(document.WithSyntaxRoot(newRoot), Formatter.Annotation, cancellationToken: cancel)
+            .ConfigureAwait(false);
+        return newDocument.Project.Solution;
     }
 
     static bool CanHostUnion(SyntaxNode? host) =>
@@ -141,17 +211,28 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         else
         {
             var compilation = await document.Project.GetCompilationAsync(cancel).ConfigureAwait(false);
-            var resolvedName = ResolveAttributeName(compilation);
-            var attributeName = IsMethodHost(targetNode)
-                ? "ReturnSyntax"
-                : resolvedName;
-            // Emit `Syntax.X` only when the short alias is available — the `Syntax`
-            // class lives in the StringSyntaxAttributeAnalyzer namespace, which the
-            // generator's global usings bring into scope alongside the alias. When
-            // the consumer has opted out of globals, fall back to a literal so the
-            // output compiles without a manual using directive.
-            var useConstant = resolvedName == "Syntax" && KnownSyntaxConstants.IsKnown(values[0]);
-            newTargetNode = AddStringSyntaxAttribute(targetNode, values[0], attributeName, useConstant);
+            if (CanUseShortcut(compilation, targetNode, values[0]))
+            {
+                // Shortcut attributes (`[Html]`, `[Regex]`, ...) are source-generated
+                // into the consumer's compilation when they opt in with
+                // `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. When available,
+                // prefer them — they are what the user configured the project to use.
+                newTargetNode = AddParameterlessAttribute(targetNode, values[0]);
+            }
+            else
+            {
+                var resolvedName = ResolveAttributeName(compilation);
+                var attributeName = IsMethodHost(targetNode)
+                    ? "ReturnSyntax"
+                    : resolvedName;
+                // Emit `Syntax.X` only when the short alias is available — the `Syntax`
+                // class lives in the StringSyntaxAttributeAnalyzer namespace, which the
+                // generator's global usings bring into scope alongside the alias. When
+                // the consumer has opted out of globals, fall back to a literal so the
+                // output compiles without a manual using directive.
+                var useConstant = resolvedName == "Syntax" && KnownSyntaxConstants.IsKnown(values[0]);
+                newTargetNode = AddStringSyntaxAttribute(targetNode, values[0], attributeName, useConstant);
+            }
         }
 
         if (newTargetNode is null)
@@ -211,7 +292,10 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             LocalFunctionStatementSyntax or
             DelegateDeclarationSyntax;
 
-    static (string Title, string EquivalenceKey) BuildFixMetadata(SyntaxNode? host, string value)
+    static (string Title, string EquivalenceKey) BuildFixMetadata(
+        SyntaxNode? host,
+        string value,
+        bool useShortcut = false)
     {
         var description = host is null ? "declaration" : HostDescription.Describe(host);
         // Known values surface as `Syntax.X` so the user gets a named constant rather
@@ -220,6 +304,12 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         var argument = KnownSyntaxConstants.IsKnown(value)
             ? $"Syntax.{value}"
             : $"\"{value}\"";
+        if (useShortcut)
+        {
+            return (
+                $"Add [{value}] to {description}",
+                $"AddShortcut:{value}");
+        }
         return host switch
         {
             LocalDeclarationStatementSyntax => (
@@ -231,6 +321,48 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             _ => (
                 $"Add [Syntax({argument})] to {description}",
                 $"AddSyntax:{value}")
+        };
+    }
+
+    // A shortcut attribute like `[Html]` is usable when:
+    //   - the consumer opted in, so the generator emitted the type (detected by
+    //     looking up `StringSyntaxAttributeAnalyzer.<Name>Attribute` in the
+    //     compilation);
+    //   - the host can carry an attribute whose target is Field/Property/Parameter
+    //     (the shortcut's AttributeUsage doesn't include methods or return values);
+    //   - the value is a known constant (shortcuts are only generated for those).
+    static bool CanUseShortcut(Compilation? compilation, SyntaxNode? host, string value)
+    {
+        if (compilation is null)
+        {
+            return false;
+        }
+
+        if (host is null || IsMethodHost(host) || host is LocalDeclarationStatementSyntax)
+        {
+            return false;
+        }
+
+        if (!KnownSyntaxConstants.IsKnown(value))
+        {
+            return false;
+        }
+
+        return compilation.GetTypeByMetadataName($"StringSyntaxAttributeAnalyzer.{value}Attribute") is not null;
+    }
+
+    static SyntaxNode? AddParameterlessAttribute(SyntaxNode host, string name)
+    {
+        var attribute = Attribute(IdentifierName(name));
+        var attributes = AttributeList(SingletonSeparatedList(attribute))
+            .WithAdditionalAnnotations(Formatter.Annotation);
+
+        return host switch
+        {
+            PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
+            FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
+            ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
+            _ => null
         };
     }
 
