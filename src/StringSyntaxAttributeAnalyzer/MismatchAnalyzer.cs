@@ -300,7 +300,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 equalityMissingFormatRule,
                 binary.Syntax.GetLocation(),
                 rightSymbol,
-                leftInfo.PrimaryValue));
+                leftInfo));
         }
         else if (rightInfo.State == SyntaxState.Present &&
                  leftInfo.State == SyntaxState.NotPresent)
@@ -315,7 +315,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 equalityMissingFormatRule,
                 binary.Syntax.GetLocation(),
                 leftSymbol,
-                rightInfo.PrimaryValue));
+                rightInfo));
         }
     }
 
@@ -572,7 +572,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     missingSourceFormatRule,
                     location,
                     sourceSymbol,
-                    target.PrimaryValue));
+                    target));
             return;
         }
 
@@ -592,7 +592,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     droppedFormatRule,
                     location,
                     targetSymbol,
-                    source.PrimaryValue));
+                    source));
         }
     }
 
@@ -600,13 +600,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         DiagnosticDescriptor rule,
         Location location,
         ISymbol? fixTarget,
-        string? value) =>
+        SyntaxInfo info) =>
         Diagnostic.Create(
             rule,
             location,
             additionalLocations: GetAdditionalLocations(fixTarget),
-            properties: ImmutableDictionary<string, string?>.Empty.Add(valueKey, value),
-            messageArgs: value ?? "");
+            properties: ImmutableDictionary<string, string?>.Empty.Add(valueKey, info.PrimaryValue),
+            messageArgs: SyntaxValueMatcher.FormatValues(info.Values));
 
     static Location[]? GetAdditionalLocations(ISymbol? fixTarget)
     {

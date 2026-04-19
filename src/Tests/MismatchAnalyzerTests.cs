@@ -845,7 +845,9 @@ public class MismatchAnalyzerTests
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("html"));
+        var message = diagnostics[0].GetMessage();
+        IsTrue(message.Contains("html"));
+        IsTrue(message.Contains("xml"));
     }
 
     [Test]
