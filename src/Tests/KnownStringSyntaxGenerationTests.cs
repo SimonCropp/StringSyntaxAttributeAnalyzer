@@ -14,7 +14,10 @@ public class KnownStringSyntaxGenerationTests
         typeof(XmlDocument).Assembly,                                                  // System.Xml.ReaderWriter
         typeof(System.Net.Http.HttpClient).Assembly,                                   // System.Net.Http
         typeof(System.ComponentModel.DataAnnotations.RegularExpressionAttribute).Assembly, // System.ComponentModel.Annotations
-        typeof(System.Data.Common.DbCommand).Assembly                                  // System.Data.Common
+        typeof(System.Data.Common.DbCommand).Assembly,                                 // System.Data.Common
+        typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly,                      // Microsoft.EntityFrameworkCore
+        typeof(Newtonsoft.Json.JsonConvert).Assembly,                                  // Newtonsoft.Json
+        typeof(Serilog.Log).Assembly                                                   // Serilog
     ];
 
     const string targetFileName = "KnownStringSyntax.Generated.cs";
