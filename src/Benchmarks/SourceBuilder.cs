@@ -1,7 +1,3 @@
-using System.Text;
-
-namespace StringSyntaxAttributeAnalyzer.Benchmarks;
-
 // Builds a synthetic compilation exercising every code path the analyzer
 // registers: argument, assignment, property/field initializer, and binary
 // equality — a realistic mix of Present/NotPresent/Unknown sources.

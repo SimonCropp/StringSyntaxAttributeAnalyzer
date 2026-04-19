@@ -1170,7 +1170,7 @@ public class MismatchAnalyzerTests
             AnalyzerConfigOptionsProvider provider = perTreeOnly
                 ? new PerTreeConfigOptionsProvider(parsed)
                 : new TestConfigOptionsProvider(parsed);
-            analyzerOptions = new AnalyzerOptions(additionalFiles: [], optionsProvider: provider);
+            analyzerOptions = new(additionalFiles: [], optionsProvider: provider);
         }
 
         return compilation

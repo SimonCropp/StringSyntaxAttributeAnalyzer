@@ -79,7 +79,7 @@ sealed class NamespaceSuppression
                 continue;
             }
 
-            if (pattern[pattern.Length - 1] == '*')
+            if (pattern[^1] == '*')
             {
                 var prefix = pattern.Substring(0, pattern.Length - 1);
                 if (fullName.StartsWith(prefix, StringComparison.Ordinal))

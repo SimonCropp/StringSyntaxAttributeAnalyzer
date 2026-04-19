@@ -10,7 +10,7 @@ static class HostDescription
         {
             PropertyDeclarationSyntax property =>
                 $"property '{property.Identifier.Text}'",
-            FieldDeclarationSyntax field when field.Declaration.Variables.Count > 0 =>
+            FieldDeclarationSyntax { Declaration.Variables.Count: > 0 } field =>
                 $"field '{field.Declaration.Variables[0].Identifier.Text}'",
             ParameterSyntax parameter =>
                 $"parameter '{parameter.Identifier.Text}'",
@@ -20,7 +20,7 @@ static class HostDescription
                 $"local function '{local.Identifier.Text}'",
             DelegateDeclarationSyntax del =>
                 $"delegate '{del.Identifier.Text}'",
-            LocalDeclarationStatementSyntax localStatement when localStatement.Declaration.Variables.Count > 0 =>
+            LocalDeclarationStatementSyntax { Declaration.Variables.Count: > 0 } localStatement =>
                 $"local '{localStatement.Declaration.Variables[0].Identifier.Text}'",
             _ => "declaration"
         };
