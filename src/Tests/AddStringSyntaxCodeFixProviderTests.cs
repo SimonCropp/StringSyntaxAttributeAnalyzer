@@ -198,7 +198,7 @@ public class AddStringSyntaxCodeFixProviderTests
             assemblyName: "Tests",
             language: LanguageNames.CSharp,
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: TrustedReferences());
+            metadataReferences: TrustedPlatformReferences.All);
 
         var solution = workspace.CurrentSolution.AddProject(projectInfo);
         var documentId = DocumentId.CreateNewId(projectInfo.Id);
@@ -358,9 +358,7 @@ public class AddStringSyntaxCodeFixProviderTests
             assemblyName: "Tests",
             language: LanguageNames.CSharp,
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
-                .Split(Path.PathSeparator)
-                .Select(_ => MetadataReference.CreateFromFile(_)));
+            metadataReferences: TrustedPlatformReferences.All);
 
         var solution = workspace.CurrentSolution.AddProject(projectInfo);
         var globalsId = DocumentId.CreateNewId(projectInfo.Id);
@@ -1069,7 +1067,7 @@ public class AddStringSyntaxCodeFixProviderTests
             assemblyName: "Tests",
             language: LanguageNames.CSharp,
             compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: TrustedReferences());
+            metadataReferences: TrustedPlatformReferences.All);
 
         var solution = workspace.CurrentSolution.AddProject(projectInfo);
         var documentId = DocumentId.CreateNewId(projectInfo.Id);
@@ -1106,8 +1104,4 @@ public class AddStringSyntaxCodeFixProviderTests
         return (document, filtered.Single());
     }
 
-    static IEnumerable<MetadataReference> TrustedReferences() =>
-        ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
-            .Split(Path.PathSeparator)
-            .Select(_ => MetadataReference.CreateFromFile(_));
 }

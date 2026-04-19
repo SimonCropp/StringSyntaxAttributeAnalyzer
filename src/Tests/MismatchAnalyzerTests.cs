@@ -1516,15 +1516,10 @@ public class MismatchAnalyzerTests
         // have to declare any of these themselves.
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
-        var trustedAssemblies = ((string) AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
-            .Split(Path.PathSeparator)
-            .Select(_ => MetadataReference.CreateFromFile(_))
-            .ToList();
-
         var baseCompilation = CSharpCompilation.Create(
             "Tests",
             [syntaxTree],
-            trustedAssemblies,
+            TrustedPlatformReferences.All,
             new(OutputKind.DynamicallyLinkedLibrary));
 
         var driver = emitShortcutAttributes
@@ -1559,15 +1554,10 @@ public class MismatchAnalyzerTests
         string messagesSource,
         string consumerSource)
     {
-        var trustedAssemblies = ((string) AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
-            .Split(Path.PathSeparator)
-            .Select(_ => MetadataReference.CreateFromFile(_))
-            .ToList();
-
         var messagesBase = CSharpCompilation.Create(
             "Messages",
             [CSharpSyntaxTree.ParseText(messagesSource)],
-            trustedAssemblies,
+            TrustedPlatformReferences.All,
             new(OutputKind.DynamicallyLinkedLibrary));
         CSharpGeneratorDriver
             .Create(new SyntaxConstantsGenerator())
@@ -1586,7 +1576,7 @@ public class MismatchAnalyzerTests
         var consumerBase = CSharpCompilation.Create(
             "Consumer",
             [CSharpSyntaxTree.ParseText(consumerSource)],
-            [..trustedAssemblies, messagesReference],
+            [..TrustedPlatformReferences.All, messagesReference],
             new(OutputKind.DynamicallyLinkedLibrary));
         CSharpGeneratorDriver
             .Create(new SyntaxConstantsGenerator())
