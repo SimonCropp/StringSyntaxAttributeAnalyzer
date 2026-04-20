@@ -406,7 +406,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(rightSymbol!)) ||
-                suppression.Matches(rightSymbol, suppressedNamespaces))
+                suppression.Matches(rightSymbol, suppressedNamespaces) ||
+                KnownUnannotatedAssemblies.Contains(rightSymbol))
             {
                 return;
             }
@@ -421,7 +422,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                  leftInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(leftSymbol!)) ||
-                suppression.Matches(leftSymbol, suppressedNamespaces))
+                suppression.Matches(leftSymbol, suppressedNamespaces) ||
+                KnownUnannotatedAssemblies.Contains(leftSymbol))
             {
                 return;
             }
@@ -533,19 +535,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (symbol is IPropertySymbol property &&
             FindPrimaryConstructorParameter(property) is { } parameter)
         {
-            var fromParameter = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
-            if (fromParameter.State == SyntaxState.Present)
-            {
-                return fromParameter;
-            }
-        }
-
-        // Fallback: well-known annotations harvested at build time from common
-        // assemblies whose own [StringSyntax] is missing (older targets, third-party
-        // libs). See KnownStringSyntax.cs / KnownStringSyntaxGenerationTests.
-        if (KnownStringSyntax.TryLookup(symbol, out var known))
-        {
-            return SyntaxInfo.Present(known);
+            return GetSyntaxFromAttributes(parameter.GetAttributes(), types);
         }
 
         return info;
@@ -798,8 +788,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             // Source in a suppressed namespace (BCL etc.) can't be annotated by the
             // consumer — skip rather than surfacing an unfixable SSA002. Mirrors the
-            // target-side check on the SSA003 branch below.
-            if (suppression.Matches(sourceSymbol, suppressedNamespaces))
+            // target-side check on the SSA003 branch below. Same reasoning for
+            // assemblies the generator confirmed have zero [StringSyntax] anywhere
+            // (third-party libs that haven't adopted the attribute).
+            if (suppression.Matches(sourceSymbol, suppressedNamespaces) ||
+                KnownUnannotatedAssemblies.Contains(sourceSymbol))
             {
                 return;
             }
@@ -819,8 +812,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             target.State == SyntaxState.NotPresent)
         {
             // SSA003: the target can't be fixed if it's in a namespace the user can't
-            // edit (BCL by default). Bail rather than showing an unfixable warning.
-            if (suppression.Matches(targetSymbol, suppressedNamespaces))
+            // edit (BCL by default), or in an assembly the generator confirmed has
+            // no [StringSyntax] annotations at all.
+            if (suppression.Matches(targetSymbol, suppressedNamespaces) ||
+                KnownUnannotatedAssemblies.Contains(targetSymbol))
             {
                 return;
             }

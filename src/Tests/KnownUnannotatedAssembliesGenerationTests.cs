@@ -1,14 +1,21 @@
+using System.Collections.Generic;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Xml;
+
 [TestFixture]
-public class KnownStringSyntaxGenerationTests
+public class KnownUnannotatedAssembliesGenerationTests
 {
-    // Assemblies to scan for [StringSyntax(...)] annotations. The whole point of
-    // pre-computing this lookup is that these annotations rarely change, so the
-    // dictionary is checked into source rather than rebuilt on each compilation.
-    // Add an assembly here, re-run the test, commit the regenerated file.
+    // Assemblies the generator probes. For each, it walks every member and looks
+    // for ANY [StringSyntax(...)] — if zero are found, the assembly's simple name
+    // is added to the deny-list. To extend coverage, drop a new entry here and
+    // re-run; the test will rewrite the generated file and ask you to commit.
     static Assembly[] assemblies =
     [
         typeof(string).Assembly,                                                       // System.Private.CoreLib
-        typeof(Uri).Assembly,                                                          // System.Private.Uri (or CoreLib, depending on tfm)
+        typeof(Uri).Assembly,                                                          // System.Private.Uri
         typeof(Regex).Assembly,                                                        // System.Text.RegularExpressions
         typeof(JsonDocument).Assembly,                                                 // System.Text.Json
         typeof(XmlDocument).Assembly,                                                  // System.Xml.ReaderWriter
@@ -20,23 +27,24 @@ public class KnownStringSyntaxGenerationTests
         typeof(Serilog.Log).Assembly                                                   // Serilog
     ];
 
-    const string targetFileName = "KnownStringSyntax.Generated.cs";
+    const string targetFileName = "KnownUnannotatedAssemblies.Generated.cs";
     const string stringSyntaxAttributeFullName =
         "System.Diagnostics.CodeAnalysis.StringSyntaxAttribute";
 
     [Test]
     public void GeneratedFileIsUpToDate()
     {
-        var entries = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        var scanned = new SortedSet<string>(StringComparer.Ordinal);
+        var unannotated = new SortedSet<string>(StringComparer.Ordinal);
 
         foreach (var assembly in assemblies.Distinct())
         {
-            scanned.Add(assembly.GetName().Name!);
-            Harvest(assembly, entries);
+            if (!HasAnyStringSyntax(assembly))
+            {
+                unannotated.Add(assembly.GetName().Name!);
+            }
         }
 
-        var generated = Render(entries, scanned);
+        var generated = Render(unannotated);
         var path = LocateTargetFile();
         var existing = File.ReadAllText(path);
 
@@ -50,7 +58,7 @@ public class KnownStringSyntaxGenerationTests
             $"{targetFileName} was out of date and has been rewritten. Re-run the test to confirm green, then commit.");
     }
 
-    static void Harvest(Assembly assembly, SortedDictionary<string, string> entries)
+    static bool HasAnyStringSyntax(Assembly assembly)
     {
         Type[] types;
         try
@@ -62,6 +70,13 @@ public class KnownStringSyntaxGenerationTests
             types = ex.Types.Where(_ => _ is not null).ToArray()!;
         }
 
+        const BindingFlags flags =
+            BindingFlags.Public |
+            BindingFlags.NonPublic |
+            BindingFlags.Static |
+            BindingFlags.Instance |
+            BindingFlags.DeclaredOnly;
+
         foreach (var type in types)
         {
             if (type is { IsPublic: false, IsNestedPublic: false })
@@ -69,134 +84,100 @@ public class KnownStringSyntaxGenerationTests
                 continue;
             }
 
-            const BindingFlags flags =
-                BindingFlags.Public |
-                BindingFlags.NonPublic |
-                BindingFlags.Static |
-                BindingFlags.Instance |
-                BindingFlags.DeclaredOnly;
-
             foreach (var field in type.GetFields(flags))
             {
-                if (TryReadStringSyntax(field.GetCustomAttributesData(), out var v))
+                if (HasStringSyntax(field.GetCustomAttributesData()))
                 {
-                    entries[ReflectionDocId.ForField(field)] = v;
+                    return true;
                 }
             }
 
             foreach (var property in type.GetProperties(flags))
             {
-                if (TryReadStringSyntax(property.GetCustomAttributesData(), out var v))
+                if (HasStringSyntax(property.GetCustomAttributesData()))
                 {
-                    entries[ReflectionDocId.ForProperty(property)] = v;
+                    return true;
                 }
             }
 
             foreach (var method in type.GetMethods(flags))
             {
-                HarvestMethod(method, entries);
+                if (MethodHasStringSyntax(method))
+                {
+                    return true;
+                }
             }
 
             foreach (var ctor in type.GetConstructors(flags))
             {
-                HarvestMethod(ctor, entries);
+                if (MethodHasStringSyntax(ctor))
+                {
+                    return true;
+                }
             }
         }
+
+        return false;
     }
 
-    static void HarvestMethod(MethodBase method, SortedDictionary<string, string> entries)
+    static bool MethodHasStringSyntax(MethodBase method)
     {
-        var methodId = ReflectionDocId.ForMethod(method);
-
         foreach (var parameter in method.GetParameters())
         {
-            if (TryReadStringSyntax(parameter.GetCustomAttributesData(), out var v))
+            if (HasStringSyntax(parameter.GetCustomAttributesData()))
             {
-                entries[$"{methodId}#{parameter.Name}"] = v;
-            }
-        }
-
-        if (method is MethodInfo info)
-        {
-            var returnAttrs = info.ReturnParameter.GetCustomAttributesData();
-            if (TryReadStringSyntax(returnAttrs, out var v))
-            {
-                entries[$"{methodId}#return"] = v;
-            }
-        }
-    }
-
-    static bool TryReadStringSyntax(IList<CustomAttributeData> attributes, out string value)
-    {
-        foreach (var attribute in attributes)
-        {
-            if (attribute.AttributeType.FullName != stringSyntaxAttributeFullName)
-            {
-                continue;
-            }
-
-            if (attribute.ConstructorArguments.Count == 0)
-            {
-                continue;
-            }
-
-            if (attribute.ConstructorArguments[0].Value is string s)
-            {
-                value = s;
                 return true;
             }
         }
 
-        value = "";
+        if (method is MethodInfo info &&
+            HasStringSyntax(info.ReturnParameter.GetCustomAttributesData()))
+        {
+            return true;
+        }
+
         return false;
     }
 
-    static string Render(SortedDictionary<string, string> entries, SortedSet<string> scanned)
+    static bool HasStringSyntax(IList<CustomAttributeData> attributes)
+    {
+        foreach (var attribute in attributes)
+        {
+            if (attribute.AttributeType.FullName == stringSyntaxAttributeFullName)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static string Render(SortedSet<string> unannotated)
     {
         var builder = new StringBuilder();
 
         builder.Append(
             """
             // <auto-generated>
-            //   Generated by KnownStringSyntaxGenerationTests. Do not edit by hand —
+            //   Generated by KnownUnannotatedAssembliesGenerationTests. Do not edit by hand —
             //   re-run `dotnet test src/StringSyntaxAttributeAnalyzer.slnx --filter
-            //   "FullyQualifiedName~KnownStringSyntaxGenerationTests"` to refresh.
+            //   "FullyQualifiedName~KnownUnannotatedAssembliesGenerationTests"` to refresh.
             // </auto-generated>
 
             using System.Collections.Generic;
 
-            public static partial class KnownStringSyntax
+            public static partial class KnownUnannotatedAssemblies
             {
-                // Simple names (IAssemblySymbol.Name) of every assembly inspected by the
-                // generator. Used by TryLookup to short-circuit before building a doc-id
-                // key — symbols from any other assembly are guaranteed misses.
-                public static readonly HashSet<string> ScannedAssemblies = new(System.StringComparer.Ordinal)
+                public static readonly HashSet<string> Names = new(System.StringComparer.Ordinal)
                 {
 
             """);
 
-        foreach (var name in scanned)
+        foreach (var name in unannotated)
         {
             builder.Append(
                 $"""
-                        "{Escape(name)}",
-
-                """);
-        }
-
-        builder.Append("""
-                };
-
-                public static readonly Dictionary<string, string> Lookup = new(System.StringComparer.Ordinal)
-                {
-
-            """);
-
-        foreach (var pair in entries)
-        {
-            builder.Append(
-                $"""
-                        ["{Escape(pair.Key)}"] = "{Escape(pair.Value)}",
+                        "{name}",
 
                 """);
         }
@@ -210,9 +191,6 @@ public class KnownStringSyntaxGenerationTests
 
         return builder.ToString().ReplaceLineEndings("\r\n");
     }
-
-    static string Escape(string value) =>
-        value.Replace("\\", @"\\").Replace("\"", "\\\"");
 
     static string LocateTargetFile()
     {
