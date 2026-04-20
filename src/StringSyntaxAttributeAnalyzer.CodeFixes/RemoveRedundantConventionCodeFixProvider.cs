@@ -165,13 +165,15 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
             // This avoids a leftover blank line when `// language=X` lived on its
             // own line.
             var start = i;
-            if (start > 0 && trivia[start - 1].IsKind(SyntaxKind.WhitespaceTrivia))
+            if (start > 0 &&
+                trivia[start - 1].IsKind(SyntaxKind.WhitespaceTrivia))
             {
                 start--;
             }
 
             var end = i;
-            if (end + 1 < trivia.Count && trivia[end + 1].IsKind(SyntaxKind.EndOfLineTrivia))
+            if (end + 1 < trivia.Count &&
+                trivia[end + 1].IsKind(SyntaxKind.EndOfLineTrivia))
             {
                 end++;
             }
@@ -186,7 +188,7 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
                 builder.Add(trivia[j]);
             }
 
-            result = SyntaxFactory.TriviaList(builder);
+            result = TriviaList(builder);
             return true;
         }
 
@@ -206,7 +208,8 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
                 continue;
             }
 
-            if (skipNextWhitespace && item.IsKind(SyntaxKind.WhitespaceTrivia))
+            if (skipNextWhitespace &&
+                item.IsKind(SyntaxKind.WhitespaceTrivia))
             {
                 skipNextWhitespace = false;
                 continue;
@@ -216,7 +219,7 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
             builder.Add(item);
         }
 
-        return SyntaxFactory.TriviaList(builder);
+        return TriviaList(builder);
     }
 
     static bool IsLanguageTrivia(SyntaxTrivia trivia)
