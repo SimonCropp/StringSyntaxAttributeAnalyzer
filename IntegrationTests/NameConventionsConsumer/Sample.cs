@@ -3,9 +3,6 @@
 // would fire one of SSA001/SSA002/SSA003/SSA008 (treated as errors in the
 // csproj) without the convention. Compiling clean is the test.
 
-using System.Diagnostics.CodeAnalysis;
-using StringSyntaxAttributeAnalyzer;
-
 public static class NameConventionsSample
 {
     [StringSyntax(Syntax.Uri)]
