@@ -1,4 +1,3 @@
-[TestFixture]
 public class AddStringSyntaxCodeFixProviderTests
 {
     [Test]
@@ -21,8 +20,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
-        Contains(fixedSource, "public string Value { get; set; }");
+        await Contains(fixedSource, "[Syntax(Syntax.Regex)]");
+        await Contains(fixedSource, "public string Value { get; set; }");
     }
 
     [Test]
@@ -42,8 +41,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
-        Contains(fixedSource, "public string Field;");
+        await Contains(fixedSource, "[Syntax(Syntax.Regex)]");
+        await Contains(fixedSource, "public string Field;");
     }
 
     [Test]
@@ -61,7 +60,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Regex)] string input");
+        await Contains(fixedSource, "[Syntax(Syntax.Regex)] string input");
     }
 
     [Test]
@@ -85,7 +84,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Regex)] string value");
+        await Contains(fixedSource, "[Syntax(Syntax.Regex)] string value");
     }
 
     [Test]
@@ -109,8 +108,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
-        Contains(fixedSource, "public string Value { get; set; }");
+        await Contains(fixedSource, "[Syntax(Syntax.Regex)]");
+        await Contains(fixedSource, "public string Value { get; set; }");
     }
 
     [Test]
@@ -131,8 +130,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Regex)]");
-        Contains(fixedSource, "public string Raw { get; set; }");
+        await Contains(fixedSource, "[Syntax(Syntax.Regex)]");
+        await Contains(fixedSource, "public string Raw { get; set; }");
     }
 
     [Test]
@@ -152,8 +151,8 @@ public class AddStringSyntaxCodeFixProviderTests
         // Lowercase `"html"` resolves to the canonical `Html` constant — same logic
         // as the rest of the codefix, kept consistent so the singleton-union rewrite
         // doesn't degrade to a string literal when a known constant exists.
-        Contains(fixedSource, "[Syntax(Syntax.Html)]");
-        IsFalse(fixedSource.Contains("[UnionSyntax"), $"Expected UnionSyntax removed:\n{fixedSource}");
+        await Contains(fixedSource, "[Syntax(Syntax.Html)]");
+        await Assert.That(fixedSource.Contains("[UnionSyntax")).IsFalse();
     }
 
     [Test]
@@ -181,9 +180,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFixWithoutAlias(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
-        IsFalse(fixedSource.Contains("[Syntax("),
-            $"Expected no [Syntax(...)] attribute when alias isn't in scope:\n{fixedSource}");
+        await Contains(fixedSource, "[StringSyntax(\"Regex\")]");
+        await Assert.That(fixedSource.Contains("[Syntax(")).IsFalse();
     }
 
     static async Task<string> ApplyFixWithoutAlias(string source)
@@ -243,7 +241,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(\"custom-format\")]");
+        await Contains(fixedSource, "[Syntax(\"custom-format\")]");
     }
 
     [Test]
@@ -266,10 +264,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source);
 
-        AreEqual(1, actions.Length);
-        AreEqual(
-            "Add [Syntax(\"custom-format\")] to property 'Value'",
-            actions[0].Title);
+        await Assert.That(actions.Length).IsEqualTo(1);
+        await Assert.That(actions[0].Title).IsEqualTo("Add [Syntax(\"custom-format\")] to property 'Value'");
     }
 
     [Test]
@@ -289,7 +285,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source);
 
-        AreEqual(0, actions.Length);
+        await Assert.That(actions.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -312,9 +308,9 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        TestContext.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
-        IsFalse(fixedSource.StartsWith('\n'), "Fixed source should not start with a newline");
-        IsFalse(fixedSource.StartsWith('\r'), "Fixed source should not start with CR");
+        Console.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
+        await Assert.That(fixedSource.StartsWith('\n')).IsFalse();
+        await Assert.That(fixedSource.StartsWith('\r')).IsFalse();
     }
 
     [Test]
@@ -341,11 +337,9 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFixWithGlobalUsings(targetSource, globalUsings);
 
-        TestContext.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
-        IsFalse(fixedSource.StartsWith('\n'), "Fixed file should not start with a newline");
-        IsFalse(
-            fixedSource.Contains("using System.Diagnostics.CodeAnalysis;"),
-            "Should NOT have added a local using when the namespace is already in a global using");
+        Console.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
+        await Assert.That(fixedSource.StartsWith('\n')).IsFalse();
+        await Assert.That(fixedSource.Contains("using System.Diagnostics.CodeAnalysis;")).IsFalse();
     }
 
     static async Task<string> ApplyFixWithGlobalUsings(string source, string globalUsings)
@@ -410,9 +404,9 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        TestContext.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
-        IsFalse(fixedSource.StartsWith('\n'), "Fixed source should not start with a newline");
-        IsFalse(fixedSource.StartsWith('\r'), "Fixed source should not start with CR");
+        Console.WriteLine("--- fixed ---\n" + fixedSource + "\n--- end ---");
+        await Assert.That(fixedSource.StartsWith('\n')).IsFalse();
+        await Assert.That(fixedSource.StartsWith('\r')).IsFalse();
     }
 
     [Test]
@@ -435,8 +429,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[ReturnSyntax(Syntax.Regex)]");
-        Contains(fixedSource, "public string GetPattern()");
+        await Contains(fixedSource, "[ReturnSyntax(Syntax.Regex)]");
+        await Contains(fixedSource, "public string GetPattern()");
     }
 
     [Test]
@@ -459,8 +453,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source);
 
-        AreEqual(1, actions.Length);
-        AreEqual("Add [ReturnSyntax(Syntax.Regex)] to method 'GetPattern'", actions[0].Title);
+        await Assert.That(actions.Length).IsEqualTo(1);
+        await Assert.That(actions[0].Title).IsEqualTo("Add [ReturnSyntax(Syntax.Regex)] to method 'GetPattern'");
     }
 
     [Test]
@@ -483,8 +477,8 @@ public class AddStringSyntaxCodeFixProviderTests
         var fixedSource = await ApplyFix(source);
 
         // Rider/IntelliJ convention: `regexp` for regex tokens.
-        Contains(fixedSource, "// language=regexp");
-        Contains(fixedSource, "var pattern = \"[a-z]+\";");
+        await Contains(fixedSource, "// language=regexp");
+        await Contains(fixedSource, "var pattern = \"[a-z]+\";");
     }
 
     [Test]
@@ -506,8 +500,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source);
 
-        AreEqual(1, actions.Length);
-        AreEqual("Add //language=regexp to local 'pattern'", actions[0].Title);
+        await Assert.That(actions.Length).IsEqualTo(1);
+        await Assert.That(actions[0].Title).IsEqualTo("Add //language=regexp to local 'pattern'");
     }
 
     [Test]
@@ -529,7 +523,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "// language=json");
+        await Contains(fixedSource, "// language=json");
     }
 
     [Test]
@@ -553,16 +547,10 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source);
 
-        AreEqual(3, actions.Length);
-        AreEqual(
-            "Add [UnionSyntax(Syntax.Html, Syntax.Xml)] to property 'Body'",
-            actions[0].Title);
-        AreEqual(
-            "Add [Syntax(Syntax.Html)] to property 'Body'",
-            actions[1].Title);
-        AreEqual(
-            "Add [Syntax(Syntax.Xml)] to property 'Body'",
-            actions[2].Title);
+        await Assert.That(actions.Length).IsEqualTo(3);
+        await Assert.That(actions[0].Title).IsEqualTo("Add [UnionSyntax(Syntax.Html, Syntax.Xml)] to property 'Body'");
+        await Assert.That(actions[1].Title).IsEqualTo("Add [Syntax(Syntax.Html)] to property 'Body'");
+        await Assert.That(actions[2].Title).IsEqualTo("Add [Syntax(Syntax.Xml)] to property 'Body'");
     }
 
     [Test]
@@ -586,7 +574,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFixAtIndex(source, 0);
 
-        Contains(fixedSource, "[UnionSyntax(Syntax.Html, Syntax.Xml)]");
+        await Contains(fixedSource, "[UnionSyntax(Syntax.Html, Syntax.Xml)]");
     }
 
     [Test]
@@ -610,7 +598,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFixAtIndex(source, 2);
 
-        Contains(fixedSource, "[Syntax(Syntax.Xml)]");
+        await Contains(fixedSource, "[Syntax(Syntax.Xml)]");
     }
 
     [Test]
@@ -634,16 +622,10 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source);
 
-        AreEqual(3, actions.Length);
-        AreEqual(
-            "Add [ReturnSyntax(Syntax.Html, Syntax.Xml)] to method 'Build'",
-            actions[0].Title);
-        AreEqual(
-            "Add [ReturnSyntax(Syntax.Html)] to method 'Build'",
-            actions[1].Title);
-        AreEqual(
-            "Add [ReturnSyntax(Syntax.Xml)] to method 'Build'",
-            actions[2].Title);
+        await Assert.That(actions.Length).IsEqualTo(3);
+        await Assert.That(actions[0].Title).IsEqualTo("Add [ReturnSyntax(Syntax.Html, Syntax.Xml)] to method 'Build'");
+        await Assert.That(actions[1].Title).IsEqualTo("Add [ReturnSyntax(Syntax.Html)] to method 'Build'");
+        await Assert.That(actions[2].Title).IsEqualTo("Add [ReturnSyntax(Syntax.Xml)] to method 'Build'");
     }
 
     [Test]
@@ -667,8 +649,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFixAtIndex(source, 0);
 
-        Contains(fixedSource, "[ReturnSyntax(Syntax.Html, Syntax.Xml)]");
-        Contains(fixedSource, "public string Build()");
+        await Contains(fixedSource, "[ReturnSyntax(Syntax.Html, Syntax.Xml)]");
+        await Contains(fixedSource, "public string Build()");
     }
 
     [Test]
@@ -692,13 +674,11 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFixAtIndex(source, 1);
 
-        Contains(fixedSource, "[ReturnSyntax(Syntax.Html)]");
+        await Contains(fixedSource, "[ReturnSyntax(Syntax.Html)]");
     }
 
-    static void Contains(string actual, string expected) =>
-        IsTrue(
-            actual.Contains(expected),
-            $"Expected fixed source to contain:\n{expected}\n\nActual:\n{actual}");
+    static async Task Contains(string actual, string expected) =>
+        await Assert.That(actual).Contains(expected);
 
     static async Task<string> ApplyFixAtIndex(string source, int index)
     {
@@ -748,8 +728,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Regex]");
-        IsFalse(fixedSource.Contains("[Syntax(Syntax.Regex)]"));
+        await Contains(fixedSource, "[Regex]");
+        await Assert.That(fixedSource.Contains("[Syntax(Syntax.Regex)]")).IsFalse();
     }
 
     [Test]
@@ -779,7 +759,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Regex] string value");
+        await Contains(fixedSource, "[Regex] string value");
     }
 
     [Test]
@@ -802,8 +782,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Html]");
-        IsFalse(fixedSource.Contains("[StringSyntax(\"Html\")]"));
+        await Contains(fixedSource, "[Html]");
+        await Assert.That(fixedSource.Contains("[StringSyntax(\"Html\")]")).IsFalse();
     }
 
     [Test]
@@ -826,8 +806,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source, "SSA007");
 
-        Contains(fixedSource, "[return: Json]");
-        IsFalse(fixedSource.Contains("[ReturnSyntax("));
+        await Contains(fixedSource, "[return: Json]");
+        await Assert.That(fixedSource.Contains("[ReturnSyntax(")).IsFalse();
     }
 
     [Test]
@@ -850,8 +830,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source, "SSA007");
 
-        AreEqual(1, actions.Length);
-        AreEqual("Replace with [return: Json]", actions[0].Title);
+        await Assert.That(actions.Length).IsEqualTo(1);
+        await Assert.That(actions[0].Title).IsEqualTo("Replace with [return: Json]");
     }
 
     [Test]
@@ -875,8 +855,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source, "SSA007");
 
-        AreEqual(1, actions.Length);
-        AreEqual("Replace with [Html]", actions[0].Title);
+        await Assert.That(actions.Length).IsEqualTo(1);
+        await Assert.That(actions[0].Title).IsEqualTo("Replace with [Html]");
     }
 
     [Test]
@@ -902,7 +882,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Html)]");
+        await Contains(fixedSource, "[Syntax(Syntax.Html)]");
     }
 
     [Test]
@@ -938,9 +918,9 @@ public class AddStringSyntaxCodeFixProviderTests
         // (covered separately by the AddShortcut test).
         var fixedSource = await ApplyFix(source, "SSA002");
 
-        Contains(fixedSource, "[Html]");
-        IsFalse(fixedSource.Contains("[Syntax(\"html\")]"));
-        IsFalse(fixedSource.Contains("[Syntax(Syntax.Html)]"));
+        await Contains(fixedSource, "[Html]");
+        await Assert.That(fixedSource.Contains("[Syntax(\"html\")]")).IsFalse();
+        await Assert.That(fixedSource.Contains("[Syntax(Syntax.Html)]")).IsFalse();
     }
 
     [Test]
@@ -965,8 +945,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source, "SSA007");
 
-        Contains(fixedSource, "[Html]");
-        IsFalse(fixedSource.Contains("StringSyntax(\"html\")"));
+        await Contains(fixedSource, "[Html]");
+        await Assert.That(fixedSource.Contains("StringSyntax(\"html\")")).IsFalse();
     }
 
     [Test]
@@ -993,7 +973,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFixAtIndex(source, 0);
 
-        Contains(fixedSource, "[UnionSyntax(Syntax.Html, Syntax.Xml)]");
+        await Contains(fixedSource, "[UnionSyntax(Syntax.Html, Syntax.Xml)]");
     }
 
     [Test]
@@ -1013,7 +993,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix<ReplaceUnionWithStringSyntaxCodeFixProvider>(source);
 
-        Contains(fixedSource, "[Syntax(Syntax.Html)]");
+        await Contains(fixedSource, "[Syntax(Syntax.Html)]");
     }
 
     static Task<string> ApplyFix(string source, string? diagnosticId = null) =>

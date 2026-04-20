@@ -1,4 +1,3 @@
-[TestFixture]
 public class RemoveRedundantConventionCodeFixProviderTests
 {
     [Test]
@@ -15,8 +14,8 @@ public class RemoveRedundantConventionCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        DoesNotContain(fixedSource, "StringSyntax");
-        Contains(fixedSource, "public string Url { get; set; }");
+        await DoesNotContain(fixedSource, "StringSyntax");
+        await Contains(fixedSource, "public string Url { get; set; }");
     }
 
     [Test]
@@ -32,8 +31,8 @@ public class RemoveRedundantConventionCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        DoesNotContain(fixedSource, "StringSyntax");
-        Contains(fixedSource, "string pageHtml");
+        await DoesNotContain(fixedSource, "StringSyntax");
+        await Contains(fixedSource, "string pageHtml");
     }
 
     [Test]
@@ -54,15 +53,15 @@ public class RemoveRedundantConventionCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        DoesNotContain(fixedSource, "language=");
-        Contains(fixedSource, "string pageHtml");
+        await DoesNotContain(fixedSource, "language=");
+        await Contains(fixedSource, "string pageHtml");
     }
 
-    static void Contains(string actual, string expected) =>
-        IsTrue(actual.Contains(expected), $"Expected to contain '{expected}'.\nGot:\n{actual}");
+    static async Task Contains(string actual, string expected) =>
+        await Assert.That(actual).Contains(expected);
 
-    static void DoesNotContain(string actual, string unexpected) =>
-        IsFalse(actual.Contains(unexpected), $"Expected NOT to contain '{unexpected}'.\nGot:\n{actual}");
+    static async Task DoesNotContain(string actual, string unexpected) =>
+        await Assert.That(actual).DoesNotContain(unexpected);
 
     static async Task<string> ApplyFix(string source)
     {

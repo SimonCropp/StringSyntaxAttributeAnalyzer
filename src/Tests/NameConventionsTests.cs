@@ -1,4 +1,3 @@
-[TestFixture]
 public class NameConventionsTests
 {
     [Test]
@@ -22,7 +21,7 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -44,8 +43,8 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: false);
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
     }
 
     [Test]
@@ -65,7 +64,7 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -84,8 +83,8 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -108,8 +107,8 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
     }
 
     [Test]
@@ -125,8 +124,8 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA008", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA008");
     }
 
     [Test]
@@ -141,8 +140,8 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA008", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA008");
     }
 
     [Test]
@@ -162,8 +161,8 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA008", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA008");
     }
 
     [Test]
@@ -189,7 +188,7 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -207,7 +206,7 @@ public class NameConventionsTests
             """;
 
         var diagnostics = await GetDiagnostics(source, conventions: true);
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -233,7 +232,7 @@ public class NameConventionsTests
         var diagnostics = await GetDiagnostics(source, conventions: true);
         // `path` doesn't match Uri convention → still suppressed via
         // KnownUnannotatedAssemblies / namespace suppression. No diagnostic.
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(string source, bool conventions)
