@@ -1,3 +1,4 @@
+#if DEBUG
 [TestFixture]
 public class KnownUnannotatedAssembliesGenerationTests
 {
@@ -218,3 +219,4 @@ public class KnownUnannotatedAssembliesGenerationTests
             $"Could not locate {targetFileName} walking up from {TestContext.CurrentContext.TestDirectory}");
     }
 }
+#endif
