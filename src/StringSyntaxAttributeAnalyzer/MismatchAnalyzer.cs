@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class MismatchAnalyzer : DiagnosticAnalyzer
 {
@@ -59,6 +61,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    static readonly DiagnosticDescriptor redundantByConventionRule = new(
+        id: "SSA008",
+        title: "StringSyntax annotation is redundant due to a name convention",
+        messageFormat: "Annotation \"{0}\" is redundant: the name already matches the {0} convention",
+        category: "StringSyntaxAttribute.Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
     [
         formatMismatchRule,
@@ -67,7 +77,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         equalityMismatchRule,
         equalityMissingFormatRule,
         singletonUnionRule,
-        redundantStringSyntaxRule
+        redundantStringSyntaxRule,
+        redundantByConventionRule
     ];
 
     public override void Initialize(AnalysisContext context)
@@ -105,21 +116,22 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 .ToImmutableDictionary(FoldShortcutKey, _ => _);
 
             var suppression = new NamespaceSuppression(start.Options);
+            var conventions = new NameConventionsOption(start.Options);
 
             start.RegisterOperationAction(
-                _ => AnalyzeArgument(_, types, suppression),
+                _ => AnalyzeArgument(_, types, suppression, conventions),
                 OperationKind.Argument);
             start.RegisterOperationAction(
-                _ => AnalyzeSimpleAssignment(_, types, suppression),
+                _ => AnalyzeSimpleAssignment(_, types, suppression, conventions),
                 OperationKind.SimpleAssignment);
             start.RegisterOperationAction(
-                _ => AnalyzePropertyInitializer(_, types, suppression),
+                _ => AnalyzePropertyInitializer(_, types, suppression, conventions),
                 OperationKind.PropertyInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeFieldInitializer(_, types, suppression),
+                _ => AnalyzeFieldInitializer(_, types, suppression, conventions),
                 OperationKind.FieldInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeBinaryOperator(_, types, suppression),
+                _ => AnalyzeBinaryOperator(_, types, suppression, conventions),
                 OperationKind.BinaryOperator);
             start.RegisterSymbolAction(
                 AnalyzeSymbolForSingletonUnion,
@@ -136,6 +148,25 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     SymbolKind.Field,
                     SymbolKind.Method);
             }
+
+            // SSA008: a name-convention match makes the symbol's StringSyntax (or
+            // shortcut / single-value Return/Union) annotation redundant. Only fires
+            // when the consumer opts in via `stringsyntax.name_conventions`. Methods
+            // and return values are excluded by design — the convention applies to
+            // member/local *names* (a method name like `GetUrl` doesn't carry the
+            // url through the return value).
+            start.RegisterSymbolAction(
+                _ => AnalyzeSymbolForRedundantByConvention(_, types, conventions),
+                SymbolKind.Parameter,
+                SymbolKind.Property,
+                SymbolKind.Field);
+
+            // Locals can't be visited via SymbolAction, and `//language=` lives in
+            // trivia rather than on the symbol — handle them via a syntax-node
+            // walker over local declarations.
+            start.RegisterSyntaxNodeAction(
+                _ => AnalyzeLocalForRedundantByConvention(_, conventions),
+                SyntaxKind.LocalDeclarationStatement);
         });
     }
 
@@ -221,10 +252,157 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static string FoldShortcutKey(string name) =>
         name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name.Substring(1);
 
+    static void AnalyzeSymbolForRedundantByConvention(
+        SymbolAnalysisContext context,
+        SyntaxTypes types,
+        NameConventionsOption conventions)
+    {
+        if (!NameConventions.TryMatch(context.Symbol.Name, out var conventionValue))
+        {
+            return;
+        }
+
+        // Per-tree opt-in is keyed off the symbol's declaration tree. If the symbol
+        // has no syntax (metadata-only) there's nothing to fix anyway.
+        var declaration = context.Symbol.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declaration is null)
+        {
+            return;
+        }
+
+        if (!conventions.IsEnabled(declaration.SyntaxTree))
+        {
+            return;
+        }
+
+        foreach (var attribute in context.Symbol.GetAttributes())
+        {
+            if (TryGetSingleSyntaxValue(attribute, types, out var value) &&
+                SyntaxValueMatcher.SingleValuesMatch(value, conventionValue))
+            {
+                ReportRedundantByConvention(context, attribute, conventionValue);
+            }
+        }
+    }
+
+    static void AnalyzeLocalForRedundantByConvention(
+        SyntaxNodeAnalysisContext context,
+        NameConventionsOption conventions)
+    {
+        if (!conventions.IsEnabled(context.Node.SyntaxTree))
+        {
+            return;
+        }
+
+        var declaration = (LocalDeclarationStatementSyntax)context.Node;
+
+        // Multi-declarator locals share trivia and a single comment maps to all of
+        // them — too risky to remove. Skip; SSA008 won't fire for those.
+        if (declaration.Declaration.Variables.Count != 1)
+        {
+            return;
+        }
+
+        var variable = declaration.Declaration.Variables[0];
+        if (!NameConventions.TryMatch(variable.Identifier.ValueText, out var conventionValue))
+        {
+            return;
+        }
+
+        if (context.SemanticModel.GetDeclaredSymbol(variable, context.CancellationToken)
+                is not ILocalSymbol localSymbol ||
+            !LanguageCommentReader.TryRead(localSymbol, out var commentValue))
+        {
+            return;
+        }
+
+        if (!SyntaxValueMatcher.SingleValuesMatch(commentValue, conventionValue))
+        {
+            return;
+        }
+
+        // The fix removes the language comment; the location pinpoints the local
+        // declaration so the codefix can locate it. The actual comment trivia is
+        // resolved at fix time by re-running the trivia walk.
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add(valueKey, conventionValue)
+            .Add("ConventionTarget", "LanguageComment");
+        context.ReportDiagnostic(Diagnostic.Create(
+            redundantByConventionRule,
+            declaration.GetLocation(),
+            properties: properties,
+            messageArgs: conventionValue));
+    }
+
+    static void ReportRedundantByConvention(
+        SymbolAnalysisContext context,
+        AttributeData attribute,
+        string conventionValue)
+    {
+        var location = attribute.ApplicationSyntaxReference?
+            .GetSyntax(context.CancellationToken)
+            .GetLocation();
+        if (location is null)
+        {
+            return;
+        }
+
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add(valueKey, conventionValue)
+            .Add("ConventionTarget", "Attribute");
+        context.ReportDiagnostic(Diagnostic.Create(
+            redundantByConventionRule,
+            location,
+            properties: properties,
+            messageArgs: conventionValue));
+    }
+
+    // For SSA008 we only consider single-valued annotations. UnionSyntax with
+    // multiple options can't be replaced by a single name convention without
+    // dropping the other values.
+    static bool TryGetSingleSyntaxValue(
+        AttributeData attribute,
+        SyntaxTypes types,
+        [NotNullWhen(true)] out string? value)
+    {
+        value = null;
+        if (SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
+        {
+            if (attribute.ConstructorArguments.Length > 0 &&
+                attribute.ConstructorArguments[0].Value is string s)
+            {
+                value = s;
+                return true;
+            }
+            return false;
+        }
+
+        if (IsAttributeNamed(attribute, unionSyntaxAttributeName) ||
+            IsAttributeNamed(attribute, returnSyntaxAttributeName))
+        {
+            var options = ExtractUnionOptions(attribute);
+            if (options.Length == 1)
+            {
+                value = options[0];
+                return true;
+            }
+            return false;
+        }
+
+        if (TryMatchShortcutAttribute(attribute, out var shortcut))
+        {
+            value = shortcut;
+            return true;
+        }
+
+        return false;
+    }
+
     static void AnalyzeArgument(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        NamespaceSuppression suppression)
+        NamespaceSuppression suppression,
+        NameConventionsOption conventions)
     {
         var argument = (IArgumentOperation)context.Operation;
         var parameter = argument.Parameter;
@@ -233,9 +411,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
+        var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
         var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+        targetInfo = ApplyConvention(targetInfo, parameter, conventionsEnabled);
         var sourceSymbol = GetSymbol(argument.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types);
+        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
         Report(
             context,
             argument.Value.Syntax.GetLocation(),
@@ -250,7 +430,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzeSimpleAssignment(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        NamespaceSuppression suppression)
+        NamespaceSuppression suppression,
+        NameConventionsOption conventions)
     {
         var assignment = (ISimpleAssignmentOperation)context.Operation;
         var targetSymbol = GetSymbol(assignment.Target);
@@ -259,9 +440,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var targetInfo = GetSyntax(targetSymbol, types);
+        var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
+        var targetInfo = GetSyntax(targetSymbol, types, conventionsEnabled);
         var sourceSymbol = GetSymbol(assignment.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types);
+        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
         Report(
             context,
             assignment.Value.Syntax.GetLocation(),
@@ -276,15 +458,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzePropertyInitializer(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        NamespaceSuppression suppression)
+        NamespaceSuppression suppression,
+        NameConventionsOption conventions)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
+        var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
         var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types);
+        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
         var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var property in init.InitializedProperties)
         {
-            var targetInfo = GetSyntax(property, types);
+            var targetInfo = GetSyntax(property, types, conventionsEnabled);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -300,15 +484,20 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzeFieldInitializer(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        NamespaceSuppression suppression)
+        NamespaceSuppression suppression,
+        NameConventionsOption conventions)
     {
         var init = (IFieldInitializerOperation)context.Operation;
+        var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
         var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types);
+        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
         var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var field in init.InitializedFields)
         {
-            var targetInfo = GetSyntaxFromAttributes(field.GetAttributes(), types);
+            var targetInfo = ApplyConvention(
+                GetSyntaxFromAttributes(field.GetAttributes(), types),
+                field,
+                conventionsEnabled);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -358,7 +547,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static void AnalyzeBinaryOperator(
         OperationAnalysisContext context,
         SyntaxTypes types,
-        NamespaceSuppression suppression)
+        NamespaceSuppression suppression,
+        NameConventionsOption conventions)
     {
         var binary = (IBinaryOperation)context.Operation;
         if (binary.OperatorKind is not (BinaryOperatorKind.Equals or BinaryOperatorKind.NotEquals))
@@ -367,11 +557,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         var suppressedNamespaces = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
+        var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
 
         var leftSymbol = GetSymbol(binary.LeftOperand);
         var rightSymbol = GetSymbol(binary.RightOperand);
-        var leftInfo = GetSyntax(leftSymbol, types);
-        var rightInfo = GetSyntax(rightSymbol, types);
+        var leftInfo = GetSyntax(leftSymbol, types, conventionsEnabled);
+        var rightInfo = GetSyntax(rightSymbol, types, conventionsEnabled);
 
         // Unknown side (literal, local, concatenation, await) — suppress. Comparing to
         // a literal is common and fine; the analyzer can't infer intent from an opaque
@@ -476,7 +667,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         };
     }
 
-    static SyntaxInfo GetSyntax(ISymbol? symbol, SyntaxTypes types)
+    static SyntaxInfo GetSyntax(ISymbol? symbol, SyntaxTypes types, bool conventionsEnabled)
     {
         if (symbol is null)
         {
@@ -493,6 +684,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             if (LanguageCommentReader.TryRead(local, out var comment))
             {
                 return SyntaxInfo.Present(comment);
+            }
+
+            if (conventionsEnabled && NameConventions.TryMatch(local.Name, out var conventionValue))
+            {
+                return SyntaxInfo.Present(conventionValue);
             }
 
             // `out var x`, `is string s`, `foreach (var x in ...)` and other
@@ -535,7 +731,36 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (symbol is IPropertySymbol property &&
             FindPrimaryConstructorParameter(property) is { } parameter)
         {
-            return GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+            var paramInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+            if (paramInfo.State == SyntaxState.Present)
+            {
+                return paramInfo;
+            }
+            info = paramInfo;
+        }
+
+        return ApplyConvention(info, symbol, conventionsEnabled);
+    }
+
+    // Promote NotPresent → Present(value) when the symbol's name matches a known
+    // convention and the consumer has opted in. Convention-promotion overrides
+    // the KnownUnannotatedAssemblies short-circuit further down — a Present
+    // state never trips that path.
+    static SyntaxInfo ApplyConvention(SyntaxInfo info, ISymbol symbol, bool conventionsEnabled)
+    {
+        if (!conventionsEnabled || info.State != SyntaxState.NotPresent)
+        {
+            return info;
+        }
+
+        if (symbol is IMethodSymbol)
+        {
+            return info;
+        }
+
+        if (NameConventions.TryMatch(symbol.Name, out var value))
+        {
+            return SyntaxInfo.Present(value);
         }
 
         return info;

@@ -27,6 +27,8 @@ static class SyntaxValueMatcher
     public static string FormatValues(ImmutableArray<string> values) =>
         values.IsDefaultOrEmpty ? "" : string.Join('|', values);
 
+    public static bool SingleValuesMatch(string? a, string? b) => SingleValueMatches(a, b);
+
     static bool SingleValueMatches(string? a, string? b)
     {
         if (ReferenceEquals(a, b))
