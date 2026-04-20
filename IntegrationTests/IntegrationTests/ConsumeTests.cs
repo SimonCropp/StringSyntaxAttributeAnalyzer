@@ -1,6 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-using StringSyntaxAttributeAnalyzer;
-
 [TestFixture]
 public class ConsumeTests
 {

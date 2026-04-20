@@ -1,11 +1,3 @@
-using System.Collections.Immutable;
-using System.Reflection;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CodeActions;
-using Microsoft.CodeAnalysis.CodeFixes;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Diagnostics;
-
 [TestFixture]
 public class CodeFixConsumeTests
 {

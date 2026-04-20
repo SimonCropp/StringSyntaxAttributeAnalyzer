@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!--
+      The whole point of this project: prove that a *real* consume of the
+      packed nupkg honours the `stringsyntax.name_conventions` editorconfig
+      knob. Treating SSA002/SSA003/SSA008 as errors means a regression in any
+      of the three convention paths (source promotion, target promotion,
+      redundant-attribute detection) breaks the build.
+    -->
+    <WarningsAsErrors>SSA001;SSA002;SSA003;SSA008</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StringSyntaxAttributeAnalyzer" />
+    <GlobalAnalyzerConfigFiles Include="NameConventions.globalconfig" />
+  </ItemGroup>
+</Project>

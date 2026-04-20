@@ -18,8 +18,9 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 | SSA004 | Warning  | —        | Equality comparison between mismatched `StringSyntax` values       |
 | SSA005 | Warning  | Yes      | Equality comparison where only one side has `StringSyntax`         |
 | SSA006 | Warning  | Yes      | `[UnionSyntax("x")]` with a single option — should be `[StringSyntax("x")]` |
+| SSA008 | Warning  | Yes      | Annotation is redundant — the symbol's name already matches a known convention (opt-in) |
 
-SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA006 rewrites the attribute in place. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
+SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA006 rewrites the attribute in place. SSA008 removes the redundant attribute or `//language=` comment. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
 
 
 ## Code fix output — named constants vs. string literals
@@ -236,6 +237,42 @@ stringsyntax.suppressed_target_namespaces = System*,Microsoft*,MyCompany.Legacy*
 ```
 
 Patterns support a trailing `*` (prefix match) or an exact match. Empty config means "no namespaces suppressed".
+
+
+## Name conventions (opt-in)
+
+When enabled, a member or local whose name matches a known convention is treated as if it already carries the corresponding `[StringSyntax]` value. `[Uri] string url`, `string pageHtml`, and `string emailAddress` all become Present-by-name without any attribute or `//language=` comment.
+
+**Enable** via `.editorconfig`:
+
+```ini
+stringsyntax.name_conventions = enabled
+```
+
+**Convention list** (matchers are case-insensitive; PascalCase suffix also matches, so `pageHtml` matches `Html` but `myhtml` does not — a word boundary is required):
+
+| Value      | Matches        | Example suffixes              |
+|------------|----------------|-------------------------------|
+| `Uri`      | `uri`, `url`   | `pageUrl`, `apiUri`, `baseUrl`|
+| `Html`     | `html`         | `pageHtml`, `bodyHtml`        |
+| `Json`     | `json`         | `payloadJson`, `requestJson`  |
+| `Xml`      | `xml`          | `configXml`, `responseXml`    |
+| `Regex`    | `regex`        | `pathRegex`, `nameRegex`      |
+| `Sql`      | `sql`          | `selectSql`, `querySql`       |
+| `Csv`      | `csv`          | `rowCsv`, `exportCsv`         |
+| `Yaml`     | `yaml`         | `manifestYaml`, `configYaml`  |
+| `Markdown` | `markdown`     | `bodyMarkdown`, `notesMarkdown`|
+| `Email`    | `email`        | `userEmail`, `contactEmail`   |
+
+Format-style constants (`DateTimeFormat`, `NumericFormat`, ...) and the generic `Text` are deliberately omitted — their natural variable names (`format`, `text`) are too broad to safely promote.
+
+**Effects** when enabled:
+
+- A name match promotes the symbol to Present at every analysis site — SSA001/SSA002/SSA003/SSA004/SSA005 reason about it as if it carried the matching attribute.
+- The convention overrides `KnownUnannotatedAssemblies` suppression: a third-party API's `string url` parameter is treated as `Uri` even though the assembly carries no `[StringSyntax]` annotations. (Names that don't match a convention still fall back to the default suppression.)
+- **SSA008** fires when an existing `[StringSyntax]`, shortcut (`[Html]`), single-value `[ReturnSyntax]`, or `//language=` comment carries the same value the name already implies. The codefix removes the redundant annotation.
+- Methods and return values are excluded — a method named `GetUrl` does not propagate the convention through its return value, and `[ReturnSyntax]` annotations are never flagged as redundant by name.
+- `[UnionSyntax(...)]` is excluded — multi-value annotations cannot be replaced by a single-name convention.
 
 
 ## Usage
