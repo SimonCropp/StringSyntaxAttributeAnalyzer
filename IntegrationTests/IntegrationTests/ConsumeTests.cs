@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 
-[TestFixture]
 public class ConsumeTests
 {
     [Test]

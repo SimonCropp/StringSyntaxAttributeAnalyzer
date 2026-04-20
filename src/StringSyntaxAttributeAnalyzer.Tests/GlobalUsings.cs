@@ -7,5 +7,7 @@ global using Microsoft.CodeAnalysis.CodeActions;
 global using Microsoft.CodeAnalysis.CodeFixes;
 global using Microsoft.CodeAnalysis.CSharp;
 global using Microsoft.CodeAnalysis.Diagnostics;
-global using NUnit.Framework;
+global using TUnit.Core;
+global using TUnit.Assertions;
+global using TUnit.Assertions.Extensions;
 global using StringSyntaxAttributeAnalyzer;

@@ -6,7 +6,6 @@ using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 
-[TestFixture]
 public class CodeFixConsumeTests
 {
     // Verifies that the Release-built nuget (from ../nugets) actually ships a loadable
@@ -16,7 +15,7 @@ public class CodeFixConsumeTests
     [Test]
     public async Task PackagedCodeFixProvider_AddsStringSyntaxAttribute_ForSSA002()
     {
-        var (analyzer, codeFix) = LoadAnalyzerAndCodeFixFromPackage();
+        var (analyzer, codeFix) = await LoadAnalyzerAndCodeFixFromPackage();
 
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -36,7 +35,7 @@ public class CodeFixConsumeTests
 
         var (document, diagnostic) = await CompileAndAnalyze(source, analyzer);
 
-        AreEqual("SSA002", diagnostic.Id);
+        await Assert.That(diagnostic.Id).IsEqualTo("SSA002");
 
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
         var context = new CodeFixContext(
@@ -53,29 +52,27 @@ public class CodeFixConsumeTests
         var newDoc = apply.ChangedSolution.GetDocument(document.Id)!;
         var fixedText = (await newDoc.GetTextAsync()).ToString();
 
-        IsTrue(
-            fixedText.Contains("[StringSyntax(\"Regex\")]"),
-            $"Expected fix to add [StringSyntax(\"Regex\")] but got:\n{fixedText}");
+        await Assert.That(fixedText).Contains("[StringSyntax(\"Regex\")]");
     }
 
-    static (DiagnosticAnalyzer Analyzer, CodeFixProvider CodeFix) LoadAnalyzerAndCodeFixFromPackage()
+    static async Task<(DiagnosticAnalyzer Analyzer, CodeFixProvider CodeFix)> LoadAnalyzerAndCodeFixFromPackage()
     {
         var analyzersDir = FindAnalyzersDirectory();
 
         var analyzerPath = Path.Combine(analyzersDir, "StringSyntaxAttributeAnalyzer.dll");
         var codeFixPath = Path.Combine(analyzersDir, "StringSyntaxAttributeAnalyzer.CodeFixes.dll");
 
-        IsTrue(File.Exists(analyzerPath), $"Analyzer DLL missing: {analyzerPath}");
-        IsTrue(File.Exists(codeFixPath), $"CodeFix DLL missing: {codeFixPath}");
+        await Assert.That(File.Exists(analyzerPath)).IsTrue();
+        await Assert.That(File.Exists(codeFixPath)).IsTrue();
 
-        var analyzerAsm = Assembly.LoadFrom(analyzerPath);
-        var codeFixAsm = Assembly.LoadFrom(codeFixPath);
+        var analyzerAsm = System.Reflection.Assembly.LoadFrom(analyzerPath);
+        var codeFixAsm = System.Reflection.Assembly.LoadFrom(codeFixPath);
 
         var analyzerType = analyzerAsm.GetType("StringSyntaxAttributeAnalyzer.MismatchAnalyzer");
         var codeFixType = codeFixAsm.GetType("StringSyntaxAttributeAnalyzer.AddStringSyntaxCodeFixProvider");
 
-        IsNotNull(analyzerType);
-        IsNotNull(codeFixType);
+        await Assert.That(analyzerType).IsNotNull();
+        await Assert.That(codeFixType).IsNotNull();
 
         var analyzer = (DiagnosticAnalyzer)Activator.CreateInstance(analyzerType!)!;
         var codeFix = (CodeFixProvider)Activator.CreateInstance(codeFixType!)!;
@@ -94,13 +91,16 @@ public class CodeFixConsumeTests
         // AnalyzerPackageVersion is injected by the csproj via AssemblyMetadata, pinned to
         // $(Version). Scanning the package folder by name isn't enough — stale versions from
         // earlier local builds (e.g. 1.0.0) sort above the current one (0.1.1) lexically.
-        var version = Assembly.GetExecutingAssembly()
+        var version = System.Reflection.Assembly.GetExecutingAssembly()
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .Single(_ => _.Key == "AnalyzerPackageVersion")
             .Value!;
 
         var versionDir = Path.Combine(root, "stringsyntaxattributeanalyzer", version);
-        IsTrue(Directory.Exists(versionDir), $"Expected package directory missing: {versionDir}");
+        if (!Directory.Exists(versionDir))
+        {
+            throw new DirectoryNotFoundException($"Expected package directory missing: {versionDir}");
+        }
 
         return Path.Combine(versionDir, "analyzers", "dotnet", "cs");
     }

@@ -72,7 +72,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         Solution solution,
         Location declarationLocation,
         string value,
-        CancellationToken cancellationToken)
+        Cancel cancel)
     {
         var document = solution.GetDocument(declarationLocation.SourceTree);
         if (document is null)
@@ -81,7 +81,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         }
 
         var root = await document
-            .GetSyntaxRootAsync(cancellationToken)
+            .GetSyntaxRootAsync(cancel)
             .ConfigureAwait(false);
         if (root is null)
         {
@@ -105,13 +105,13 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         var newDocument = document.WithSyntaxRoot(newRoot);
 
         newDocument = await ImportAdder
-            .AddImportsAsync(newDocument, Simplifier.Annotation, cancellationToken: cancellationToken)
+            .AddImportsAsync(newDocument, Simplifier.Annotation, cancellationToken: cancel)
             .ConfigureAwait(false);
         newDocument = await Simplifier
-            .ReduceAsync(newDocument, Simplifier.Annotation, cancellationToken: cancellationToken)
+            .ReduceAsync(newDocument, Simplifier.Annotation, cancellationToken: cancel)
             .ConfigureAwait(false);
         newDocument = await Formatter
-            .FormatAsync(newDocument, Formatter.Annotation, cancellationToken: cancellationToken)
+            .FormatAsync(newDocument, Formatter.Annotation, cancellationToken: cancel)
             .ConfigureAwait(false);
 
         return newDocument.Project.Solution;

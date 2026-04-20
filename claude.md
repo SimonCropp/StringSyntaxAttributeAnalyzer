@@ -6,14 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The repo has two separate solutions that must be run in order — `src/` produces the nuget, `IntegrationTests/` consumes it.
 
+Tests use TUnit on top of Microsoft.Testing.Platform (MTP) — the MTP `dotnet test` runner is opted-in via `"test": { "runner": "Microsoft.Testing.Platform" }` in each solution's `global.json`. Solutions must be passed to `dotnet test` with `--solution`, not positionally.
+
 ```bash
 # Primary workflow: build src/ in Release, which also produces the nupkg in ../nugets/
 dotnet build src/StringSyntaxAttributeAnalyzer.slnx -c Release
-dotnet test  src/StringSyntaxAttributeAnalyzer.slnx         # 21 analyzer + codefix unit tests
-dotnet test  IntegrationTests/IntegrationTests.slnx         # 3 tests that consume the nupkg
+dotnet test --solution src/StringSyntaxAttributeAnalyzer.slnx -c Release          # 23 analyzer + codefix unit tests
+dotnet test --solution IntegrationTests/IntegrationTests.slnx -c Release          # 3 tests that consume the nupkg
 
-# Run a single NUnit test
-dotnet test src/StringSyntaxAttributeAnalyzer.slnx --filter "FullyQualifiedName~MultiDeclaratorField"
+# Run a single TUnit test (TUnit supports --treenode-filter and --filter-method)
+dotnet test --solution src/StringSyntaxAttributeAnalyzer.slnx -c Release -- --filter-method "*MultiDeclaratorField*"
 
 # Repack only (after any analyzer/codefix edit that should reach IntegrationTests)
 rm nugets/*.nupkg

@@ -1,0 +1,167 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="7cadfa32-ab44-4eb0-ab4c-db8d2c798292" name="simon@DESKTOP 2026-04-20 20:39:50.6053129" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-04-20T20:39:48.63131Z" queuing="2026-04-20T20:39:48.63131Z" start="2026-04-20T20:39:48.63131Z" finish="2026-04-20T20:39:50.6057385Z" />
+  <TestSettings name="default" id="c43611d3-7b41-47ec-a76d-fa50b5ac7354">
+    <Deployment runDeploymentRoot="simon_DESKTOP_2026-04-20_20_39_50.6053129" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="5ea63af3-a9f2-4934-a954-2a110cde1714" testId="059e1869-fbdf-4f5e-4b95-6557fc2a409c" testName="MethodReturnSource_IsUnknown" computerName="DESKTOP" duration="00:00:01.2338242" startTime="2026-04-20T20:39:48.8081891+00:00" endTime="2026-04-20T20:39:50.0420133+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="5ea63af3-a9f2-4934-a954-2a110cde1714" />
+    <UnitTestResult executionId="689ed421-4517-4182-943e-cdaf1569523d" testId="c4f8d65c-3792-0e99-90a7-027aafcbf49f" testName="LocalVariableSource_NoDiagnostic" computerName="DESKTOP" duration="00:00:01.2338454" startTime="2026-04-20T20:39:48.8081843+00:00" endTime="2026-04-20T20:39:50.0420297+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="689ed421-4517-4182-943e-cdaf1569523d" />
+    <UnitTestResult executionId="d4143c57-5500-4c21-9f06-1caab6fd9e0e" testId="ea688745-f776-983c-5cd7-6e66e09dcb3a" testName="StringLiteralSource_NoDiagnostic" computerName="DESKTOP" duration="00:00:01.2337978" startTime="2026-04-20T20:39:48.8082071+00:00" endTime="2026-04-20T20:39:50.0420049+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="d4143c57-5500-4c21-9f06-1caab6fd9e0e" />
+    <UnitTestResult executionId="d1bbc6a5-83e3-4808-adbb-fd3fbf369b76" testId="b2602cc2-9822-6e63-17f8-cb87550ceaf5" testName="MatchingFormats_NoDiagnostic" computerName="DESKTOP" duration="00:00:01.2338303" startTime="2026-04-20T20:39:48.8081940+00:00" endTime="2026-04-20T20:39:50.0420243+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="d1bbc6a5-83e3-4808-adbb-fd3fbf369b76" />
+    <UnitTestResult executionId="3f972da9-a00e-4f6f-bd82-97febfa9206f" testId="b0480560-a256-fbda-d87f-00bcdadcd347" testName="FirstCharCaseInsensitive_NoDiagnostic" computerName="DESKTOP" duration="00:00:01.2338071" startTime="2026-04-20T20:39:48.8081993+00:00" endTime="2026-04-20T20:39:50.0420064+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="3f972da9-a00e-4f6f-bd82-97febfa9206f" />
+    <UnitTestResult executionId="b51d63d0-53c5-4334-a7fc-28c2d66bfeae" testId="a8bab039-cf54-900b-8e16-33b3366b9dc0" testName="NoStringSyntaxAnywhere_NoDiagnostic" computerName="DESKTOP" duration="00:00:01.2337905" startTime="2026-04-20T20:39:48.8082166+00:00" endTime="2026-04-20T20:39:50.0420071+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="b51d63d0-53c5-4334-a7fc-28c2d66bfeae" />
+    <UnitTestResult executionId="8d0880b7-9ba2-4626-8a34-e75087e604ed" testId="ac31a5d0-6a34-dcf7-04bc-a94ca4e7d5aa" testName="FormatMismatch_PropertyToProperty_Assignment" computerName="DESKTOP" duration="00:00:01.2549761" startTime="2026-04-20T20:39:48.8081924+00:00" endTime="2026-04-20T20:39:50.0631685+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="8d0880b7-9ba2-4626-8a34-e75087e604ed" />
+    <UnitTestResult executionId="ffc2d84a-c93f-408e-835d-c22f250847c7" testId="6ae0fb94-6a2f-68a4-40b2-d07b7ae7b079" testName="MissingSourceFormat_PropertyInitializer" computerName="DESKTOP" duration="00:00:01.2548708" startTime="2026-04-20T20:39:48.8082941+00:00" endTime="2026-04-20T20:39:50.0631649+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="ffc2d84a-c93f-408e-835d-c22f250847c7" />
+    <UnitTestResult executionId="4e6fb58e-670a-4904-a8fc-4b58559a43b5" testId="888e745d-dbe2-1024-1da6-ee984a026102" testName="FieldSource_Mismatch" computerName="DESKTOP" duration="00:00:01.2549903" startTime="2026-04-20T20:39:48.8082251+00:00" endTime="2026-04-20T20:39:50.0632154+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="4e6fb58e-670a-4904-a8fc-4b58559a43b5" />
+    <UnitTestResult executionId="6d8fcdc3-00b9-4700-9490-c43f093a23c4" testId="8a143c44-4429-830c-80d9-f42800284acc" testName="DroppedFormat_ArgumentToParameter" computerName="DESKTOP" duration="00:00:01.2549308" startTime="2026-04-20T20:39:48.8082341+00:00" endTime="2026-04-20T20:39:50.0631649+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="6d8fcdc3-00b9-4700-9490-c43f093a23c4" />
+    <UnitTestResult executionId="1124f1a3-31f7-4170-9aa2-e73d0b7824a5" testId="dc22a55c-1c21-25dc-7bcb-1711fedac1dc" testName="CustomFormatString_Mismatch" computerName="DESKTOP" duration="00:00:01.2549216" startTime="2026-04-20T20:39:48.8082426+00:00" endTime="2026-04-20T20:39:50.0631642+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="1124f1a3-31f7-4170-9aa2-e73d0b7824a5" />
+    <UnitTestResult executionId="8ee764ec-71c5-43f7-8ae2-c3add4a16aa0" testId="aded14fa-fef8-f02f-8588-647d0c24a0b3" testName="FormatMismatch_ObjectInitializer" computerName="DESKTOP" duration="00:00:01.2550220" startTime="2026-04-20T20:39:48.8081780+00:00" endTime="2026-04-20T20:39:50.0632000+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="8ee764ec-71c5-43f7-8ae2-c3add4a16aa0" />
+    <UnitTestResult executionId="2c4c265c-8a35-43c9-933d-d39f5e6514ef" testId="6eee2cbc-9e0c-5168-c840-b7bf74d8c2f6" testName="MidStringCaseDifference_StillMismatch" computerName="DESKTOP" duration="00:00:01.2549493" startTime="2026-04-20T20:39:48.8082775+00:00" endTime="2026-04-20T20:39:50.0632268+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="2c4c265c-8a35-43c9-933d-d39f5e6514ef" />
+    <UnitTestResult executionId="44e270c0-327a-44a8-af68-009318465be7" testId="1e2c576c-f1c9-3c44-daba-11d674b08c12" testName="MissingSourceFormat_ArgumentToParameter" computerName="DESKTOP" duration="00:00:01.2555799" startTime="2026-04-20T20:39:48.8082876+00:00" endTime="2026-04-20T20:39:50.0638675+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="44e270c0-327a-44a8-af68-009318465be7" />
+    <UnitTestResult executionId="aa90bb7c-8817-4380-992c-c29950fa3a2f" testId="98478e75-17c2-c549-9669-8cad993f4e30" testName="FormatMismatch_ArgumentToParameter" computerName="DESKTOP" duration="00:00:01.2557121" startTime="2026-04-20T20:39:48.8081652+00:00" endTime="2026-04-20T20:39:50.0638773+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="aa90bb7c-8817-4380-992c-c29950fa3a2f" />
+    <UnitTestResult executionId="4c0d7e1e-bb6a-45fd-80fb-11fea85e2ec0" testId="cc542437-1ba4-8dcf-9bb4-33b5f3ca975b" testName="MultiDeclaratorField_NoFixRegistered" computerName="DESKTOP" duration="00:00:01.2566462" startTime="2026-04-20T20:39:48.8082502+00:00" endTime="2026-04-20T20:39:50.0648964+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="4c0d7e1e-bb6a-45fd-80fb-11fea85e2ec0" />
+    <UnitTestResult executionId="596d73a6-c034-47de-93ba-6d0ca5267e23" testId="6705becb-9bab-4a0b-ab6a-efc45c17a544" testName="DroppedFormat_AssignPropertyToUnattributed" computerName="DESKTOP" duration="00:00:01.2556110" startTime="2026-04-20T20:39:48.8082710+00:00" endTime="2026-04-20T20:39:50.0638820+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="596d73a6-c034-47de-93ba-6d0ca5267e23" />
+    <UnitTestResult executionId="aa38468a-a692-4f86-8a4d-bc02520c5fee" testId="198a6415-9b7c-03aa-c54b-141a48ed3c5b" testName="SSA003_AddsAttributeToTargetParameter" computerName="DESKTOP" duration="00:00:01.6717464" startTime="2026-04-20T20:39:48.8081717+00:00" endTime="2026-04-20T20:39:50.4799181+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="aa38468a-a692-4f86-8a4d-bc02520c5fee" />
+    <UnitTestResult executionId="dc2602b8-08ed-4725-a1cd-589bb0f0064c" testId="17223e17-1755-c71b-6cf3-930d4e403494" testName="SSA002_AddsAttributeToSourceProperty" computerName="DESKTOP" duration="00:00:01.6717520" startTime="2026-04-20T20:39:48.8082982+00:00" endTime="2026-04-20T20:39:50.4800502+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="dc2602b8-08ed-4725-a1cd-589bb0f0064c" />
+    <UnitTestResult executionId="b26523d2-7309-4b88-8c40-47ec1959f806" testId="91ebb9ef-aa07-ac1e-f925-9c4310228889" testName="SSA003_AddsAttributeToTargetProperty" computerName="DESKTOP" duration="00:00:01.6718739" startTime="2026-04-20T20:39:48.8081669+00:00" endTime="2026-04-20T20:39:50.4800408+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="b26523d2-7309-4b88-8c40-47ec1959f806" />
+    <UnitTestResult executionId="bbfa79be-17bf-46a3-a678-fe139112e499" testId="f1ce5cfe-ffd7-ff5e-20b0-a042a39172c6" testName="SSA002_AddsAttributeToSourceField" computerName="DESKTOP" duration="00:00:01.6718510" startTime="2026-04-20T20:39:48.8082611+00:00" endTime="2026-04-20T20:39:50.4801121+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="bbfa79be-17bf-46a3-a678-fe139112e499" />
+    <UnitTestResult executionId="73bfa76a-c0c2-4ae8-bd84-5a6b3ca63a5e" testId="821454ff-9c2e-87d3-a34e-2cc68e74c67d" testName="SSA002_AddsAttributeToSourceParameter" computerName="DESKTOP" duration="00:00:01.6721207" startTime="2026-04-20T20:39:48.8081674+00:00" endTime="2026-04-20T20:39:50.4802881+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="73bfa76a-c0c2-4ae8-bd84-5a6b3ca63a5e" />
+    <UnitTestResult executionId="98e271d4-852d-4e99-8292-f594f2a1bbcd" testId="9da9e30a-67e5-db77-81d5-0ae3129e3b20" testName="SSA002_CustomFormatValue" computerName="DESKTOP" duration="00:00:01.6721551" startTime="2026-04-20T20:39:48.8081749+00:00" endTime="2026-04-20T20:39:50.4803300+00:00" testType="13CDC9D9-DDB5-4fa4-A97D-D965CCFC6D4B" outcome="Passed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" relativeResultsDirectory="98e271d4-852d-4e99-8292-f594f2a1bbcd" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="MethodReturnSource_IsUnknown" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="059e1869-fbdf-4f5e-4b95-6557fc2a409c">
+      <Execution id="5ea63af3-a9f2-4934-a954-2a110cde1714" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="MethodReturnSource_IsUnknown" />
+    </UnitTest>
+    <UnitTest name="LocalVariableSource_NoDiagnostic" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="c4f8d65c-3792-0e99-90a7-027aafcbf49f">
+      <Execution id="689ed421-4517-4182-943e-cdaf1569523d" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="LocalVariableSource_NoDiagnostic" />
+    </UnitTest>
+    <UnitTest name="StringLiteralSource_NoDiagnostic" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="ea688745-f776-983c-5cd7-6e66e09dcb3a">
+      <Execution id="d4143c57-5500-4c21-9f06-1caab6fd9e0e" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="StringLiteralSource_NoDiagnostic" />
+    </UnitTest>
+    <UnitTest name="MatchingFormats_NoDiagnostic" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="b2602cc2-9822-6e63-17f8-cb87550ceaf5">
+      <Execution id="d1bbc6a5-83e3-4808-adbb-fd3fbf369b76" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="MatchingFormats_NoDiagnostic" />
+    </UnitTest>
+    <UnitTest name="FirstCharCaseInsensitive_NoDiagnostic" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="b0480560-a256-fbda-d87f-00bcdadcd347">
+      <Execution id="3f972da9-a00e-4f6f-bd82-97febfa9206f" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="FirstCharCaseInsensitive_NoDiagnostic" />
+    </UnitTest>
+    <UnitTest name="NoStringSyntaxAnywhere_NoDiagnostic" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="a8bab039-cf54-900b-8e16-33b3366b9dc0">
+      <Execution id="b51d63d0-53c5-4334-a7fc-28c2d66bfeae" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="NoStringSyntaxAnywhere_NoDiagnostic" />
+    </UnitTest>
+    <UnitTest name="FormatMismatch_PropertyToProperty_Assignment" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="ac31a5d0-6a34-dcf7-04bc-a94ca4e7d5aa">
+      <Execution id="8d0880b7-9ba2-4626-8a34-e75087e604ed" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="FormatMismatch_PropertyToProperty_Assignment" />
+    </UnitTest>
+    <UnitTest name="MissingSourceFormat_PropertyInitializer" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="6ae0fb94-6a2f-68a4-40b2-d07b7ae7b079">
+      <Execution id="ffc2d84a-c93f-408e-835d-c22f250847c7" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="MissingSourceFormat_PropertyInitializer" />
+    </UnitTest>
+    <UnitTest name="FieldSource_Mismatch" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="888e745d-dbe2-1024-1da6-ee984a026102">
+      <Execution id="4e6fb58e-670a-4904-a8fc-4b58559a43b5" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="FieldSource_Mismatch" />
+    </UnitTest>
+    <UnitTest name="DroppedFormat_ArgumentToParameter" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="8a143c44-4429-830c-80d9-f42800284acc">
+      <Execution id="6d8fcdc3-00b9-4700-9490-c43f093a23c4" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="DroppedFormat_ArgumentToParameter" />
+    </UnitTest>
+    <UnitTest name="CustomFormatString_Mismatch" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="dc22a55c-1c21-25dc-7bcb-1711fedac1dc">
+      <Execution id="1124f1a3-31f7-4170-9aa2-e73d0b7824a5" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="CustomFormatString_Mismatch" />
+    </UnitTest>
+    <UnitTest name="FormatMismatch_ObjectInitializer" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="aded14fa-fef8-f02f-8588-647d0c24a0b3">
+      <Execution id="8ee764ec-71c5-43f7-8ae2-c3add4a16aa0" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="FormatMismatch_ObjectInitializer" />
+    </UnitTest>
+    <UnitTest name="MidStringCaseDifference_StillMismatch" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="6eee2cbc-9e0c-5168-c840-b7bf74d8c2f6">
+      <Execution id="2c4c265c-8a35-43c9-933d-d39f5e6514ef" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="MidStringCaseDifference_StillMismatch" />
+    </UnitTest>
+    <UnitTest name="MissingSourceFormat_ArgumentToParameter" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="1e2c576c-f1c9-3c44-daba-11d674b08c12">
+      <Execution id="44e270c0-327a-44a8-af68-009318465be7" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="MissingSourceFormat_ArgumentToParameter" />
+    </UnitTest>
+    <UnitTest name="FormatMismatch_ArgumentToParameter" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="98478e75-17c2-c549-9669-8cad993f4e30">
+      <Execution id="aa90bb7c-8817-4380-992c-c29950fa3a2f" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="FormatMismatch_ArgumentToParameter" />
+    </UnitTest>
+    <UnitTest name="MultiDeclaratorField_NoFixRegistered" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="cc542437-1ba4-8dcf-9bb4-33b5f3ca975b">
+      <Execution id="4c0d7e1e-bb6a-45fd-80fb-11fea85e2ec0" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="AddStringSyntaxCodeFixProviderTests" name="MultiDeclaratorField_NoFixRegistered" />
+    </UnitTest>
+    <UnitTest name="DroppedFormat_AssignPropertyToUnattributed" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="6705becb-9bab-4a0b-ab6a-efc45c17a544">
+      <Execution id="596d73a6-c034-47de-93ba-6d0ca5267e23" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="MismatchAnalyzerTests" name="DroppedFormat_AssignPropertyToUnattributed" />
+    </UnitTest>
+    <UnitTest name="SSA003_AddsAttributeToTargetParameter" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="198a6415-9b7c-03aa-c54b-141a48ed3c5b">
+      <Execution id="aa38468a-a692-4f86-8a4d-bc02520c5fee" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="AddStringSyntaxCodeFixProviderTests" name="SSA003_AddsAttributeToTargetParameter" />
+    </UnitTest>
+    <UnitTest name="SSA002_AddsAttributeToSourceProperty" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="17223e17-1755-c71b-6cf3-930d4e403494">
+      <Execution id="dc2602b8-08ed-4725-a1cd-589bb0f0064c" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="AddStringSyntaxCodeFixProviderTests" name="SSA002_AddsAttributeToSourceProperty" />
+    </UnitTest>
+    <UnitTest name="SSA003_AddsAttributeToTargetProperty" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="91ebb9ef-aa07-ac1e-f925-9c4310228889">
+      <Execution id="b26523d2-7309-4b88-8c40-47ec1959f806" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="AddStringSyntaxCodeFixProviderTests" name="SSA003_AddsAttributeToTargetProperty" />
+    </UnitTest>
+    <UnitTest name="SSA002_AddsAttributeToSourceField" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="f1ce5cfe-ffd7-ff5e-20b0-a042a39172c6">
+      <Execution id="bbfa79be-17bf-46a3-a678-fe139112e499" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="AddStringSyntaxCodeFixProviderTests" name="SSA002_AddsAttributeToSourceField" />
+    </UnitTest>
+    <UnitTest name="SSA002_AddsAttributeToSourceParameter" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="821454ff-9c2e-87d3-a34e-2cc68e74c67d">
+      <Execution id="73bfa76a-c0c2-4ae8-bd84-5a6b3ca63a5e" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="AddStringSyntaxCodeFixProviderTests" name="SSA002_AddsAttributeToSourceParameter" />
+    </UnitTest>
+    <UnitTest name="SSA002_CustomFormatValue" storage="d:\code\stringsyntaxattributeanalyzer\src\stringsyntaxattributeanalyzer.tests\bin\release\net10.0\stringsyntaxattributeanalyzer.tests.dll" id="9da9e30a-67e5-db77-81d5-0ae3129e3b20">
+      <Execution id="98e271d4-852d-4e99-8292-f594f2a1bbcd" />
+      <TestMethod codeBase="D:\Code\StringSyntaxAttributeAnalyzer\src\StringSyntaxAttributeAnalyzer.Tests\bin\Release\net10.0\StringSyntaxAttributeAnalyzer.Tests.dll" adapterTypeName="executor://TUnitExtension/1.37.10.0" className="AddStringSyntaxCodeFixProviderTests" name="SSA002_CustomFormatValue" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="059e1869-fbdf-4f5e-4b95-6557fc2a409c" executionId="5ea63af3-a9f2-4934-a954-2a110cde1714" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="c4f8d65c-3792-0e99-90a7-027aafcbf49f" executionId="689ed421-4517-4182-943e-cdaf1569523d" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="ea688745-f776-983c-5cd7-6e66e09dcb3a" executionId="d4143c57-5500-4c21-9f06-1caab6fd9e0e" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="b2602cc2-9822-6e63-17f8-cb87550ceaf5" executionId="d1bbc6a5-83e3-4808-adbb-fd3fbf369b76" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="b0480560-a256-fbda-d87f-00bcdadcd347" executionId="3f972da9-a00e-4f6f-bd82-97febfa9206f" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="a8bab039-cf54-900b-8e16-33b3366b9dc0" executionId="b51d63d0-53c5-4334-a7fc-28c2d66bfeae" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="ac31a5d0-6a34-dcf7-04bc-a94ca4e7d5aa" executionId="8d0880b7-9ba2-4626-8a34-e75087e604ed" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="6ae0fb94-6a2f-68a4-40b2-d07b7ae7b079" executionId="ffc2d84a-c93f-408e-835d-c22f250847c7" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="888e745d-dbe2-1024-1da6-ee984a026102" executionId="4e6fb58e-670a-4904-a8fc-4b58559a43b5" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="8a143c44-4429-830c-80d9-f42800284acc" executionId="6d8fcdc3-00b9-4700-9490-c43f093a23c4" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="dc22a55c-1c21-25dc-7bcb-1711fedac1dc" executionId="1124f1a3-31f7-4170-9aa2-e73d0b7824a5" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="aded14fa-fef8-f02f-8588-647d0c24a0b3" executionId="8ee764ec-71c5-43f7-8ae2-c3add4a16aa0" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="6eee2cbc-9e0c-5168-c840-b7bf74d8c2f6" executionId="2c4c265c-8a35-43c9-933d-d39f5e6514ef" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="1e2c576c-f1c9-3c44-daba-11d674b08c12" executionId="44e270c0-327a-44a8-af68-009318465be7" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="98478e75-17c2-c549-9669-8cad993f4e30" executionId="aa90bb7c-8817-4380-992c-c29950fa3a2f" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="cc542437-1ba4-8dcf-9bb4-33b5f3ca975b" executionId="4c0d7e1e-bb6a-45fd-80fb-11fea85e2ec0" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="6705becb-9bab-4a0b-ab6a-efc45c17a544" executionId="596d73a6-c034-47de-93ba-6d0ca5267e23" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="198a6415-9b7c-03aa-c54b-141a48ed3c5b" executionId="aa38468a-a692-4f86-8a4d-bc02520c5fee" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="17223e17-1755-c71b-6cf3-930d4e403494" executionId="dc2602b8-08ed-4725-a1cd-589bb0f0064c" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="91ebb9ef-aa07-ac1e-f925-9c4310228889" executionId="b26523d2-7309-4b88-8c40-47ec1959f806" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="f1ce5cfe-ffd7-ff5e-20b0-a042a39172c6" executionId="bbfa79be-17bf-46a3-a678-fe139112e499" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="821454ff-9c2e-87d3-a34e-2cc68e74c67d" executionId="73bfa76a-c0c2-4ae8-bd84-5a6b3ca63a5e" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestEntry testId="9da9e30a-67e5-db77-81d5-0ae3129e3b20" executionId="98e271d4-852d-4e99-8292-f594f2a1bbcd" testListId="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8C84FA94-04C1-424b-9868-57A2D4851A1D" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="23" executed="23" passed="23" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <CollectorDataEntries>
+      <Collector agentName="DESKTOP" uri="datacollector://TUnitExtensionHtmlReporter/1.37.10.0" collectorDisplayName="TUnit">
+        <UriAttachments>
+          <UriAttachment>
+            <A href="DESKTOP\StringSyntaxAttributeAnalyzer.Tests-windows-net10.0-report.html" />
+          </UriAttachment>
+        </UriAttachments>
+      </Collector>
+    </CollectorDataEntries>
+  </ResultSummary>
+</TestRun>

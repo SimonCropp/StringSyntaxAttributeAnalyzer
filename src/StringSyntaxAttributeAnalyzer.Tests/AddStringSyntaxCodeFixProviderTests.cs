@@ -1,4 +1,3 @@
-[TestFixture]
 public class AddStringSyntaxCodeFixProviderTests
 {
     [Test]
@@ -22,8 +21,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
-        Contains(fixedSource, "public string Value { get; set; }");
+        await Assert.That(fixedSource).Contains("[StringSyntax(\"Regex\")]");
+        await Assert.That(fixedSource).Contains("public string Value { get; set; }");
     }
 
     [Test]
@@ -44,8 +43,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
-        Contains(fixedSource, "public string Field;");
+        await Assert.That(fixedSource).Contains("[StringSyntax(\"Regex\")]");
+        await Assert.That(fixedSource).Contains("public string Field;");
     }
 
     [Test]
@@ -64,7 +63,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")] string input");
+        await Assert.That(fixedSource).Contains("[StringSyntax(\"Regex\")] string input");
     }
 
     [Test]
@@ -89,7 +88,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")] string value");
+        await Assert.That(fixedSource).Contains("[StringSyntax(\"Regex\")] string value");
     }
 
     [Test]
@@ -114,8 +113,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"Regex\")]");
-        Contains(fixedSource, "public string Value { get; set; }");
+        await Assert.That(fixedSource).Contains("[StringSyntax(\"Regex\")]");
+        await Assert.That(fixedSource).Contains("public string Value { get; set; }");
     }
 
     [Test]
@@ -136,7 +135,7 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var fixedSource = await ApplyFix(source);
 
-        Contains(fixedSource, "[StringSyntax(\"custom-format\")]");
+        await Assert.That(fixedSource).Contains("[StringSyntax(\"custom-format\")]");
     }
 
     [Test]
@@ -157,13 +156,8 @@ public class AddStringSyntaxCodeFixProviderTests
 
         var actions = await GetCodeActions(source);
 
-        AreEqual(0, actions.Length);
+        await Assert.That(actions.Length).IsEqualTo(0);
     }
-
-    static void Contains(string actual, string expected) =>
-        IsTrue(
-            actual.Contains(expected),
-            $"Expected fixed source to contain:\n{expected}\n\nActual:\n{actual}");
 
     static async Task<string> ApplyFix(string source)
     {
@@ -174,12 +168,12 @@ public class AddStringSyntaxCodeFixProviderTests
             document,
             diagnostic,
             (action, _) => actions.Add(action),
-            CancellationToken.None);
+            Cancel.None);
 
         await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
 
         var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(CancellationToken.None);
+        var operations = await action.GetOperationsAsync(Cancel.None);
         var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
 
         var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
@@ -196,7 +190,7 @@ public class AddStringSyntaxCodeFixProviderTests
             document,
             diagnostic,
             (action, _) => actions.Add(action),
-            CancellationToken.None);
+            Cancel.None);
 
         await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
         return actions.ToImmutable();

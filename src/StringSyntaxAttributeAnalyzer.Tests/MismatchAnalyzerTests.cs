@@ -1,8 +1,7 @@
-[TestFixture]
 public class MismatchAnalyzerTests
 {
     [Test]
-    public void FormatMismatch_ArgumentToParameter()
+    public async Task FormatMismatch_ArgumentToParameter()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -23,15 +22,15 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
         var message = diagnostics[0].GetMessage();
-        IsTrue(message.Contains("DateTimeFormat"));
-        IsTrue(message.Contains("Regex"));
+        await Assert.That(message).Contains("DateTimeFormat");
+        await Assert.That(message).Contains("Regex");
     }
 
     [Test]
-    public void FormatMismatch_PropertyToProperty_Assignment()
+    public async Task FormatMismatch_PropertyToProperty_Assignment()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -50,12 +49,12 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
-    public void FormatMismatch_ObjectInitializer()
+    public async Task FormatMismatch_ObjectInitializer()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -77,12 +76,12 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
-    public void MethodReturnSource_IsUnknown()
+    public async Task MethodReturnSource_IsUnknown()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -99,11 +98,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void MissingSourceFormat_ArgumentToParameter()
+    public async Task MissingSourceFormat_ArgumentToParameter()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -123,13 +122,13 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("Regex"));
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("Regex");
     }
 
     [Test]
-    public void MissingSourceFormat_PropertyInitializer()
+    public async Task MissingSourceFormat_PropertyInitializer()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -150,12 +149,12 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
     }
 
     [Test]
-    public void DroppedFormat_AssignPropertyToUnattributed()
+    public async Task DroppedFormat_AssignPropertyToUnattributed()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -176,13 +175,13 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("Regex"));
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("Regex");
     }
 
     [Test]
-    public void DroppedFormat_ArgumentToParameter()
+    public async Task DroppedFormat_ArgumentToParameter()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -203,12 +202,12 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
     }
 
     [Test]
-    public void MatchingFormats_NoDiagnostic()
+    public async Task MatchingFormats_NoDiagnostic()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -229,11 +228,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void StringLiteralSource_NoDiagnostic()
+    public async Task StringLiteralSource_NoDiagnostic()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -251,11 +250,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void LocalVariableSource_NoDiagnostic()
+    public async Task LocalVariableSource_NoDiagnostic()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -277,11 +276,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void NoStringSyntaxAnywhere_NoDiagnostic()
+    public async Task NoStringSyntaxAnywhere_NoDiagnostic()
     {
         var source = """
             public class Target
@@ -299,11 +298,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void CustomFormatString_Mismatch()
+    public async Task CustomFormatString_Mismatch()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -324,12 +323,12 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
-    public void FirstCharCaseInsensitive_NoDiagnostic()
+    public async Task FirstCharCaseInsensitive_NoDiagnostic()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -350,11 +349,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void MidStringCaseDifference_StillMismatch()
+    public async Task MidStringCaseDifference_StillMismatch()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -375,12 +374,12 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
-    public void FieldSource_Mismatch()
+    public async Task FieldSource_Mismatch()
     {
         var source = """
             using System.Diagnostics.CodeAnalysis;
@@ -398,8 +397,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     static ImmutableArray<Diagnostic> GetDiagnostics(string source)
