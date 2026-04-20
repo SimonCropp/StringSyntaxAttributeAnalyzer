@@ -1,10 +1,3 @@
-using System.Collections.Generic;
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Xml;
-
 [TestFixture]
 public class KnownUnannotatedAssembliesGenerationTests
 {
@@ -14,20 +7,32 @@ public class KnownUnannotatedAssembliesGenerationTests
     // re-run; the test will rewrite the generated file and ask you to commit.
     static Assembly[] assemblies =
     [
-        typeof(string).Assembly,                                                       // System.Private.CoreLib
-        typeof(Uri).Assembly,                                                          // System.Private.Uri
-        typeof(Regex).Assembly,                                                        // System.Text.RegularExpressions
-        typeof(JsonDocument).Assembly,                                                 // System.Text.Json
-        typeof(XmlDocument).Assembly,                                                  // System.Xml.ReaderWriter
-        typeof(System.Net.Http.HttpClient).Assembly,                                   // System.Net.Http
-        typeof(System.ComponentModel.DataAnnotations.RegularExpressionAttribute).Assembly, // System.ComponentModel.Annotations
-        typeof(System.Data.Common.DbCommand).Assembly,                                 // System.Data.Common
-        typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly,                      // Microsoft.EntityFrameworkCore
-        typeof(Newtonsoft.Json.JsonConvert).Assembly,                                  // Newtonsoft.Json
-        typeof(Serilog.Log).Assembly                                                   // Serilog
+        // System.Private.CoreLib
+        typeof(string).Assembly,
+        // System.Private.Uri
+        typeof(Uri).Assembly,
+        // System.Text.RegularExpressions
+        typeof(Regex).Assembly,
+        // System.Text.Json
+        typeof(JsonDocument).Assembly,
+        // System.Xml.ReaderWriter
+        typeof(XmlDocument).Assembly,
+        // System.Net.Http
+        typeof(HttpClient).Assembly,
+        // System.ComponentModel.Annotations
+        typeof(System.ComponentModel.DataAnnotations.RegularExpressionAttribute).Assembly,
+        // System.Data.Common
+        typeof(System.Data.Common.DbCommand).Assembly,
+        // Microsoft.EntityFrameworkCore
+        typeof(Microsoft.EntityFrameworkCore.DbContext).Assembly,
+        // Newtonsoft.Json
+        typeof(Newtonsoft.Json.JsonConvert).Assembly,
+        // Serilog
+        typeof(Serilog.Log).Assembly
     ];
 
     const string targetFileName = "KnownUnannotatedAssemblies.Generated.cs";
+
     const string stringSyntaxAttributeFullName =
         "System.Diagnostics.CodeAnalysis.StringSyntaxAttribute";
 
@@ -177,9 +182,9 @@ public class KnownUnannotatedAssembliesGenerationTests
         {
             builder.Append(
                 $"""
-                        "{name}",
+                         "{name}",
 
-                """);
+                 """);
         }
 
         builder.Append(
