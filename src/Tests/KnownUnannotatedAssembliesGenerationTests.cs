@@ -1,5 +1,4 @@
 #if DEBUG
-[TestFixture]
 public class KnownUnannotatedAssembliesGenerationTests
 {
     // Assemblies the generator probes. For each, it walks every member and looks
@@ -60,7 +59,7 @@ public class KnownUnannotatedAssembliesGenerationTests
         }
 
         File.WriteAllText(path, generated);
-        Assert.Fail(
+        throw new(
             $"{targetFileName} was out of date and has been rewritten. Re-run the test to confirm green, then commit.");
     }
 
@@ -200,7 +199,8 @@ public class KnownUnannotatedAssembliesGenerationTests
 
     static string LocateTargetFile()
     {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        var testDirectory = AppContext.BaseDirectory;
+        var directory = new DirectoryInfo(testDirectory);
         while (directory is not null)
         {
             var candidate = Path.Combine(
@@ -216,7 +216,7 @@ public class KnownUnannotatedAssembliesGenerationTests
         }
 
         throw new FileNotFoundException(
-            $"Could not locate {targetFileName} walking up from {TestContext.CurrentContext.TestDirectory}");
+            $"Could not locate {targetFileName} walking up from {testDirectory}");
     }
 }
 #endif

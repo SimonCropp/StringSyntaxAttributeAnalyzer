@@ -1,4 +1,3 @@
-[TestFixture]
 public class ConsumeTests
 {
     [Test]
@@ -30,13 +29,15 @@ public class ConsumeTests
     }
 
     [Test]
-    public void GeneratedSyntaxConstants_AreAvailable()
+    public async Task GeneratedSyntaxConstants_AreAvailable()
     {
         // Compile-time: this line fails to build if the source generator did not emit
         // the Syntax class into the consumer compilation.
-        AreEqual("Html", Syntax.Html);
-        AreEqual("Regex", Syntax.Regex);
-        AreEqual("Json", Syntax.Json);
+#pragma warning disable TUnitAssertions0005
+        await Assert.That(Syntax.Html).IsEqualTo("Html");
+        await Assert.That(Syntax.Regex).IsEqualTo("Regex");
+        await Assert.That(Syntax.Json).IsEqualTo("Json");
+#pragma warning restore TUnitAssertions0005
     }
 }
 

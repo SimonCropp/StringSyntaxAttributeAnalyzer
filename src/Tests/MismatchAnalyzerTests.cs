@@ -1,4 +1,3 @@
-[TestFixture]
 public class MismatchAnalyzerTests
 {
     [Test]
@@ -22,11 +21,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
         var message = diagnostics[0].GetMessage();
-        IsTrue(message.Contains("DateTimeFormat"));
-        IsTrue(message.Contains("Regex"));
+        await Assert.That(message.Contains("DateTimeFormat")).IsTrue();
+        await Assert.That(message.Contains("Regex")).IsTrue();
     }
 
     [Test]
@@ -48,8 +47,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -73,8 +72,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -101,7 +100,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -124,9 +123,9 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("Regex"));
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Regex")).IsTrue();
     }
 
     [Test]
@@ -150,8 +149,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
     }
 
     [Test]
@@ -175,9 +174,9 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("Regex"));
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Regex")).IsTrue();
     }
 
     [Test]
@@ -201,8 +200,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
     }
 
     [Test]
@@ -226,7 +225,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -247,7 +246,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -270,7 +269,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -294,8 +293,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -319,7 +318,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -343,8 +342,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -366,11 +365,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA004", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA004");
         var message = diagnostics[0].GetMessage();
-        IsTrue(message.Contains("Regex"));
-        IsTrue(message.Contains("DateTimeFormat"));
+        await Assert.That(message.Contains("Regex")).IsTrue();
+        await Assert.That(message.Contains("DateTimeFormat")).IsTrue();
     }
 
     [Test]
@@ -392,8 +391,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA004", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA004");
     }
 
     [Test]
@@ -415,7 +414,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -434,7 +433,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -455,9 +454,9 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA005", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("Regex"));
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA005");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Regex")).IsTrue();
     }
 
     [Test]
@@ -478,8 +477,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA005", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA005");
     }
 
     [Test]
@@ -503,7 +502,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -527,7 +526,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -551,7 +550,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -574,8 +573,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
     }
 
     [Test]
@@ -597,7 +596,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -625,8 +624,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
     }
 
     [Test]
@@ -655,7 +654,7 @@ public class MismatchAnalyzerTests
             source,
             editorConfig: "stringsyntax.suppressed_target_namespaces = MyLegacy*");
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -690,7 +689,7 @@ public class MismatchAnalyzerTests
             editorConfig: "stringsyntax.suppressed_target_namespaces = MyLegacy*",
             perTreeOnly: true);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -711,7 +710,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -732,8 +731,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -754,7 +753,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -776,7 +775,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -793,9 +792,9 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA006", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("html"));
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA006");
+        await Assert.That(diagnostics[0].GetMessage().Contains("html")).IsTrue();
     }
 
     [Test]
@@ -812,7 +811,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -843,11 +842,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetCrossAssemblyDiagnostics(messagesSource, consumerSource);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
         var message = diagnostics[0].GetMessage();
-        IsTrue(message.Contains("html"));
-        IsTrue(message.Contains("xml"));
+        await Assert.That(message.Contains("html")).IsTrue();
+        await Assert.That(message.Contains("xml")).IsTrue();
     }
 
     [Test]
@@ -868,8 +867,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -889,7 +888,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -909,8 +908,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -933,7 +932,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -956,8 +955,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -980,8 +979,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
     }
 
     [Test]
@@ -1001,7 +1000,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1031,7 +1030,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1058,8 +1057,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -1082,8 +1081,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA003", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA003");
     }
 
     [Test]
@@ -1106,7 +1105,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1131,7 +1130,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1153,7 +1152,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1176,8 +1175,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -1201,8 +1200,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA002", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
     }
 
     [Test]
@@ -1233,7 +1232,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1259,7 +1258,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1284,7 +1283,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1301,9 +1300,9 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA007", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("Html"));
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA007");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
     }
 
     [Test]
@@ -1320,10 +1319,10 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA007", diagnostics[0].Id);
-        IsTrue(diagnostics[0].GetMessage().Contains("Html"));
-        AreEqual("Html", diagnostics[0].Properties["StringSyntaxValue"]);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA007");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
+        await Assert.That(diagnostics[0].Properties["StringSyntaxValue"]).IsEqualTo("Html");
     }
 
     [Test]
@@ -1348,7 +1347,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1371,8 +1370,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -1393,9 +1392,9 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA007", diagnostics[0].Id);
-        AreEqual("Json", diagnostics[0].Properties["StringSyntaxValue"]);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA007");
+        await Assert.That(diagnostics[0].Properties["StringSyntaxValue"]).IsEqualTo("Json");
     }
 
     [Test]
@@ -1415,7 +1414,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(0, diagnostics.Count(_ => _.Id == "SSA007"));
+        await Assert.That(diagnostics.Count(_ => _.Id == "SSA007")).IsEqualTo(0);
     }
 
     [Test]
@@ -1432,7 +1431,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1449,7 +1448,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1473,7 +1472,7 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(0, diagnostics.Length);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -1497,11 +1496,11 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
-        AreEqual(1, diagnostics.Length);
-        AreEqual("SSA001", diagnostics[0].Id);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
         var message = diagnostics[0].GetMessage();
-        IsTrue(message.Contains("Html"));
-        IsTrue(message.Contains("Regex"));
+        await Assert.That(message.Contains("Html")).IsTrue();
+        await Assert.That(message.Contains("Regex")).IsTrue();
     }
 
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(

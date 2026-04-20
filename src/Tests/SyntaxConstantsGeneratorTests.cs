@@ -1,27 +1,26 @@
-[TestFixture]
 public class SyntaxConstantsGeneratorTests
 {
     [Test]
-    public void EmitsSyntaxClass()
+    public async Task EmitsSyntaxClass()
     {
         var runResult = RunGenerator("public class Dummy {}");
 
-        AreEqual(0, runResult.Diagnostics.Length);
+        await Assert.That(runResult.Diagnostics.Length).IsEqualTo(0);
 
         var typesTree = runResult.GeneratedTrees
             .Single(_ => _.FilePath.EndsWith("Syntax.Types.g.cs"));
         var types = typesTree.ToString();
-        IsTrue(types.Contains("static class Syntax"));
-        IsTrue(types.Contains("public const string Json = StringSyntaxAttribute.Json;"));
-        IsTrue(types.Contains("public const string Html = nameof(Html);"));
+        await Assert.That(types.Contains("static class Syntax")).IsTrue();
+        await Assert.That(types.Contains("public const string Json = StringSyntaxAttribute.Json;")).IsTrue();
+        await Assert.That(types.Contains("public const string Html = nameof(Html);")).IsTrue();
 
         var globalsTree = runResult.GeneratedTrees
             .Single(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs"));
-        IsTrue(globalsTree.ToString().Contains("global using System.Diagnostics.CodeAnalysis;"));
+        await Assert.That(globalsTree.ToString().Contains("global using System.Diagnostics.CodeAnalysis;")).IsTrue();
     }
 
     [Test]
-    public void ConsumerCode_NoLocalUsing_CompilesDueToGlobalUsing()
+    public async Task ConsumerCode_NoLocalUsing_CompilesDueToGlobalUsing()
     {
         // No `using System.Diagnostics.CodeAnalysis;` anywhere in the user source —
         // the generator's `global using` should make StringSyntax available.
@@ -37,19 +36,16 @@ public class SyntaxConstantsGeneratorTests
         var driver = CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var genDiagnostics);
 
-        AreEqual(0, genDiagnostics.Length);
+        await Assert.That(genDiagnostics.Length).IsEqualTo(0);
 
         var errors = updated.GetDiagnostics()
             .Where(_ => _.Severity == DiagnosticSeverity.Error)
             .ToArray();
-        AreEqual(
-            0,
-            errors.Length,
-            string.Join('\n', errors.Select(_ => _.ToString())));
+        await Assert.That(errors.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void ConsumerCodeUsingSyntaxConstants_Compiles()
+    public async Task ConsumerCodeUsingSyntaxConstants_Compiles()
     {
         var source =
             """
@@ -74,19 +70,16 @@ public class SyntaxConstantsGeneratorTests
         var driver = CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var genDiagnostics);
 
-        AreEqual(0, genDiagnostics.Length);
+        await Assert.That(genDiagnostics.Length).IsEqualTo(0);
 
         var errors = updated.GetDiagnostics()
             .Where(_ => _.Severity == DiagnosticSeverity.Error)
             .ToArray();
-        AreEqual(
-            0,
-            errors.Length,
-            string.Join('\n', errors.Select(_ => _.ToString())));
+        await Assert.That(errors.Length).IsEqualTo(0);
     }
 
     [Test]
-    public void EmitGlobalUsings_FalseFromMsBuild_SuppressesGlobalsFile()
+    public async Task EmitGlobalUsings_FalseFromMsBuild_SuppressesGlobalsFile()
     {
         var compilation = BuildCompilation("public class Dummy {}");
         var options = new OptOutOptionsProvider("false");
@@ -99,15 +92,13 @@ public class SyntaxConstantsGeneratorTests
 
         var runResult = driver.RunGenerators(compilation).GetRunResult();
 
-        AreEqual(0, runResult.Diagnostics.Length);
-        IsTrue(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Types.g.cs")),
-            "Types file should still be generated when globals are opted out");
-        IsFalse(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs")),
-            "Globals file should NOT be generated when StringSyntaxAnalyzer_EmitGlobalUsings=false");
+        await Assert.That(runResult.Diagnostics.Length).IsEqualTo(0);
+        await Assert.That(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Types.g.cs"))).IsTrue();
+        await Assert.That(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs"))).IsFalse();
     }
 
     [Test]
-    public void EmitGlobalUsings_OtherValue_StillEmitsGlobals()
+    public async Task EmitGlobalUsings_OtherValue_StillEmitsGlobals()
     {
         // Only "false" (case-insensitive) opts out; anything else leaves globals on.
         var compilation = BuildCompilation("public class Dummy {}");
@@ -121,13 +112,13 @@ public class SyntaxConstantsGeneratorTests
 
         var runResult = driver.RunGenerators(compilation).GetRunResult();
 
-        IsTrue(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs")));
+        await Assert.That(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs"))).IsTrue();
     }
     // Guards against adding a new constant to the generator's Syntax class and
     // forgetting to mirror it in KnownSyntaxConstants — the codefix would silently
     // degrade to emitting a string literal instead of `Syntax.<name>`.
     [Test]
-    public void KnownSyntaxConstants_MatchesGeneratedSyntaxClass()
+    public async Task KnownSyntaxConstants_MatchesGeneratedSyntaxClass()
     {
         var runResult = RunGenerator("public class Dummy {}");
         var typesTree = runResult.GeneratedTrees
@@ -144,27 +135,21 @@ public class SyntaxConstantsGeneratorTests
             .ToImmutableHashSet();
 
         var missing = generatedNames.Except(KnownSyntaxConstants.Names);
-        IsTrue(
-            missing.IsEmpty,
-            $"KnownSyntaxConstants is missing: {string.Join(", ", missing)}");
+        await Assert.That(missing.IsEmpty).IsTrue();
 
         var stale = KnownSyntaxConstants.Names.Except(generatedNames);
-        IsTrue(
-            stale.IsEmpty,
-            $"KnownSyntaxConstants has entries not in the generator: {string.Join(", ", stale)}");
+        await Assert.That(stale.IsEmpty).IsTrue();
     }
 
     [Test]
-    public void EmitShortcutAttributes_NotSet_NoShortcutsFile()
+    public async Task EmitShortcutAttributes_NotSet_NoShortcutsFile()
     {
         var runResult = RunGenerator("public class Dummy {}");
-        IsFalse(
-            runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Shortcuts.g.cs")),
-            "Shortcuts file should be opt-in; default compilation must not emit it");
+        await Assert.That(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Shortcuts.g.cs"))).IsFalse();
     }
 
     [Test]
-    public void EmitShortcutAttributes_True_EmitsShortcutsForKnownConstants()
+    public async Task EmitShortcutAttributes_True_EmitsShortcutsForKnownConstants()
     {
         var compilation = BuildCompilation("public class Dummy {}");
         var options = new OptOutOptionsProvider(emitShortcutAttributesValue: "true");
@@ -180,10 +165,10 @@ public class SyntaxConstantsGeneratorTests
         var shortcutsTree = runResult.GeneratedTrees
             .Single(_ => _.FilePath.EndsWith("Syntax.Shortcuts.g.cs"));
         var text = shortcutsTree.ToString();
-        IsTrue(text.Contains("namespace StringSyntaxAttributeAnalyzer"));
-        IsTrue(text.Contains("sealed class HtmlAttribute"));
-        IsTrue(text.Contains("sealed class JsonAttribute"));
-        IsTrue(text.Contains("sealed class RegexAttribute"));
+        await Assert.That(text.Contains("namespace StringSyntaxAttributeAnalyzer")).IsTrue();
+        await Assert.That(text.Contains("sealed class HtmlAttribute")).IsTrue();
+        await Assert.That(text.Contains("sealed class JsonAttribute")).IsTrue();
+        await Assert.That(text.Contains("sealed class RegexAttribute")).IsTrue();
     }
 
     static GeneratorDriverRunResult RunGenerator(string source)
