@@ -2,7 +2,7 @@
 public class MismatchAnalyzerTests
 {
     [Test]
-    public void FormatMismatch_ArgumentToParameter()
+    public async Task FormatMismatch_ArgumentToParameter()
     {
         var source =
             """
@@ -20,7 +20,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
@@ -30,7 +30,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void FormatMismatch_PropertyToProperty_Assignment()
+    public async Task FormatMismatch_PropertyToProperty_Assignment()
     {
         var source =
             """
@@ -46,14 +46,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void FormatMismatch_ObjectInitializer()
+    public async Task FormatMismatch_ObjectInitializer()
     {
         var source = """
                      public class Target
@@ -71,14 +71,14 @@ public class MismatchAnalyzerTests
                      }
                      """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void GenericExtensionMethodReturnSource_InConstructor_IsUnknown()
+    public async Task GenericExtensionMethodReturnSource_InConstructor_IsUnknown()
     {
         var source =
             """
@@ -99,13 +99,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void MissingSourceFormat_ArgumentToParameter()
+    public async Task MissingSourceFormat_ArgumentToParameter()
     {
         var source =
             """
@@ -122,7 +122,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA002", diagnostics[0].Id);
@@ -130,7 +130,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void MissingSourceFormat_PropertyInitializer()
+    public async Task MissingSourceFormat_PropertyInitializer()
     {
         var source =
             """
@@ -148,14 +148,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA002", diagnostics[0].Id);
     }
 
     [Test]
-    public void DroppedFormat_AssignPropertyToUnattributed()
+    public async Task DroppedFormat_AssignPropertyToUnattributed()
     {
         var source =
             """
@@ -173,7 +173,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
@@ -181,7 +181,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void DroppedFormat_ArgumentToParameter()
+    public async Task DroppedFormat_ArgumentToParameter()
     {
         var source =
             """
@@ -199,14 +199,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
     }
 
     [Test]
-    public void MatchingFormats_NoDiagnostic()
+    public async Task MatchingFormats_NoDiagnostic()
     {
         var source =
             """
@@ -224,13 +224,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void StringLiteralSource_NoDiagnostic()
+    public async Task StringLiteralSource_NoDiagnostic()
     {
         var source =
             """
@@ -245,13 +245,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void NoStringSyntaxAnywhere_NoDiagnostic()
+    public async Task NoStringSyntaxAnywhere_NoDiagnostic()
     {
         var source =
             """
@@ -268,13 +268,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void CustomFormatString_Mismatch()
+    public async Task CustomFormatString_Mismatch()
     {
         var source =
             """
@@ -292,14 +292,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void FirstCharCaseInsensitive_NoDiagnostic()
+    public async Task FirstCharCaseInsensitive_NoDiagnostic()
     {
         var source =
             """
@@ -317,13 +317,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void MidStringCaseDifference_StillMismatch()
+    public async Task MidStringCaseDifference_StillMismatch()
     {
         var source =
             """
@@ -341,14 +341,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void EqualityMismatch_FiresOnEqualsOperator()
+    public async Task EqualityMismatch_FiresOnEqualsOperator()
     {
         var source =
             """
@@ -364,7 +364,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA004", diagnostics[0].Id);
@@ -374,7 +374,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void EqualityMismatch_FiresOnNotEqualsOperator()
+    public async Task EqualityMismatch_FiresOnNotEqualsOperator()
     {
         var source =
             """
@@ -390,14 +390,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA004", diagnostics[0].Id);
     }
 
     [Test]
-    public void EqualityMatching_NoDiagnostic()
+    public async Task EqualityMatching_NoDiagnostic()
     {
         var source =
             """
@@ -413,13 +413,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void EqualityWithLiteral_NoDiagnostic()
+    public async Task EqualityWithLiteral_NoDiagnostic()
     {
         var source =
             """
@@ -432,13 +432,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void EqualityWithUnattributed_FiresSSA005()
+    public async Task EqualityWithUnattributed_FiresSSA005()
     {
         var source =
             """
@@ -453,7 +453,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA005", diagnostics[0].Id);
@@ -461,7 +461,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void EqualityWithUnattributed_RightSide_FiresSSA005()
+    public async Task EqualityWithUnattributed_RightSide_FiresSSA005()
     {
         var source =
             """
@@ -476,14 +476,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA005", diagnostics[0].Id);
     }
 
     [Test]
-    public void DroppedFormat_ObjectParameter_NoDiagnostic()
+    public async Task DroppedFormat_ObjectParameter_NoDiagnostic()
     {
         var source =
             """
@@ -501,13 +501,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void DroppedFormat_ParamsObjectArray_NoDiagnostic()
+    public async Task DroppedFormat_ParamsObjectArray_NoDiagnostic()
     {
         var source =
             """
@@ -525,13 +525,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void DroppedFormat_GenericParameter_NoDiagnostic()
+    public async Task DroppedFormat_GenericParameter_NoDiagnostic()
     {
         var source =
             """
@@ -549,13 +549,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void DroppedFormat_StringParameter_StillFires()
+    public async Task DroppedFormat_StringParameter_StillFires()
     {
         // Regression guard: SSA003 must still fire for genuine string-typed slots —
         // the generic-slot suppression shouldn't swallow real dropped-format cases.
@@ -572,14 +572,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
     }
 
     [Test]
-    public void DroppedFormat_SystemNamespace_Suppressed()
+    public async Task DroppedFormat_SystemNamespace_Suppressed()
     {
         // Passing a StringSyntax-attributed string to a System.* API (string.Concat here)
         // would normally fire SSA003 — but we can't add attributes to the BCL, so the
@@ -595,13 +595,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void DroppedFormat_CustomNamespace_NotSuppressed()
+    public async Task DroppedFormat_CustomNamespace_NotSuppressed()
     {
         // Regression guard: user code (outside System/Microsoft) should still fire SSA003.
         var source =
@@ -623,14 +623,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
     }
 
     [Test]
-    public void DroppedFormat_CustomSuppressionList_Honoured()
+    public async Task DroppedFormat_CustomSuppressionList_Honoured()
     {
         var source =
             """
@@ -651,7 +651,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(
+        var diagnostics = await GetDiagnostics(
             source,
             editorConfig: "stringsyntax.suppressed_target_namespaces = MyLegacy*");
 
@@ -659,7 +659,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void DroppedFormat_PerTreeEditorConfig_Honoured()
+    public async Task DroppedFormat_PerTreeEditorConfig_Honoured()
     {
         // Real `.editorconfig` `[*.cs]` keys land in GetOptions(tree), not
         // GlobalOptions. This test uses a provider that ONLY exposes the
@@ -685,7 +685,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(
+        var diagnostics = await GetDiagnostics(
             source,
             editorConfig: "stringsyntax.suppressed_target_namespaces = MyLegacy*",
             perTreeOnly: true);
@@ -694,7 +694,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void UnionSyntax_OverlappingSets_NoDiagnostic()
+    public async Task UnionSyntax_OverlappingSets_NoDiagnostic()
     {
         var source =
             """
@@ -709,13 +709,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void UnionSyntax_DisjointSets_FiresSSA001()
+    public async Task UnionSyntax_DisjointSets_FiresSSA001()
     {
         var source =
             """
@@ -730,14 +730,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void UnionSyntax_MatchesStringSyntax_NoDiagnostic()
+    public async Task UnionSyntax_MatchesStringSyntax_NoDiagnostic()
     {
         var source =
             """
@@ -752,13 +752,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void StringSyntax_MatchesUnionSyntax_NoDiagnostic()
+    public async Task StringSyntax_MatchesUnionSyntax_NoDiagnostic()
     {
         // Symmetric to the previous test — source is StringSyntax, target is UnionSyntax.
         var source =
@@ -774,13 +774,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void UnionSyntax_SingleOption_FiresSSA006()
+    public async Task UnionSyntax_SingleOption_FiresSSA006()
     {
         var source =
             """
@@ -791,7 +791,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA006", diagnostics[0].Id);
@@ -799,7 +799,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void UnionSyntax_MultipleOptions_NoSSA006()
+    public async Task UnionSyntax_MultipleOptions_NoSSA006()
     {
         var source =
             """
@@ -810,7 +810,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
@@ -851,7 +851,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void FieldSource_Mismatch()
+    public async Task FieldSource_Mismatch()
     {
         var source =
             """
@@ -866,14 +866,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void RecordPrimaryCtorParameterAttribute_AppliesToGeneratedProperty()
+    public async Task RecordPrimaryCtorParameterAttribute_AppliesToGeneratedProperty()
     {
         var source =
             """
@@ -887,13 +887,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void RecordPrimaryCtorParameterAttribute_PropertyMismatchAgainstTarget()
+    public async Task RecordPrimaryCtorParameterAttribute_PropertyMismatchAgainstTarget()
     {
         var source =
             """
@@ -907,14 +907,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void ReturnSyntax_MatchingFormat_NoDiagnostic()
+    public async Task ReturnSyntax_MatchingFormat_NoDiagnostic()
     {
         var source =
             """
@@ -931,13 +931,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ReturnSyntax_MismatchedFormat_SSA001()
+    public async Task ReturnSyntax_MismatchedFormat_SSA001()
     {
         var source =
             """
@@ -954,14 +954,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void ReturnSyntax_MethodWithoutAttribute_FiresSSA002()
+    public async Task ReturnSyntax_MethodWithoutAttribute_FiresSSA002()
     {
         // User-code method returning a string and flowing into a [StringSyntax] target
         // — no [ReturnSyntax], no suppressed namespace — should fire SSA002 and be
@@ -978,14 +978,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA002", diagnostics[0].Id);
     }
 
     [Test]
-    public void ReturnSyntax_BclMethodSource_Suppressed()
+    public async Task ReturnSyntax_BclMethodSource_Suppressed()
     {
         // string.Format lives under System.* — suppressed_target_namespaces default
         // covers it, so SSA002 should not fire even though the return is not annotated.
@@ -999,13 +999,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ReturnSyntax_UnionValues_MatchingUnionTarget_NoDiagnostic()
+    public async Task ReturnSyntax_UnionValues_MatchingUnionTarget_NoDiagnostic()
     {
         // ReturnSyntax(params string[]) lets a method return-type carry union semantics.
         // Matching [UnionSyntax(...)] on the receiving parameter/property should round-trip
@@ -1029,13 +1029,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ReturnSyntax_UnionValues_MismatchedUnionTarget_SSA001()
+    public async Task ReturnSyntax_UnionValues_MismatchedUnionTarget_SSA001()
     {
         var source =
             """
@@ -1056,14 +1056,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void ReturnSyntax_SourceAnnotated_TargetBare_SSA003()
+    public async Task ReturnSyntax_SourceAnnotated_TargetBare_SSA003()
     {
         var source =
             """
@@ -1080,14 +1080,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA003", diagnostics[0].Id);
     }
 
     [Test]
-    public void LocalVariable_LanguageComment_MatchingSyntax_NoDiagnostic()
+    public async Task LocalVariable_LanguageComment_MatchingSyntax_NoDiagnostic()
     {
         var source =
             """
@@ -1104,13 +1104,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void LocalVariable_LanguageComment_RegexpToken_NormalizedToRegex()
+    public async Task LocalVariable_LanguageComment_RegexpToken_NormalizedToRegex()
     {
         // Rider doc uses `regexp`; BCL constant is `Regex`. Verify the normalization
         // so `//language=regexp` matches `[StringSyntax("Regex")]`.
@@ -1129,13 +1129,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void LocalVariable_LanguageComment_BlockFormInline_NoDiagnostic()
+    public async Task LocalVariable_LanguageComment_BlockFormInline_NoDiagnostic()
     {
         var source =
             """
@@ -1151,13 +1151,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void LocalVariable_LanguageComment_Mismatched_FiresSSA001()
+    public async Task LocalVariable_LanguageComment_Mismatched_FiresSSA001()
     {
         var source =
             """
@@ -1174,14 +1174,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void LocalVariable_NoComment_FiresSSA002()
+    public async Task LocalVariable_NoComment_FiresSSA002()
     {
         // An unannotated local flowing into a [StringSyntax] target fires SSA002,
         // fixable by adding a //language=<name> comment above the declaration.
@@ -1199,14 +1199,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA002", diagnostics[0].Id);
     }
 
     [Test]
-    public void LocalVariable_OutVar_NoDiagnostic()
+    public async Task LocalVariable_OutVar_NoDiagnostic()
     {
         // `out var` declares via SingleVariableDesignationSyntax, not
         // LocalDeclarationStatementSyntax — there's no place to attach a
@@ -1231,13 +1231,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void LocalVariable_PatternDesignation_NoDiagnostic()
+    public async Task LocalVariable_PatternDesignation_NoDiagnostic()
     {
         // `is string s` also declares via SingleVariableDesignationSyntax. Same
         // reasoning as out-var: no fixable host, so suppress rather than warn.
@@ -1257,13 +1257,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void LocalVariable_LanguageComment_PrefixOption_Ignored()
+    public async Task LocalVariable_LanguageComment_PrefixOption_Ignored()
     {
         // Rider allows `//language=css prefix=body{ postfix=}`. We ignore the
         // prefix/postfix options — they don't affect syntax identity.
@@ -1282,13 +1282,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ShortcutAttribute_OptedIn_StringSyntaxWithKnownValue_ReportsSSA007()
+    public async Task ShortcutAttribute_OptedIn_StringSyntaxWithKnownValue_ReportsSSA007()
     {
         var source =
             """
@@ -1299,7 +1299,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA007", diagnostics[0].Id);
@@ -1307,7 +1307,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void ShortcutAttribute_OptedIn_StringSyntaxWithLowercaseValue_ReportsSSA007()
+    public async Task ShortcutAttribute_OptedIn_StringSyntaxWithLowercaseValue_ReportsSSA007()
     {
         var source =
             """
@@ -1318,7 +1318,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA007", diagnostics[0].Id);
@@ -1327,7 +1327,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void ShortcutAttribute_OptedIn_ReturnShortcutOnMethod_MatchingTarget_NoDiagnostic()
+    public async Task ShortcutAttribute_OptedIn_ReturnShortcutOnMethod_MatchingTarget_NoDiagnostic()
     {
         // `[return: Json]` on a method should round-trip against `[Json]` on the
         // consuming parameter.
@@ -1346,13 +1346,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ShortcutAttribute_OptedIn_ReturnShortcutOnMethod_MismatchedTarget_SSA001()
+    public async Task ShortcutAttribute_OptedIn_ReturnShortcutOnMethod_MismatchedTarget_SSA001()
     {
         var source =
             """
@@ -1369,14 +1369,14 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void ShortcutAttribute_OptedIn_ReturnSyntaxKnownValue_ReportsSSA007()
+    public async Task ShortcutAttribute_OptedIn_ReturnSyntaxKnownValue_ReportsSSA007()
     {
         // [ReturnSyntax("Json")] with the Json shortcut available — SSA007 should fire
         // suggesting the `[return: Json]` replacement.
@@ -1391,7 +1391,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA007", diagnostics[0].Id);
@@ -1399,7 +1399,7 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public void ShortcutAttribute_OptedIn_ReturnSyntaxUnionValue_NoSSA007()
+    public async Task ShortcutAttribute_OptedIn_ReturnSyntaxUnionValue_NoSSA007()
     {
         // Multi-value ReturnSyntax can't collapse to a single shortcut — SSA007 stays silent.
         var source =
@@ -1413,13 +1413,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(0, diagnostics.Count(_ => _.Id == "SSA007"));
     }
 
     [Test]
-    public void ShortcutAttribute_NotOptedIn_StringSyntaxWithKnownValue_NoDiagnostic()
+    public async Task ShortcutAttribute_NotOptedIn_StringSyntaxWithKnownValue_NoDiagnostic()
     {
         var source =
             """
@@ -1430,13 +1430,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source);
+        var diagnostics = await GetDiagnostics(source);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ShortcutAttribute_OptedIn_StringSyntaxWithUnknownValue_NoDiagnostic()
+    public async Task ShortcutAttribute_OptedIn_StringSyntaxWithUnknownValue_NoDiagnostic()
     {
         var source =
             """
@@ -1447,13 +1447,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ShortcutAttribute_MatchingTarget_NoDiagnostic()
+    public async Task ShortcutAttribute_MatchingTarget_NoDiagnostic()
     {
         var source =
             """
@@ -1471,13 +1471,13 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void ShortcutAttribute_MismatchTarget_ReportsSSA001()
+    public async Task ShortcutAttribute_MismatchTarget_ReportsSSA001()
     {
         var source =
             """
@@ -1495,7 +1495,7 @@ public class MismatchAnalyzerTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, emitShortcutAttributes: true);
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
 
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
@@ -1504,7 +1504,7 @@ public class MismatchAnalyzerTests
         IsTrue(message.Contains("Regex"));
     }
 
-    static ImmutableArray<Diagnostic> GetDiagnostics(
+    static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,
         bool perTreeOnly = false,
@@ -1545,9 +1545,7 @@ public class MismatchAnalyzerTests
 
         return compilation
             .WithAnalyzers([analyzer], analyzerOptions)
-            .GetAnalyzerDiagnosticsAsync()
-            .GetAwaiter()
-            .GetResult();
+            .GetAnalyzerDiagnosticsAsync();
     }
 
     static Task<ImmutableArray<Diagnostic>> GetCrossAssemblyDiagnostics(

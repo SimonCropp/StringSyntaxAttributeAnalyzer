@@ -2,7 +2,7 @@
 public class NameConventionsTests
 {
     [Test]
-    public void Convention_PromotesParameter_AsSource_NoMismatch()
+    public async Task Convention_PromotesParameter_AsSource_NoMismatch()
     {
         // `url` matches the Uri convention, so passing it to a `[StringSyntax(Uri)]`
         // parameter should not raise SSA002 — the convention satisfies the target.
@@ -21,12 +21,12 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void Convention_Disabled_StillFiresMissingFormat()
+    public async Task Convention_Disabled_StillFiresMissingFormat()
     {
         var source =
             """
@@ -43,13 +43,13 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: false);
+        var diagnostics = await GetDiagnostics(source, conventions: false);
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA002", diagnostics[0].Id);
     }
 
     [Test]
-    public void Convention_PascalCaseSuffix_OnParameterName()
+    public async Task Convention_PascalCaseSuffix_OnParameterName()
     {
         var source =
             """
@@ -64,12 +64,12 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void Convention_MismatchAcrossConventions_FiresFormatMismatch()
+    public async Task Convention_MismatchAcrossConventions_FiresFormatMismatch()
     {
         // Both sides convention-promote, but to different values → SSA001.
         var source =
@@ -83,13 +83,13 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA001", diagnostics[0].Id);
     }
 
     [Test]
-    public void Convention_NotPascalBoundary_DoesNotMatch()
+    public async Task Convention_NotPascalBoundary_DoesNotMatch()
     {
         // `myhtml` (lowercase, no boundary) should NOT match the Html convention.
         var source =
@@ -107,13 +107,13 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA002", diagnostics[0].Id);
     }
 
     [Test]
-    public void Convention_RedundantAttribute_FiresSSA008_OnProperty()
+    public async Task Convention_RedundantAttribute_FiresSSA008_OnProperty()
     {
         var source =
             """
@@ -124,13 +124,13 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA008", diagnostics[0].Id);
     }
 
     [Test]
-    public void Convention_RedundantAttribute_FiresOnParameter()
+    public async Task Convention_RedundantAttribute_FiresOnParameter()
     {
         var source =
             """
@@ -140,13 +140,13 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA008", diagnostics[0].Id);
     }
 
     [Test]
-    public void Convention_RedundantLanguageComment_FiresSSA008()
+    public async Task Convention_RedundantLanguageComment_FiresSSA008()
     {
         var source =
             """
@@ -161,13 +161,13 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(1, diagnostics.Length);
         AreEqual("SSA008", diagnostics[0].Id);
     }
 
     [Test]
-    public void Convention_LocalNameMatchesConvention_NoMissingFormat()
+    public async Task Convention_LocalNameMatchesConvention_NoMissingFormat()
     {
         // local `pageHtml` should convention-promote to Html and satisfy the
         // [Html] target without raising SSA002 or needing //language=.
@@ -188,12 +188,12 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void Convention_AttributeWithDifferentValue_DoesNotFireSSA008()
+    public async Task Convention_AttributeWithDifferentValue_DoesNotFireSSA008()
     {
         // Property `Url` carries `[StringSyntax(Json)]` — value is Json, name
         // matches Uri. Attribute is not redundant (it overrides naming intent).
@@ -206,12 +206,12 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         AreEqual(0, diagnostics.Length);
     }
 
     [Test]
-    public void Convention_BypassesKnownUnannotatedAssemblies_OnTarget()
+    public async Task Convention_BypassesKnownUnannotatedAssemblies_OnTarget()
     {
         // Newtonsoft.Json is in KnownUnannotatedAssemblies, so SSA003 is
         // normally suppressed. But its `JsonConvert.SerializeObject` parameter
@@ -230,13 +230,13 @@ public class NameConventionsTests
             }
             """;
 
-        var diagnostics = GetDiagnostics(source, conventions: true);
+        var diagnostics = await GetDiagnostics(source, conventions: true);
         // `path` doesn't match Uri convention → still suppressed via
         // KnownUnannotatedAssemblies / namespace suppression. No diagnostic.
         AreEqual(0, diagnostics.Length);
     }
 
-    static ImmutableArray<Diagnostic> GetDiagnostics(string source, bool conventions)
+    static Task<ImmutableArray<Diagnostic>> GetDiagnostics(string source, bool conventions)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
@@ -262,8 +262,6 @@ public class NameConventionsTests
 
         return compilation
             .WithAnalyzers([new MismatchAnalyzer()], options)
-            .GetAnalyzerDiagnosticsAsync()
-            .GetAwaiter()
-            .GetResult();
+            .GetAnalyzerDiagnosticsAsync();
     }
 }
