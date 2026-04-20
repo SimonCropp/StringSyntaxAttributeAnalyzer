@@ -9,16 +9,21 @@ The repo has two separate solutions that must be run in order — `src/` produce
 ```bash
 # Primary workflow: build src/ in Release, which also produces the nupkg in ../nugets/
 dotnet build src/StringSyntaxAttributeAnalyzer.slnx -c Release
-dotnet test  src/StringSyntaxAttributeAnalyzer.slnx         # 21 analyzer + codefix unit tests
-dotnet test  IntegrationTests/IntegrationTests.slnx         # 3 tests that consume the nupkg
+dotnet run --project src/Tests -c Release                         # analyzer + codefix unit tests
+dotnet run --project IntegrationTests/IntegrationTests -c Release # tests that consume the nupkg
 
-# Run a single NUnit test
-dotnet test src/StringSyntaxAttributeAnalyzer.slnx --filter "FullyQualifiedName~MultiDeclaratorField"
+# Run a single NUnit test (MTP filter syntax)
+dotnet run --project src/Tests -c Release -- --filter-method *MultiDeclaratorField*
+
+# Code coverage
+dotnet run --project src/Tests -c Release -- --coverage --coverage-output-format cobertura
 
 # Repack only (after any analyzer/codefix edit that should reach IntegrationTests)
 rm nugets/*.nupkg
 dotnet build src/StringSyntaxAttributeAnalyzer.slnx -c Release
 ```
+
+Tests run on Microsoft.Testing.Platform (MTP) — both test projects are `OutputType=Exe` with `EnableNUnitRunner=true`, so `dotnet test` is not used on .NET 10 SDK. Coverage output lands in `TestResults/` via `Microsoft.Testing.Extensions.CodeCoverage`.
 
 The `dotnet pack` command alone is fragile here: `ProjectDefaults` only sets `GeneratePackageOnBuild=true` when `IsPackageProject=true` *and* `Configuration=Release`. Packaging is a side-effect of a Release build, not a separate step — match the CI flow in `src/appveyor.yml` (build src Release → build IntegrationTests Release → test both `--no-build --no-restore`).
 

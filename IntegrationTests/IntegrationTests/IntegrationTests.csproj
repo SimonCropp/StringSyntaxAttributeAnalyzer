@@ -4,13 +4,17 @@
     <IsTestProject>true</IsTestProject>
     <ImplicitUsings>true</ImplicitUsings>
     <WarningsAsErrors>SSA001;SSA002;SSA003</WarningsAsErrors>
+    <OutputType>Exe</OutputType>
+    <EnableNUnitRunner>true</EnableNUnitRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="StringSyntaxAttributeAnalyzer" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <Using Include="NUnit.Framework.Legacy.ClassicAssert" Static="True" />
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>AnalyzerPackageVersion</_Parameter1>
