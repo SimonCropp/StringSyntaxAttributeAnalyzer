@@ -117,22 +117,26 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             var suppression = new NamespaceSuppression(start.Options);
             var conventions = new NameConventionsOption(start.Options);
+            var linqFlow = new LinqFlow();
 
             start.RegisterOperationAction(
-                _ => AnalyzeArgument(_, types, suppression, conventions),
+                _ => AnalyzeArgument(_, types, suppression, conventions, linqFlow),
                 OperationKind.Argument);
             start.RegisterOperationAction(
-                _ => AnalyzeSimpleAssignment(_, types, suppression, conventions),
+                _ => AnalyzeSimpleAssignment(_, types, suppression, conventions, linqFlow),
                 OperationKind.SimpleAssignment);
             start.RegisterOperationAction(
-                _ => AnalyzePropertyInitializer(_, types, suppression, conventions),
+                _ => AnalyzePropertyInitializer(_, types, suppression, conventions, linqFlow),
                 OperationKind.PropertyInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeFieldInitializer(_, types, suppression, conventions),
+                _ => AnalyzeFieldInitializer(_, types, suppression, conventions, linqFlow),
                 OperationKind.FieldInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeBinaryOperator(_, types, suppression, conventions),
+                _ => AnalyzeBinaryOperator(_, types, suppression, conventions, linqFlow),
                 OperationKind.BinaryOperator);
+            start.RegisterOperationAction(
+                _ => AnalyzeLoop(_, types, linqFlow),
+                OperationKind.Loop);
             start.RegisterSymbolAction(
                 AnalyzeSymbolForSingletonUnion,
                 SymbolKind.Parameter,
@@ -426,7 +430,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         OperationAnalysisContext context,
         SyntaxTypes types,
         NamespaceSuppression suppression,
-        NameConventionsOption conventions)
+        NameConventionsOption conventions,
+        LinqFlow linqFlow)
     {
         var argument = (IArgumentOperation)context.Operation;
         var parameter = argument.Parameter;
@@ -438,8 +443,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
         var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
         targetInfo = ApplyConvention(targetInfo, parameter, conventionsEnabled);
-        var sourceSymbol = GetSymbol(argument.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(argument.Value, types, linqFlow, conventionsEnabled);
         Report(
             context,
             argument.Value.Syntax.GetLocation(),
@@ -455,7 +459,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         OperationAnalysisContext context,
         SyntaxTypes types,
         NamespaceSuppression suppression,
-        NameConventionsOption conventions)
+        NameConventionsOption conventions,
+        LinqFlow linqFlow)
     {
         var assignment = (ISimpleAssignmentOperation)context.Operation;
         var targetSymbol = GetSymbol(assignment.Target);
@@ -466,8 +471,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
         var targetInfo = GetSyntax(targetSymbol, types, conventionsEnabled);
-        var sourceSymbol = GetSymbol(assignment.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(assignment.Value, types, linqFlow, conventionsEnabled);
         Report(
             context,
             assignment.Value.Syntax.GetLocation(),
@@ -483,12 +487,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         OperationAnalysisContext context,
         SyntaxTypes types,
         NamespaceSuppression suppression,
-        NameConventionsOption conventions)
+        NameConventionsOption conventions,
+        LinqFlow linqFlow)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
-        var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(init.Value, types, linqFlow, conventionsEnabled);
         var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var property in init.InitializedProperties)
         {
@@ -509,12 +513,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         OperationAnalysisContext context,
         SyntaxTypes types,
         NamespaceSuppression suppression,
-        NameConventionsOption conventions)
+        NameConventionsOption conventions,
+        LinqFlow linqFlow)
     {
         var init = (IFieldInitializerOperation)context.Operation;
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
-        var sourceSymbol = GetSymbol(init.Value);
-        var sourceInfo = GetSyntax(sourceSymbol, types, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(init.Value, types, linqFlow, conventionsEnabled);
         var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var field in init.InitializedFields)
         {
@@ -576,7 +580,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         OperationAnalysisContext context,
         SyntaxTypes types,
         NamespaceSuppression suppression,
-        NameConventionsOption conventions)
+        NameConventionsOption conventions,
+        LinqFlow linqFlow)
     {
         var binary = (IBinaryOperation)context.Operation;
         if (binary.OperatorKind is not (BinaryOperatorKind.Equals or BinaryOperatorKind.NotEquals))
@@ -587,10 +592,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var suppressedNamespaces = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
 
-        var leftSymbol = GetSymbol(binary.LeftOperand);
-        var rightSymbol = GetSymbol(binary.RightOperand);
-        var leftInfo = GetSyntax(leftSymbol, types, conventionsEnabled);
-        var rightInfo = GetSyntax(rightSymbol, types, conventionsEnabled);
+        var (leftSymbol, leftInfo) = GetSourceInfo(binary.LeftOperand, types, linqFlow, conventionsEnabled);
+        var (rightSymbol, rightInfo) = GetSourceInfo(binary.RightOperand, types, linqFlow, conventionsEnabled);
 
         // Unknown side (literal, local, concatenation, await) — suppress. Comparing to
         // a literal is common and fine; the analyzer can't infer intent from an opaque
@@ -1225,4 +1228,716 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         return [Location.Create(declaration.SyntaxTree, declaration.Span)];
     }
+
+    // Per-compilation bag for foreach loop-variable → element syntax bindings.
+    // Locals don't support attributes in C#, so the only way a syntax value flows
+    // through a foreach is by looking the loop local up here at use-sites.
+    sealed class LinqFlow
+    {
+        public ConcurrentDictionary<ILocalSymbol, ImmutableArray<string>> LocalBindings { get; } =
+            new(SymbolEqualityComparer.Default);
+    }
+
+    // Resolves the source-side (read) operation's SyntaxInfo. First tries LINQ /
+    // foreach element-flow paths (lambda parameter in a LINQ-shape extension,
+    // element-returning LINQ invocation, foreach-bound local, array indexer), and
+    // falls back to the scalar path (symbol + attributes + convention) otherwise.
+    // The scalar path also has collection-tag suppression applied so passing a
+    // tagged collection into a bare receiver slot doesn't spuriously fire SSA003.
+    static (ISymbol? symbol, SyntaxInfo info) GetSourceInfo(
+        IOperation operation,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        bool conventionsEnabled)
+    {
+        var unwrapped = operation.Unwrap();
+
+        if (unwrapped is ILocalReferenceOperation localRef &&
+            linqFlow.LocalBindings.TryGetValue(localRef.Local, out var boundValues))
+        {
+            return (localRef.Local, SyntaxInfo.PresentUnion(boundValues));
+        }
+
+        if (unwrapped is IInvocationOperation inv &&
+            TryResolveLinqElementReturn(inv, types, linqFlow, out var linqInfo))
+        {
+            return (inv.TargetMethod, linqInfo);
+        }
+
+        if (unwrapped is IParameterReferenceOperation param &&
+            TryResolveLambdaParameterFromLinq(param, types, linqFlow, out var lambdaInfo))
+        {
+            return (param.Parameter, lambdaInfo);
+        }
+
+        if (unwrapped is IArrayElementReferenceOperation arrayElement)
+        {
+            var arrayInfo = GetReceiverElementTags(arrayElement.ArrayReference, types, linqFlow);
+            if (arrayInfo.State == SyntaxState.Present)
+            {
+                return (null, arrayInfo);
+            }
+        }
+
+        // Scalar path: existing symbol → attributes resolution, plus collection-tag
+        // suppression for members typed as single-T enumerables.
+        var symbol = GetSymbol(operation);
+        var info = GetSyntax(symbol, types, conventionsEnabled);
+        info = SuppressCollectionTag(GetDeclaredType(symbol), info);
+        return (symbol, info);
+    }
+
+    static ITypeSymbol? GetDeclaredType(ISymbol? symbol) => symbol?.GetDeclaredType();
+
+    // If the symbol's declared type is a single-T enumerable, any StringSyntax on
+    // it is semantically an element-tag — not meaningful in scalar contexts. Drop
+    // to Unknown so SSA001/SSA003 don't fire when a tagged collection is passed
+    // into an untagged collection receiver slot (e.g. a LINQ-shape extension's
+    // `this IEnumerable<T>` parameter). Element-tag consumers (foreach / .First() /
+    // lambda params) bypass this via GetReceiverElementTags.
+    static SyntaxInfo SuppressCollectionTag(ITypeSymbol? type, SyntaxInfo info)
+    {
+        if (info.State != SyntaxState.Present)
+        {
+            return info;
+        }
+
+        if (type.TryGetEnumerableElementType() is not null)
+        {
+            return SyntaxInfo.Unknown;
+        }
+
+        return info;
+    }
+
+    // `foreach (var x in collection)` binds `x` to the collection's element
+    // syntax. Nested foreach over a tagged source works too because the receiver
+    // resolution recurses through element-preserving calls.
+    static void AnalyzeLoop(OperationAnalysisContext context, SyntaxTypes types, LinqFlow linqFlow)
+    {
+        if (context.Operation is not IForEachLoopOperation forEach)
+        {
+            return;
+        }
+
+        var info = GetReceiverElementTags(forEach.Collection, types, linqFlow);
+        if (info.State != SyntaxState.Present)
+        {
+            return;
+        }
+
+        var loopVar = ExtractLoopLocal(forEach.LoopControlVariable);
+        if (loopVar is null)
+        {
+            return;
+        }
+
+        linqFlow.LocalBindings.TryAdd(loopVar, info.Values);
+    }
+
+    static ILocalSymbol? ExtractLoopLocal(IOperation? controlVariable) =>
+        controlVariable switch
+        {
+            IVariableDeclaratorOperation decl => decl.Symbol,
+            ILocalReferenceOperation localRef => localRef.Local,
+            _ => null
+        };
+
+    // If `param` is a single-parameter LINQ-style lambda (e.g. `Where`, `Select`,
+    // `Any` body, or any extension method on IEnumerable<T> accepting a Func<T,..>),
+    // and the enclosing invocation's receiver is a collection carrying an element
+    // syntax, bind the lambda parameter to that element syntax. This is what lets
+    // `docs.Any(d => d == literal)` resolve `d` without requiring an attribute on
+    // the lambda parameter — attributes aren't even legal inside expression trees
+    // (CS8972), so inference is the only way IQueryable predicates work.
+    //
+    // The gate is shape-based rather than name-based: any extension whose first
+    // parameter is IEnumerable<T> / array participates, so third-party helpers
+    // (MoreLINQ, EF .Include, custom paging) flow syntax the same way built-in
+    // LINQ does. Element-returning calls (First/Single/...) are kept on a closed
+    // allowlist because their semantic is specific; see TryResolveLinqElementReturn.
+    static bool TryResolveLambdaParameterFromLinq(
+        IParameterReferenceOperation param,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        out SyntaxInfo info)
+    {
+        info = SyntaxInfo.Unknown;
+
+        if (param.Parameter.ContainingSymbol is not IMethodSymbol
+            {
+                MethodKind: MethodKind.LambdaMethod
+            } lambdaMethod)
+        {
+            return false;
+        }
+
+        // Only bind the lambda's first parameter — TSource in every IEnumerable<T>
+        // extension shape. Index overloads (Select/Where with int) take TSource as
+        // parameter 0. Multi-source shapes like Zip / SelectMany with an
+        // intermediate collection aren't handled in this pass.
+        if (param.Parameter.Ordinal != 0 ||
+            lambdaMethod.Parameters.Length is 0 or > 2)
+        {
+            return false;
+        }
+
+        var anonymous = FindEnclosingAnonymousFunction(param);
+        if (anonymous is null)
+        {
+            return false;
+        }
+
+        var invocation = FindEnclosingLinqInvocation(anonymous);
+        if (invocation is null)
+        {
+            return false;
+        }
+
+        if (!IsEnumerableShapeExtension(invocation.TargetMethod))
+        {
+            return false;
+        }
+
+        var receiver = GetLinqReceiver(invocation);
+        if (receiver is null)
+        {
+            return false;
+        }
+
+        var element = receiver.Type.TryGetEnumerableElementType();
+        if (element is null ||
+            !SymbolEqualityComparer.Default.Equals(element, param.Parameter.Type))
+        {
+            return false;
+        }
+
+        var elementInfo = GetReceiverElementTags(receiver, types, linqFlow);
+        if (elementInfo.State != SyntaxState.Present)
+        {
+            return false;
+        }
+
+        info = elementInfo;
+        return true;
+    }
+
+    // For element-returning LINQ (`.First()`, `.Single()`, `.ElementAt()` etc.)
+    // surface the receiver's element syntax as the invocation's result syntax —
+    // so `jsonDocs.First()` is treated as a single Json-tagged string.
+    static bool TryResolveLinqElementReturn(
+        IInvocationOperation invocation,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        out SyntaxInfo info)
+    {
+        info = SyntaxInfo.Unknown;
+
+        if (!invocation.TargetMethod.IsLinqMethod() ||
+            !IsElementReturningLinq(invocation.TargetMethod.Name))
+        {
+            return false;
+        }
+
+        var receiver = GetLinqReceiver(invocation);
+        if (receiver is null)
+        {
+            return false;
+        }
+
+        var element = receiver.Type.TryGetEnumerableElementType();
+        if (element is null ||
+            !SymbolEqualityComparer.Default.Equals(element, invocation.Type))
+        {
+            return false;
+        }
+
+        var elementInfo = GetReceiverElementTags(receiver, types, linqFlow);
+        if (elementInfo.State != SyntaxState.Present)
+        {
+            return false;
+        }
+
+        info = elementInfo;
+        return true;
+    }
+
+    // Walk element-preserving calls backwards until we hit an expression whose
+    // symbol (property/field/parameter/return) carries explicit StringSyntax /
+    // UnionSyntax / ReturnSyntax attributes on a collection-typed declaration.
+    // Convention tagging and shortcut attributes participate via the shared
+    // attribute lookup, but the receiver must be explicitly tagged — generic
+    // collections without any attribute never propagate.
+    //
+    // Select / SelectMany get their own handling (GetSelectElementTags) because
+    // the result element type can differ from the source — the selector decides
+    // the new syntax.
+    static SyntaxInfo GetReceiverElementTags(IOperation receiver, SyntaxTypes types, LinqFlow linqFlow)
+    {
+        // Iterates element-preserving LINQ chains instead of recursing — long
+        // method chains (common in query-heavy code) would otherwise grow the
+        // stack linearly with chain length.
+        while (true)
+        {
+            receiver = receiver.Unwrap();
+
+            if (receiver is IInvocationOperation inv)
+            {
+                var targetMethod = inv.TargetMethod;
+
+                if (IsSelectCall(targetMethod))
+                {
+                    return GetSelectElementTags(inv, types, linqFlow);
+                }
+
+                if (IsElementPreserving(targetMethod))
+                {
+                    var next = GetLinqReceiver(inv);
+                    if (next is null)
+                    {
+                        return SyntaxInfo.Unknown;
+                    }
+
+                    receiver = next;
+                    continue;
+                }
+            }
+
+            var symbol = receiver.GetReferencedSymbol();
+            if (symbol is null)
+            {
+                return SyntaxInfo.Unknown;
+            }
+
+            var symbolType = symbol.GetDeclaredType();
+            if (symbolType.TryGetEnumerableElementType() is null)
+            {
+                return SyntaxInfo.Unknown;
+            }
+
+            return GetExplicitCollectionTags(symbol, types);
+        }
+    }
+
+    // Resolve StringSyntax/UnionSyntax/ReturnSyntax (and shortcut attributes) for
+    // a collection-typed symbol, walking the override and interface-implementation
+    // chain so an interface-declared tag flows through its implementations. Name-
+    // convention tagging is deliberately skipped — a collection-typed member whose
+    // name happens to match the convention would spuriously acquire a tag no
+    // caller can opt out of.
+    static SyntaxInfo GetExplicitCollectionTags(ISymbol symbol, SyntaxTypes types)
+    {
+        var direct = GetSyntaxFromAttributes(symbol.GetAttributes(), types);
+        if (direct.State == SyntaxState.Present)
+        {
+            return direct;
+        }
+
+        if (symbol is IMethodSymbol method)
+        {
+            var returnInfo = GetMethodSyntax(method, types);
+            if (returnInfo.State == SyntaxState.Present)
+            {
+                return returnInfo;
+            }
+
+            var overridden = method.OverriddenMethod;
+            while (overridden is not null)
+            {
+                var info = GetMethodSyntax(overridden, types);
+                if (info.State == SyntaxState.Present)
+                {
+                    return info;
+                }
+
+                overridden = overridden.OverriddenMethod;
+            }
+
+            foreach (var iface in method.ContainingType?.AllInterfaces ?? [])
+            {
+                foreach (var ifaceMember in iface.GetMembers(method.Name).OfType<IMethodSymbol>())
+                {
+                    var impl = method.ContainingType!.FindImplementationForInterfaceMember(ifaceMember);
+                    if (!SymbolEqualityComparer.Default.Equals(impl, method))
+                    {
+                        continue;
+                    }
+
+                    var info = GetMethodSyntax(ifaceMember, types);
+                    if (info.State == SyntaxState.Present)
+                    {
+                        return info;
+                    }
+                }
+            }
+
+            return SyntaxInfo.NotPresent;
+        }
+
+        if (symbol is IPropertySymbol property)
+        {
+            var inherited = GetPropertyFromHierarchy(property, types);
+            if (inherited.State == SyntaxState.Present)
+            {
+                return inherited;
+            }
+
+            // Record primary-ctor parameters carry their [StringSyntax] on the
+            // parameter itself, not the synthesized property. Surface them here so
+            // element-flow through a record's collection property works.
+            if (FindPrimaryConstructorParameter(property) is { } recordParam)
+            {
+                var fromParam = GetSyntaxFromAttributes(recordParam.GetAttributes(), types);
+                if (fromParam.State == SyntaxState.Present)
+                {
+                    return fromParam;
+                }
+            }
+        }
+
+        return SyntaxInfo.NotPresent;
+    }
+
+    // [ReturnSyntax] lives on the method symbol itself; [return: StringSyntax] /
+    // [return: Html] live on the method's return-value attribute set. Callers that
+    // want the method's effective return-syntax need to check both.
+    static SyntaxInfo GetMethodSyntax(IMethodSymbol method, SyntaxTypes types)
+    {
+        var direct = GetSyntaxFromAttributes(method.GetAttributes(), types);
+        if (direct.State == SyntaxState.Present)
+        {
+            return direct;
+        }
+
+        return GetSyntaxFromAttributes(method.GetReturnTypeAttributes(), types);
+    }
+
+    static SyntaxInfo GetPropertyFromHierarchy(IPropertySymbol property, SyntaxTypes types)
+    {
+        var overridden = property.OverriddenProperty;
+        while (overridden is not null)
+        {
+            var info = GetSyntaxFromAttributes(overridden.GetAttributes(), types);
+            if (info.State == SyntaxState.Present)
+            {
+                return info;
+            }
+
+            overridden = overridden.OverriddenProperty;
+        }
+
+        foreach (var ifaceMember in property.ExplicitInterfaceImplementations)
+        {
+            var info = GetSyntaxFromAttributes(ifaceMember.GetAttributes(), types);
+            if (info.State == SyntaxState.Present)
+            {
+                return info;
+            }
+        }
+
+        var containingType = property.ContainingType;
+        if (containingType is null)
+        {
+            return SyntaxInfo.NotPresent;
+        }
+
+        foreach (var iface in containingType.AllInterfaces)
+        {
+            foreach (var ifaceMember in iface.GetMembers(property.Name).OfType<IPropertySymbol>())
+            {
+                var impl = containingType.FindImplementationForInterfaceMember(ifaceMember);
+                if (!SymbolEqualityComparer.Default.Equals(impl, property))
+                {
+                    continue;
+                }
+
+                var info = GetSyntaxFromAttributes(ifaceMember.GetAttributes(), types);
+                if (info.State == SyntaxState.Present)
+                {
+                    return info;
+                }
+            }
+        }
+
+        return SyntaxInfo.NotPresent;
+    }
+
+    // Select/SelectMany can preserve, transform, or drop the syntax depending on
+    // the selector. Three shapes are recognised, all statically inspectable:
+    //   1. Identity lambda `x => x` — result element syntax = receiver's.
+    //   2. Method group `.Select(SomeMethod)` — result = method's [return: ...].
+    //   3. Expression-bodied lambda whose body resolves to a known syntax.
+    // Other selector shapes (multi-statement lambdas, untagged expressions) drop.
+    static SyntaxInfo GetSelectElementTags(IInvocationOperation invocation, SyntaxTypes types, LinqFlow linqFlow)
+    {
+        var selector = FindSelectorArgument(invocation);
+        if (selector is null)
+        {
+            return SyntaxInfo.Unknown;
+        }
+
+        selector = selector.Unwrap();
+
+        if (selector is IDelegateCreationOperation creation)
+        {
+            var target = creation.Target.Unwrap();
+
+            if (target is IMethodReferenceOperation methodRef)
+            {
+                // [ReturnSyntax] is applied to the method symbol; [return: StringSyntax]
+                // / [return: Html] live on the return-value attribute set. Check both so
+                // either form drives the element syntax out of the Select.
+                var methodInfo = GetSyntaxFromAttributes(methodRef.Method.GetAttributes(), types);
+                if (methodInfo.State == SyntaxState.Present)
+                {
+                    return methodInfo;
+                }
+
+                var returnInfo = GetSyntaxFromAttributes(
+                    methodRef.Method.GetReturnTypeAttributes(),
+                    types);
+                return returnInfo.State == SyntaxState.Present
+                    ? returnInfo
+                    : SyntaxInfo.Unknown;
+            }
+
+            if (target is IAnonymousFunctionOperation lambda)
+            {
+                var body = GetSingleReturnExpression(lambda);
+                if (body is null)
+                {
+                    return SyntaxInfo.Unknown;
+                }
+
+                if (IsIdentityReference(body, lambda))
+                {
+                    var next = GetLinqReceiver(invocation);
+                    if (next is null)
+                    {
+                        return SyntaxInfo.Unknown;
+                    }
+
+                    return GetReceiverElementTags(next, types, linqFlow);
+                }
+
+                // Fall back to a scalar-source resolution of the body — a tagged
+                // invocation or property access inside the lambda body becomes the
+                // new element syntax.
+                var (_, info) = GetSourceInfo(body, types, linqFlow, conventionsEnabled: false);
+                return info.State == SyntaxState.Present ? info : SyntaxInfo.Unknown;
+            }
+        }
+
+        return SyntaxInfo.Unknown;
+    }
+
+    // The selector sits after the source in Enumerable/Queryable.Select; for
+    // extension calls the source is Arguments[0] and the selector Arguments[1].
+    // For instance-form Select (custom providers), Instance is the source and
+    // Arguments[0] is the selector.
+    static IOperation? FindSelectorArgument(IInvocationOperation invocation)
+    {
+        if (invocation.Instance is not null)
+        {
+            return invocation.Arguments.Length > 0 ? invocation.Arguments[0].Value : null;
+        }
+
+        if (invocation.TargetMethod.IsExtensionMethod &&
+            invocation.Arguments.Length > 1)
+        {
+            return invocation.Arguments[1].Value;
+        }
+
+        return null;
+    }
+
+    // Lambda bodies surface as a synthesised block with a single return — both
+    // for expression-bodied and brace-bodied single-return lambdas. Anything
+    // with more than one statement is treated as opaque (the last statement
+    // isn't reliably the result).
+    static IOperation? GetSingleReturnExpression(IAnonymousFunctionOperation lambda)
+    {
+        var block = lambda.Body;
+        if (block.Operations.Length != 1)
+        {
+            return null;
+        }
+
+        if (block.Operations[0] is IReturnOperation { ReturnedValue: { } value })
+        {
+            return value.Unwrap();
+        }
+
+        return null;
+    }
+
+    static bool IsIdentityReference(IOperation body, IAnonymousFunctionOperation lambda)
+    {
+        if (body is not IParameterReferenceOperation paramRef)
+        {
+            return false;
+        }
+
+        var parameters = lambda.Symbol.Parameters;
+        return parameters.Length > 0 &&
+               SymbolEqualityComparer.Default.Equals(paramRef.Parameter, parameters[0]);
+    }
+
+    // Element preservation is accepted via two channels: the named-LINQ list
+    // (closed, covers every System.Linq.Enumerable/Queryable method whose
+    // signature matches IEnumerable<T> → IEnumerable<T>), and a shape-based rule
+    // that lets third-party extensions with the same signature participate —
+    // MoreLINQ, EF `.Include`, custom paging helpers. The shape rule requires
+    // the method to be an extension on IEnumerable<T> whose return is also
+    // IEnumerable<T> with the same element T.
+    //
+    // Comparison runs on OriginalDefinition so that generic methods declared as
+    // `IEnumerable<T> Foo<T>(IEnumerable<T>)` match — without OriginalDefinition
+    // the input type parameter and return type parameter are distinct symbols
+    // after construction, which would defeat the check.
+    static bool IsElementPreserving(IMethodSymbol method)
+    {
+        if (method.IsLinqMethod() && IsElementPreservingLinq(method.Name))
+        {
+            return true;
+        }
+
+        if (!method.IsExtensionMethod)
+        {
+            return false;
+        }
+
+        var definition = (method.ReducedFrom ?? method).OriginalDefinition;
+        if (definition.Parameters.Length == 0)
+        {
+            return false;
+        }
+
+        var inputElement = definition.Parameters[0].Type.TryGetEnumerableElementType();
+        var outputElement = definition.ReturnType.TryGetEnumerableElementType();
+        return inputElement is not null &&
+               outputElement is not null &&
+               SymbolEqualityComparer.Default.Equals(inputElement, outputElement);
+    }
+
+    static bool IsSelectCall(IMethodSymbol method) =>
+        method.IsLinqMethod() &&
+        method.Name is "Select" or "SelectMany";
+
+    // An extension method whose receiver carries a discoverable element type.
+    // This is the gate for LINQ-shape recognition — it lets `static T[] Custom<T>
+    // (this IEnumerable<T> src, Func<T,bool> f)` flow syntax without hard-coding
+    // the method name.
+    static bool IsEnumerableShapeExtension(IMethodSymbol method) =>
+        GetExtensionReceiverType(method) is { } receiverType &&
+        receiverType.TryGetEnumerableElementType() is not null;
+
+    // For a reduced extension-method call (`x.Ext(...)`), `method.Parameters`
+    // excludes the receiver — the "this" parameter only appears on the unreduced
+    // symbol, which ReducedFrom surfaces. For calls written in static form
+    // (`Ext(x, ...)`) the method is already unreduced, so ReducedFrom is null and
+    // Parameters[0] is the receiver.
+    static ITypeSymbol? GetExtensionReceiverType(IMethodSymbol method)
+    {
+        if (!method.IsExtensionMethod)
+        {
+            return null;
+        }
+
+        var full = method.ReducedFrom ?? method;
+        if (full.Parameters.Length == 0)
+        {
+            return null;
+        }
+
+        return full.Parameters[0].Type;
+    }
+
+    static IOperation? FindEnclosingAnonymousFunction(IOperation operation)
+    {
+        var current = operation.Parent;
+        while (current is not null)
+        {
+            if (current is IAnonymousFunctionOperation)
+            {
+                return current;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
+    static IInvocationOperation? FindEnclosingLinqInvocation(IOperation lambda)
+    {
+        var current = lambda.Parent;
+        while (current is not null)
+        {
+            if (current is IInvocationOperation invocation)
+            {
+                return invocation;
+            }
+
+            // Walk through delegate creation, conversion, argument wrappers that
+            // the compiler threads between the lambda and the invocation. An
+            // unrelated enclosing operation (e.g. a different invocation body)
+            // means the lambda isn't a direct argument of the LINQ call we care
+            // about.
+            if (current is IDelegateCreationOperation or IConversionOperation or IArgumentOperation)
+            {
+                current = current.Parent;
+                continue;
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
+    // Extension-method invocations of LINQ put the receiver in Arguments[0] and
+    // leave Instance null. Instance-method LINQ (rare but e.g. Queryable instance
+    // forms on custom providers) uses Instance. Handle both so both shapes
+    // propagate.
+    static IOperation? GetLinqReceiver(IInvocationOperation invocation)
+    {
+        if (invocation.Instance is not null)
+        {
+            return invocation.Instance;
+        }
+
+        if (invocation.TargetMethod.IsExtensionMethod &&
+            invocation.Arguments.Length > 0)
+        {
+            return invocation.Arguments[0].Value;
+        }
+
+        return null;
+    }
+
+    static bool IsElementReturningLinq(string methodName) =>
+        methodName is
+            "First" or "FirstOrDefault" or
+            "Single" or "SingleOrDefault" or
+            "Last" or "LastOrDefault" or
+            "ElementAt" or "ElementAtOrDefault" or
+            "Min" or "Max" or
+            "Aggregate";
+
+    static bool IsElementPreservingLinq(string methodName) =>
+        methodName is
+            "Where" or
+            "OrderBy" or "OrderByDescending" or
+            "ThenBy" or "ThenByDescending" or
+            "Reverse" or
+            "Take" or "TakeWhile" or "TakeLast" or
+            "Skip" or "SkipWhile" or "SkipLast" or
+            "Distinct" or "DistinctBy" or
+            "Concat" or "Union" or "UnionBy" or
+            "Intersect" or "IntersectBy" or
+            "Except" or "ExceptBy" or
+            "AsEnumerable" or "AsQueryable" or
+            "ToArray" or "ToList" or "ToHashSet" or
+            "Append" or "Prepend";
 }
