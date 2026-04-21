@@ -544,7 +544,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             var options = ExtractUnionOptions(attribute);
-            if (options.Length > 1)
+            // Only the exact singleton case is redundant. Empty `[UnionSyntax()]`
+            // is a different shape of user error — "has only one option" would
+            // lie, and the codefix would emit `[StringSyntax("")]`, which is
+            // worse than staying silent.
+            if (options.Length != 1)
             {
                 return;
             }
@@ -557,7 +561,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            var singleValue = options.Length == 1 ? options[0] : "";
+            var singleValue = options[0];
             var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, singleValue);
             context.ReportDiagnostic(Diagnostic.Create(
                 singletonUnionRule,
