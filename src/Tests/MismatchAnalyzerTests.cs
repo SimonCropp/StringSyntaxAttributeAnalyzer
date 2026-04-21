@@ -1973,12 +1973,11 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
-    public async Task Dictionary_ElementAccess_NotTagged()
+    public async Task Dictionary_KeyStringValue_TagAppliesToKey()
     {
-        // Multi-T containers carry no element tag. foreach over the KV element
-        // type doesn't propagate — kv.Key is untagged, and the source-side symbol
-        // (KeyValuePair.Key) lives in System.Collections.Generic so SSA002 is
-        // suppressed by the default namespace suppression.
+        // Dictionary<string, V> with a non-string value: the [StringSyntax] tag
+        // is unambiguously a key-side tag. foreach binds kv to a KVP; kv.Key
+        // picks up "Html" and mismatches against the Regex-tagged consumer.
         var source = """
             using System.Collections.Generic;
 
@@ -2001,7 +2000,8 @@ public class MismatchAnalyzerTests
 
         var diagnostics = await GetDiagnostics(source);
 
-        await Assert.That(diagnostics.Length).IsEqualTo(0);
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     [Test]
@@ -2415,6 +2415,292 @@ public class MismatchAnalyzerTests
         var diagnostics = await GetDiagnostics(source);
 
         await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Dictionary_KeyValueString_TagAppliesToValue()
+    {
+        // Dictionary<K, string> with a non-string key: the tag applies to the
+        // Value position. Value-read (kv.Value) is tagged; Key-read is not.
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<int, string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go()
+                {
+                    foreach (var kv in Values)
+                    {
+                        ConsumeRegex(kv.Value);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_BothStringKeyValue_DefaultsToValue()
+    {
+        // Dictionary<string, string>: the rule defaults to Value. kv.Value
+        // inherits "Html" and mismatches the Regex-tagged consumer. kv.Key
+        // stays untagged, so no second diagnostic from a spurious key-read.
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<string, string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void ConsumeKey(string k) { }
+
+                public void Go()
+                {
+                    foreach (var kv in Values)
+                    {
+                        ConsumeRegex(kv.Value);
+                        ConsumeKey(kv.Key);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_IndexerRead_FlowsValueTag()
+    {
+        // dict[k] resolves to the Value position, so the returned V flows the
+        // Html tag into the Regex-tagged consumer.
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<int, string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go() => ConsumeRegex(Values[0]);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_ValuesFirst_FlowsValueTag()
+    {
+        // dict.Values is a single-T collection projection of the Value
+        // position; its .First() result should carry the Html tag.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<int, string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.Values.First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_KeysFirst_FlowsKeyTag()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<string, int> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.Keys.First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_FirstThenValue_FlowsValueTag()
+    {
+        // dict.First() returns KVP; the .Value property on that KVP result
+        // should surface the Value-position tag of the source dict.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<int, string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go() => ConsumeRegex(Values.First().Value);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_NonStringPositions_Silent()
+    {
+        // Dictionary<int, int>: neither position is string, so no KVP
+        // position can hold a StringSyntax value. The attribute is silently
+        // ignored — no diagnostics on reads, and no spurious warnings about
+        // the unused attribute.
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<int, int> Values { get; set; } = null!;
+
+                public int Target { get; set; }
+
+                public void Go() => Target = Values[0];
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task IGrouping_StringKey_FlowsThroughDotKey()
+    {
+        // IGrouping<string, T>: the Key position is string. `grouping.Key`
+        // inherits "Html" and mismatches the Regex-tagged consumer.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<IGrouping<string, int>> Groups { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go()
+                {
+                    foreach (var g in Groups)
+                    {
+                        ConsumeRegex(g.Key);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task IEnumerableOfKvp_ValueStringFlows()
+    {
+        // Broad recognition: IEnumerable<KeyValuePair<K,string>> is also a
+        // KV stream. A query result shaped like this flows the Value tag.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<KeyValuePair<int, string>> Entries { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go()
+                {
+                    foreach (var kv in Entries)
+                    {
+                        ConsumeRegex(kv.Value);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_WhereChain_PreservesValueTag()
+    {
+        // Element-preserving LINQ on a KV stream keeps the binding alive —
+        // .Where(kv => kv.Value.Length > 0).First().Value should still carry
+        // the Value-position tag.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<int, string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go() => ConsumeRegex(Values.Where(kv => kv.Value.Length > 0).First().Value);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(

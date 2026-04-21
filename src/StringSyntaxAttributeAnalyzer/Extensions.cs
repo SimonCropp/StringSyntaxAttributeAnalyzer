@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 static class Extensions
 {
     // True when the method is declared on System.Linq.Enumerable or System.Linq.Queryable.
@@ -133,5 +135,85 @@ static class Extensions
         }
 
         return found;
+    }
+
+    // Matches System.Collections.Generic.KeyValuePair<K, V> by name + namespace
+    // chain, avoiding a ToDisplayString allocation and working across assembly
+    // boundaries.
+    public static bool IsSystemCollectionsGenericKvp(INamedTypeSymbol type) =>
+        type is { Name: "KeyValuePair", Arity: 2 } &&
+        type.ContainingNamespace is
+        {
+            Name: "Generic",
+            ContainingNamespace:
+            {
+                Name: "Collections",
+                ContainingNamespace.Name: "System"
+            }
+        };
+
+    public static bool IsSystemLinqIGrouping(INamedTypeSymbol type) =>
+        type is { Name: "IGrouping", Arity: 2 } &&
+        type.ContainingNamespace is
+        {
+            Name: "Linq",
+            ContainingNamespace.Name: "System"
+        };
+
+    // Recognises a type that carries "key" and "value" positions — used to
+    // decide which position a StringSyntax attribute applies to. Covers
+    // KeyValuePair<K,V>, IGrouping<K,T>, and any IEnumerable<KeyValuePair<K,V>>
+    // (Dictionary, IDictionary, IReadOnlyDictionary, ILookup-emitted sequences,
+    // query results shaped like `.Select((k, v) => new KVP(k, v))`, etc).
+    public static bool TryGetKvpTypeArgs(
+        this ITypeSymbol? type,
+        [NotNullWhen(true)] out ITypeSymbol? key,
+        [NotNullWhen(true)] out ITypeSymbol? value)
+    {
+        key = null;
+        value = null;
+        if (type is not INamedTypeSymbol named)
+        {
+            return false;
+        }
+
+        if (IsSystemCollectionsGenericKvp(named))
+        {
+            key = named.TypeArguments[0];
+            value = named.TypeArguments[1];
+            return true;
+        }
+
+        if (IsSystemLinqIGrouping(named))
+        {
+            key = named.TypeArguments[0];
+            value = named.TypeArguments[1];
+            return true;
+        }
+
+        foreach (var iface in named.AllInterfaces)
+        {
+            if (IsSystemLinqIGrouping(iface))
+            {
+                key = iface.TypeArguments[0];
+                value = iface.TypeArguments[1];
+                return true;
+            }
+        }
+
+        // Dictionary / IDictionary / IReadOnlyDictionary / IEnumerable<KVP>,
+        // plus IEnumerable<IGrouping<K,T>> (GroupBy results, ILookup emits,
+        // caller-supplied projections). The recursive call lets a single-T
+        // enumerable of a KV-shaped element type adopt that element's K/V
+        // positions — so `[StringSyntax]` on `IEnumerable<IGrouping<string, T>>`
+        // picks up the same Key-position rule that applies to IGrouping itself.
+        var element = type.TryGetEnumerableElementType();
+        if (element is not null &&
+            element.TryGetKvpTypeArgs(out key, out value))
+        {
+            return true;
+        }
+
+        return false;
     }
 }

@@ -1232,10 +1232,286 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // Per-compilation bag for foreach loop-variable → element syntax bindings.
     // Locals don't support attributes in C#, so the only way a syntax value flows
     // through a foreach is by looking the loop local up here at use-sites.
+    //
+    // KvpBindings handles the key/value position split for foreach over a
+    // key-value stream (Dictionary, IGrouping, IEnumerable<KeyValuePair<,>>,
+    // etc). A single loop-variable can be in at most one of the two maps.
     sealed class LinqFlow
     {
         public ConcurrentDictionary<ILocalSymbol, ImmutableArray<string>> LocalBindings { get; } =
             new(SymbolEqualityComparer.Default);
+
+        public ConcurrentDictionary<ILocalSymbol, KvpBinding> KvpBindings { get; } =
+            new(SymbolEqualityComparer.Default);
+    }
+
+    enum KvpPosition { Key, Value }
+
+    // A tagged element-position binding for KV-shaped streams. At most one of
+    // Key/Value is Present: StringSyntax attributes don't carry a position
+    // themselves, so ClassifyKvpPosition infers which side the tag applies to
+    // from the symbol's type arguments.
+    sealed class KvpBinding(SyntaxInfo key, SyntaxInfo value)
+    {
+        public SyntaxInfo Key { get; } = key;
+        public SyntaxInfo Value { get; } = value;
+
+        public SyntaxInfo Pick(KvpPosition position) =>
+            position == KvpPosition.Key ? Key : Value;
+    }
+
+    // Position-assignment rule:
+    //   * Exactly one of K / V is string → tag applies to that side.
+    //   * Both K and V are string → Value (empirically dominant; Key-side
+    //     tagging on this shape is explicitly unsupported).
+    //   * Neither is string → no position can legitimately hold a StringSyntax
+    //     value; classification returns null and the attribute is silently
+    //     ignored on this declaration.
+    static KvpPosition? ClassifyKvpPosition(ITypeSymbol? symbolType)
+    {
+        if (!symbolType.TryGetKvpTypeArgs(out var key, out var value))
+        {
+            return null;
+        }
+
+        var keyIsString = key.SpecialType == SpecialType.System_String;
+        var valueIsString = value.SpecialType == SpecialType.System_String;
+
+        if (valueIsString)
+        {
+            return KvpPosition.Value;
+        }
+
+        if (keyIsString)
+        {
+            return KvpPosition.Key;
+        }
+
+        return null;
+    }
+
+    // Reads attributes off a KV-shaped symbol and lifts them into a KvpBinding
+    // positioned by ClassifyKvpPosition. Returns null when the symbol's type
+    // isn't KV-shaped, no position is tag-eligible, or no attribute resolves.
+    static KvpBinding? GetKvpBinding(ISymbol symbol, SyntaxTypes types)
+    {
+        var position = ClassifyKvpPosition(symbol.GetDeclaredType());
+        if (position is null)
+        {
+            return null;
+        }
+
+        var info = GetExplicitCollectionTags(symbol, types);
+        if (info.State != SyntaxState.Present)
+        {
+            return null;
+        }
+
+        return position == KvpPosition.Key
+            ? new KvpBinding(info, SyntaxInfo.NotPresent)
+            : new KvpBinding(SyntaxInfo.NotPresent, info);
+    }
+
+    // Walks element-preserving LINQ calls back through a KV-shaped stream to
+    // the tagged source symbol. Select/SelectMany (reshaping) and Dictionary-
+    // specific entry points (.Keys/.Values — handled separately in the single-T
+    // path) break out of the walk. Returns null if the chain doesn't bottom out
+    // at a KV-tagged symbol.
+    static KvpBinding? GetReceiverKvpTags(IOperation receiver, SyntaxTypes types, LinqFlow linqFlow)
+    {
+        while (true)
+        {
+            receiver = receiver.Unwrap();
+
+            if (receiver is IInvocationOperation inv &&
+                IsElementPreserving(inv.TargetMethod))
+            {
+                var next = GetLinqReceiver(inv);
+                if (next is null)
+                {
+                    return null;
+                }
+
+                receiver = next;
+                continue;
+            }
+
+            if (receiver is ILocalReferenceOperation localRef &&
+                linqFlow.KvpBindings.TryGetValue(localRef.Local, out var bound))
+            {
+                return bound;
+            }
+
+            var symbol = receiver.GetReferencedSymbol();
+            if (symbol is null)
+            {
+                return null;
+            }
+
+            return GetKvpBinding(symbol, types);
+        }
+    }
+
+    // Resolves the KvpBinding for the expression that PRODUCED a KeyValuePair
+    // (or IGrouping) — used when we see a `.Key` / `.Value` (or `grouping.Key`)
+    // access and need to find where the enclosing KV came from. Handles three
+    // shapes: foreach-bound local, element-returning LINQ on a KV stream
+    // (`dict.First()` et al), and a direct reference to a KV-typed symbol.
+    static KvpBinding? GetKvpBindingFromOperation(
+        IOperation operation,
+        SyntaxTypes types,
+        LinqFlow linqFlow)
+    {
+        operation = operation.Unwrap();
+
+        if (operation is ILocalReferenceOperation localRef &&
+            linqFlow.KvpBindings.TryGetValue(localRef.Local, out var bound))
+        {
+            return bound;
+        }
+
+        if (operation is IInvocationOperation inv &&
+            inv.TargetMethod.IsLinqMethod() &&
+            IsElementReturningLinq(inv.TargetMethod.Name))
+        {
+            var receiver = GetLinqReceiver(inv);
+            if (receiver is not null)
+            {
+                return GetReceiverKvpTags(receiver, types, linqFlow);
+            }
+        }
+
+        var symbol = operation.GetReferencedSymbol();
+        if (symbol is null)
+        {
+            return null;
+        }
+
+        return GetKvpBinding(symbol, types);
+    }
+
+    // dict[k] read. Fires when the indexer is declared on a KV-shaped type and
+    // its return type matches that type's Value-position. Value-side tag is
+    // picked because an indexer returning V *is* a Value read by definition.
+    // Kept narrow: doesn't claim indexers on non-dict-shaped types.
+    static bool TryResolveDictionaryIndexer(
+        IPropertyReferenceOperation indexerRef,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        out SyntaxInfo info)
+    {
+        info = SyntaxInfo.Unknown;
+
+        var containing = indexerRef.Property.ContainingType;
+        if (containing is null)
+        {
+            return false;
+        }
+
+        if (!((ITypeSymbol)containing).TryGetKvpTypeArgs(out _, out var value))
+        {
+            return false;
+        }
+
+        // Indexer return type must be V — filters out multi-indexer types that
+        // also happen to be KV-shaped.
+        if (!SymbolEqualityComparer.Default.Equals(indexerRef.Property.Type, value))
+        {
+            return false;
+        }
+
+        var binding = GetKvpBindingFromOperation(indexerRef.Instance!, types, linqFlow);
+        if (binding is null ||
+            binding.Value.State != SyntaxState.Present)
+        {
+            return false;
+        }
+
+        info = binding.Value;
+        return true;
+    }
+
+    // dict.Keys / dict.Values as element-flow sources. `.Keys.First()` and
+    // `.Values.First()` are common patterns; this hook intercepts the property
+    // access in GetReceiverElementTags so the element syntax picked is the
+    // matching side of the dict's KvpBinding (rather than NotPresent from the
+    // BCL-declared Keys / Values property, which has no attributes).
+    //
+    // Returns true with `info` filled when the receiver is a tagged .Keys /
+    // .Values; returns false to let the caller fall through to the standard
+    // element-flow path.
+    static bool TryResolveKvpCollectionView(
+        IOperation receiver,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        out SyntaxInfo info)
+    {
+        info = SyntaxInfo.Unknown;
+
+        if (receiver is not IPropertyReferenceOperation
+            {
+                Instance: { } instance,
+                Property: { Name: "Keys" or "Values", ContainingType: { } propOwner } prop
+            })
+        {
+            return false;
+        }
+
+        if (!((ITypeSymbol)propOwner).TryGetKvpTypeArgs(out _, out _))
+        {
+            return false;
+        }
+
+        var binding = GetKvpBindingFromOperation(instance, types, linqFlow);
+        if (binding is null)
+        {
+            return false;
+        }
+
+        var side = prop.Name == "Keys" ? KvpPosition.Key : KvpPosition.Value;
+        var picked = binding.Pick(side);
+        if (picked.State != SyntaxState.Present)
+        {
+            return false;
+        }
+
+        info = picked;
+        return true;
+    }
+
+    // Recognises .Key / .Value on a KeyValuePair<K,V> and .Key on an
+    // IGrouping<K,T>. Callers pair this with GetKvpBindingFromOperation to
+    // resolve the tag for the specific position being read.
+    static bool IsKvpOrGroupingMember(ISymbol member, out KvpPosition side)
+    {
+        side = default;
+        if (member.ContainingType is not { } containing)
+        {
+            return false;
+        }
+
+        if (Extensions.IsSystemCollectionsGenericKvp(containing))
+        {
+            if (member.Name == "Key")
+            {
+                side = KvpPosition.Key;
+                return true;
+            }
+
+            if (member.Name == "Value")
+            {
+                side = KvpPosition.Value;
+                return true;
+            }
+        }
+
+        if (Extensions.IsSystemLinqIGrouping(containing) && member.Name == "Key")
+        {
+            side = KvpPosition.Key;
+            return true;
+        }
+
+        return false;
     }
 
     // Resolves the source-side (read) operation's SyntaxInfo. First tries LINQ /
@@ -1256,6 +1532,32 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             linqFlow.LocalBindings.TryGetValue(localRef.Local, out var boundValues))
         {
             return (localRef.Local, SyntaxInfo.PresentUnion(boundValues));
+        }
+
+        // kv.Key / kv.Value on a KeyValuePair, or grouping.Key on IGrouping —
+        // resolve via the KV binding of whatever produced the enclosing KV
+        // (foreach-bound local, element-returning LINQ, direct KV-typed ref).
+        if (unwrapped is IPropertyReferenceOperation kvpProp &&
+            kvpProp.Instance is not null &&
+            IsKvpOrGroupingMember(kvpProp.Property, out var kvpSide))
+        {
+            var kvpBinding = GetKvpBindingFromOperation(kvpProp.Instance, types, linqFlow);
+            if (kvpBinding is not null)
+            {
+                var picked = kvpBinding.Pick(kvpSide);
+                if (picked.State == SyntaxState.Present)
+                {
+                    return (kvpProp.Property, picked);
+                }
+            }
+        }
+
+        // dict[k] indexer — returns the Value side of the enclosing KV shape.
+        if (unwrapped is IPropertyReferenceOperation { Property.IsIndexer: true } indexerRef &&
+            indexerRef.Instance is not null &&
+            TryResolveDictionaryIndexer(indexerRef, types, linqFlow, out var indexerInfo))
+        {
+            return (indexerRef.Property, indexerInfo);
         }
 
         if (unwrapped is IInvocationOperation inv &&
@@ -1313,15 +1615,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // `foreach (var x in collection)` binds `x` to the collection's element
     // syntax. Nested foreach over a tagged source works too because the receiver
     // resolution recurses through element-preserving calls.
+    //
+    // For KV-shaped streams (Dictionary, IGrouping, IEnumerable<KVP>) the
+    // loop variable is a KeyValuePair; the tag lives on one position (Key or
+    // Value, per ClassifyKvpPosition) and is recovered when `.Key` / `.Value`
+    // is read inside the loop body.
     static void AnalyzeLoop(OperationAnalysisContext context, SyntaxTypes types, LinqFlow linqFlow)
     {
         if (context.Operation is not IForEachLoopOperation forEach)
-        {
-            return;
-        }
-
-        var info = GetReceiverElementTags(forEach.Collection, types, linqFlow);
-        if (info.State != SyntaxState.Present)
         {
             return;
         }
@@ -1332,7 +1633,18 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        linqFlow.LocalBindings.TryAdd(loopVar, info.Values);
+        var info = GetReceiverElementTags(forEach.Collection, types, linqFlow);
+        if (info.State == SyntaxState.Present)
+        {
+            linqFlow.LocalBindings.TryAdd(loopVar, info.Values);
+            return;
+        }
+
+        var kvp = GetReceiverKvpTags(forEach.Collection, types, linqFlow);
+        if (kvp is not null)
+        {
+            linqFlow.KvpBindings.TryAdd(loopVar, kvp);
+        }
     }
 
     static ILocalSymbol? ExtractLoopLocal(IOperation? controlVariable) =>
@@ -1481,6 +1793,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             receiver = receiver.Unwrap();
 
+            if (TryResolveKvpCollectionView(receiver, types, linqFlow, out var kvpView))
+            {
+                return kvpView;
+            }
+
             if (receiver is IInvocationOperation inv)
             {
                 var targetMethod = inv.TargetMethod;
@@ -1510,6 +1827,44 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             var symbolType = symbol.GetDeclaredType();
+
+            // KV-shaped sources route via position classification. An attribute
+            // on a Dictionary / IEnumerable<KVP> / IGrouping tags ONE position;
+            // a scalar element tag is only appropriate when the enumeration
+            // actually yields that position:
+            //   * Dictionary / IEnumerable<KVP>: element is KVP — never a
+            //     scalar tag. Return Unknown here; kv.Key / kv.Value / dict[k]
+            //     / dict.Keys / dict.Values carry the tag instead.
+            //   * IGrouping<K, T> with Value-position rule: elements are T, so
+            //     the single-T tag flows to them.
+            //   * IGrouping<K, T> with Key-position rule: elements are T, not
+            //     tagged; the tag only surfaces on `grouping.Key`.
+            if (symbolType.TryGetKvpTypeArgs(out _, out _))
+            {
+                var position = ClassifyKvpPosition(symbolType);
+                if (position is null)
+                {
+                    return SyntaxInfo.Unknown;
+                }
+
+                var element = symbolType.TryGetEnumerableElementType();
+                if (element is not null && element.TryGetKvpTypeArgs(out _, out _))
+                {
+                    // Elements are themselves KV-shaped (KVP or IGrouping). A
+                    // scalar element tag would lie about the element's shape;
+                    // the tag surfaces through .Key / .Value / .Keys / .Values
+                    // reads on the individual elements instead.
+                    return SyntaxInfo.Unknown;
+                }
+
+                if (position == KvpPosition.Value)
+                {
+                    return GetExplicitCollectionTags(symbol, types);
+                }
+
+                return SyntaxInfo.Unknown;
+            }
+
             if (symbolType.TryGetEnumerableElementType() is null)
             {
                 return SyntaxInfo.Unknown;

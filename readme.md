@@ -339,27 +339,51 @@ Lambda-parameter binding applies to any extension method on `IEnumerable<T>` reg
 Element-returning inference (`.First()` and friends) stays closed to the `System.Linq.Enumerable`/`Queryable` allowlist — a third-party method named `First` could have different semantics, and the element-returning category depends on the semantics, not the signature.
 
 
-### What is not supported
+### Dictionaries, groupings, and key/value streams
 
-Multi-type-parameter containers — `Dictionary<K,V>`, `KeyValuePair<K,V>`, `ILookup<K,V>`, `IGrouping<K,T>`, `ValueTuple<…>` — are deliberately excluded. A bare `[StringSyntax("Html")]` on a `Dictionary<string,string>` has no unambiguous target (key? value? both?), so the analyzer ignores the attribute on these shapes and produces no diagnostics for reads through them.
+`[StringSyntax(...)]` on a dictionary-like member applies to a single *position* inferred from its type arguments:
 
-<!-- snippet: UnsupportedMultiTCollection -->
-<a id='snippet-UnsupportedMultiTCollection'></a>
+ * **Exactly one of K / V is `string`** — the tag applies to that side.
+ * **Both K and V are `string`** — the tag defaults to the **Value** position. Key-side tagging on this shape is not supported; workaround is to wrap the key in a typed record (`record HtmlId([StringSyntax("Html")] string Value)`) so the two sides are statically distinct.
+ * **Neither is `string`** — no position can hold a StringSyntax value; the attribute is silently ignored.
+
+Recognition is broad: `Dictionary<K,V>`, `IDictionary<K,V>`, `IReadOnlyDictionary<K,V>`, any `IEnumerable<KeyValuePair<K,V>>` (query results), `IGrouping<K,T>`, and `IEnumerable<IGrouping<K,T>>` (GroupBy results) all follow the same rule.
+
+<!-- snippet: DictionaryPositional -->
+<a id='snippet-DictionaryPositional'></a>
 ```cs
-public class HtmlMap
+public class TemplateStore
 {
-    // [StringSyntax] on a Dictionary/KeyValuePair/tuple/grouping carries no
-    // element tag — the analyzer can't tell whether the tag applies to K, V, or
-    // both. Flows through these containers stay "unknown" and produce no
-    // diagnostics.
+    // Dictionary<K, V> with exactly one string-typed position: the attribute
+    // applies to that position. Here V is string, so [StringSyntax("Html")]
+    // describes the Value position — dict[k], kv.Value, dict.Values.First(),
+    // and foreach-bound kv.Value all carry the Html tag.
     [StringSyntax("Html")]
-    public Dictionary<string, int> ByBody { get; set; } = [];
+    public Dictionary<int, string> Bodies { get; set; } = [];
+
+    public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+    // SSA001: Bodies[0] is a Value-position read and carries Html.
+    public void Go() => ConsumeRegex(Bodies[0]);
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L168-L180' title='Snippet source file'>snippet source</a> | <a href='#snippet-UnsupportedMultiTCollection' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L168-L185' title='Snippet source file'>snippet source</a> | <a href='#snippet-DictionaryPositional' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
-Distinct attributes for the key and value positions, plus tuple-field-level tagging, are on the roadmap but will require a dedicated design pass.
+Sites that surface the tagged position:
+
+ * **Indexer reads** — `dict[k]` resolves to the Value position.
+ * **`foreach (var kv in dict)`** — subsequent `kv.Key` / `kv.Value` reads inside the loop body resolve to the tagged side.
+ * **`dict.First()` / `.Single()` / `.Last()` / ...** — the returned `KeyValuePair` remembers its position; reading `.Key` / `.Value` on the result flows the tag.
+ * **`dict.Keys` / `dict.Values`** — projected collections flow element syntax through the usual single-T path, so `dict.Values.First()` or `foreach (var v in dict.Values)` works.
+ * **`grouping.Key`** (on `IGrouping<K,T>` where K=string) — reads the Key-position tag directly.
+
+### What is not supported
+
+ * **`TryGetValue(k, out var v)`**: the out-var local isn't declared via `LocalDeclarationStatement`, so there's nowhere to attach a binding. Workaround: hoist the lookup into a regular read — `var v = dict[k]` or `dict.GetValueOrDefault(k)`.
+ * **`ILookup<K,V>`**: enumerates to `IGrouping<K,V>` — as a container the lookup itself isn't recognised, though individual groupings obtained from it (via `.SelectMany`, indexing, etc.) work normally.
+ * **`ValueTuple<T1, T2, ...>`**: C# doesn't support attributing individual tuple fields, so there's no declaration site for a position-specific tag. Use a named record instead.
+ * **Key-side tagging of `Dictionary<string,string>`**: the default-to-Value rule covers the dominant case; disambiguating requires either a wrapper type on the key side or a dedicated `[KeyStringSyntax]` attribute, which would be opt-in and require a separate design pass.
 
 
 ## Suppressed target namespaces
