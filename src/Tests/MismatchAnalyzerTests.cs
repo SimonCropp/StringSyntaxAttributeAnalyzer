@@ -1503,6 +1503,61 @@ public class MismatchAnalyzerTests
         await Assert.That(message.Contains("Regex")).IsTrue();
     }
 
+    [Test]
+    public async Task ShortcutAttribute_OptedIn_MatchesNameConvention_ReportsSSA008_WithoutConventionsOptIn()
+    {
+        // `[Html]` applied to a parameter named `html` is self-evidently redundant:
+        // the shortcut attribute itself is an opt-in (EmitShortcutAttributes=true),
+        // so SSA008 should fire even without the broader `name_conventions` opt-in.
+        var source =
+            """
+            public class Holder
+            {
+                public void Use([Html] string html) { }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA008");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
+    }
+
+    [Test]
+    public async Task ShortcutAttribute_OptedIn_NameDoesNotMatchConvention_NoSSA008()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public void Use([Html] string body) { }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, emitShortcutAttributes: true);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task StringSyntax_NameMatchesConvention_WithoutConventionsOptIn_NoSSA008()
+    {
+        // Plain `[StringSyntax("Html")]` without the name_conventions opt-in should
+        // NOT fire SSA008 — only the shortcut-attribute form bypasses the opt-in.
+        var source =
+            """
+            public class Holder
+            {
+                public void Use([StringSyntax("Html")] string html) { }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,

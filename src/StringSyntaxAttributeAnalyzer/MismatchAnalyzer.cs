@@ -270,18 +270,29 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (!conventions.IsEnabled(declaration.SyntaxTree))
-        {
-            return;
-        }
+        var conventionsEnabled = conventions.IsEnabled(declaration.SyntaxTree);
 
         foreach (var attribute in context.Symbol.GetAttributes())
         {
-            if (TryGetSingleSyntaxValue(attribute, types, out var value) &&
-                SyntaxValueMatcher.SingleValuesMatch(value, conventionValue))
+            if (!TryGetSingleSyntaxValue(attribute, types, out var value) ||
+                !SyntaxValueMatcher.SingleValuesMatch(value, conventionValue))
             {
-                ReportRedundantByConvention(context, attribute, conventionValue);
+                continue;
             }
+
+            // Shortcut attributes (`[Html]`, `[Json]`, ...) only exist when the
+            // consumer opted in via `StringSyntaxAnalyzer_EmitShortcutAttributes=true`
+            // — that opt-in is itself enough to warrant SSA008 when the shortcut's
+            // name matches the symbol's name convention. For plain `[StringSyntax]`
+            // / `[ReturnSyntax]` / `[UnionSyntax]` we still require the broader
+            // `name_conventions` opt-in, since those attributes may be intentional
+            // even when the name happens to match.
+            if (!conventionsEnabled && !TryMatchShortcutAttribute(attribute, out _))
+            {
+                continue;
+            }
+
+            ReportRedundantByConvention(context, attribute, conventionValue);
         }
     }
 
