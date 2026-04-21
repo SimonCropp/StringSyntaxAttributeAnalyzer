@@ -72,19 +72,46 @@ static class ShortcutReplacer
         }
 
         var list = attribute.FirstAncestorOrSelf<AttributeListSyntax>();
+        var parentIsMethodish = list?.Parent is
+            MethodDeclarationSyntax or
+            LocalFunctionStatementSyntax or
+            DelegateDeclarationSyntax;
+        var alreadyReturnTarget = list?.Target?.Identifier.IsKind(SyntaxKind.ReturnKeyword) == true;
+
         SyntaxNode newRoot;
-        if (list?.Parent is MethodDeclarationSyntax or LocalFunctionStatementSyntax or DelegateDeclarationSyntax &&
-            list.Attributes.Count == 1)
+        if (list is not null && parentIsMethodish && !alreadyReturnTarget)
         {
             // Shortcut attributes on methods compile as `[return: Name]` — their
-            // AttributeUsage targets ReturnValue, not Method. Rebuild the whole list
-            // with the `return:` target specifier so the output is legal C#.
-            var replacementList = AttributeList(SingletonSeparatedList(Attribute(IdentifierName(name))))
+            // AttributeUsage targets ReturnValue, not Method. When the list already
+            // has `return:`, the in-place replacement further down is fine. When
+            // the list sits at method target, emit a fresh `[return: Name]` list
+            // so the shortcut's AttributeUsage is respected.
+            var returnList = AttributeList(SingletonSeparatedList(Attribute(IdentifierName(name))))
                 .WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword)))
-                .WithLeadingTrivia(list.GetLeadingTrivia())
-                .WithTrailingTrivia(list.GetTrailingTrivia())
                 .WithAdditionalAnnotations(Formatter.Annotation);
-            newRoot = root.ReplaceNode(list, replacementList);
+
+            if (list.Attributes.Count == 1)
+            {
+                // Whole list is just the shortcut candidate — swap it for
+                // `[return: Name]` and preserve the original's trivia so the
+                // replacement slots neatly into the existing whitespace.
+                returnList = returnList
+                    .WithLeadingTrivia(list.GetLeadingTrivia())
+                    .WithTrailingTrivia(list.GetTrailingTrivia());
+                newRoot = root.ReplaceNode(list, returnList);
+            }
+            else
+            {
+                // Multi-attribute list. Splitting is the only legal shape —
+                // `[Name, OtherAttr]` at method target wouldn't compile. Drop
+                // the candidate from the existing list and prepend a new
+                // `[return: Name]` list in its place; Formatter.Annotation plus
+                // the final FormatAsync pass handles the line break/indent.
+                var remaining = list.WithAttributes(
+                    SeparatedList(list.Attributes.Where(_ => _ != attribute)));
+                returnList = returnList.WithLeadingTrivia(list.GetLeadingTrivia());
+                newRoot = root.ReplaceNode(list, [returnList, remaining]);
+            }
         }
         else
         {

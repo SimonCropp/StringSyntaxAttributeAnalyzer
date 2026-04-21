@@ -787,6 +787,38 @@ public class AddStringSyntaxCodeFixProviderTests
     }
 
     [Test]
+    public async Task SSA007_ReturnSyntaxOnMethod_InMultiAttributeList_UsesReturnTarget()
+    {
+        // Regression: when [ReturnSyntax(X)] sits in a multi-attribute list on a
+        // method (here alongside [System.Obsolete]), the codefix must split the
+        // shortcut into its own [return: Html] list. Inlining [Html] at method
+        // target produces [Html, System.Obsolete] which is a compile error —
+        // HtmlAttribute's AttributeUsage doesn't include Method.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [ReturnSyntax("Html"), System.Obsolete]
+                public string Build() => "<p/>";
+            }
+            """;
+
+        var fixedSource = await ApplyFixAndVerifyCompiles(source, "SSA007");
+
+        await Contains(fixedSource, "[return: Html]");
+        await Contains(fixedSource, "System.Obsolete");
+        await Assert.That(fixedSource.Contains("[Html,")).IsFalse();
+        await Assert.That(fixedSource.Contains("Html, System.Obsolete")).IsFalse();
+        await Assert.That(fixedSource.Contains("ReturnSyntax(")).IsFalse();
+    }
+
+    [Test]
     public async Task SSA007_ReturnSyntaxOnMethod_ReplacesWithReturnTargetShortcut()
     {
         var source =
@@ -998,6 +1030,38 @@ public class AddStringSyntaxCodeFixProviderTests
 
     static Task<string> ApplyFix(string source, string? diagnosticId = null) =>
         ApplyFix<AddStringSyntaxCodeFixProvider>(source, diagnosticId);
+
+    // Applies the fix and asserts the resulting document has no compile errors.
+    // Stricter than plain ApplyFix — catches regressions where a codefix produces
+    // syntactically valid but semantically illegal output (e.g. a shortcut
+    // attribute at a method target whose AttributeUsage excludes Method).
+    static async Task<string> ApplyFixAndVerifyCompiles(string source, string? diagnosticId = null)
+    {
+        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
+
+        var actions = ImmutableArray.CreateBuilder<CodeAction>();
+        var context = new CodeFixContext(
+            document,
+            diagnostic,
+            (action, _) => actions.Add(action),
+            Cancel.None);
+
+        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
+
+        var action = actions.ToImmutable().Single();
+        var operations = await action.GetOperationsAsync(Cancel.None);
+        var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
+
+        var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
+        var compilation = (await newDocument.Project.GetCompilationAsync())!;
+        var compileErrors = compilation
+            .GetDiagnostics()
+            .Where(_ => _.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        await Assert.That(compileErrors.Length).IsEqualTo(0);
+        var text = await newDocument.GetTextAsync();
+        return text.ToString();
+    }
 
     static async Task<string> ApplyFix<TProvider>(string source, string? diagnosticId = null)
         where TProvider : CodeFixProvider, new()
