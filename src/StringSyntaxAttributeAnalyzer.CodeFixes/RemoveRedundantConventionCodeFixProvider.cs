@@ -230,6 +230,76 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
             return false;
         }
 
-        return trivia.ToString().IndexOf("language", StringComparison.OrdinalIgnoreCase) >= 0;
+        return ContainsLanguageDirective(trivia.ToString());
     }
+
+    // Matches the `language\s*=\s*<identifier>` shape with `language` at a word
+    // boundary — mirrors LanguageCommentReader.TryParse on the analyzer side.
+    // Substring-only matching on "language" was stripping unrelated comments
+    // that merely mentioned the word (e.g. "// notes about our query language").
+    // Duplicated rather than shared so the codefix project stays decoupled from
+    // the analyzer project — same policy as the duplicated diagnostic id and
+    // property key strings.
+    static bool ContainsLanguageDirective(string text)
+    {
+        const string keyword = "language";
+        for (var i = 0; i <= text.Length - keyword.Length; i++)
+        {
+            if (!MatchesKeyword(text, i, keyword))
+            {
+                continue;
+            }
+
+            if (i > 0 && IsWordChar(text[i - 1]))
+            {
+                continue;
+            }
+
+            var pos = SkipWhitespace(text, i + keyword.Length);
+            if (pos >= text.Length || text[pos] != '=')
+            {
+                continue;
+            }
+
+            pos = SkipWhitespace(text, pos + 1);
+            var start = pos;
+            while (pos < text.Length && IsWordChar(text[pos]))
+            {
+                pos++;
+            }
+
+            if (pos > start)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool MatchesKeyword(string text, int index, string keyword)
+    {
+        for (var j = 0; j < keyword.Length; j++)
+        {
+            if (char.ToLowerInvariant(text[index + j]) != keyword[j])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    static int SkipWhitespace(string text, int pos)
+    {
+        while (pos < text.Length && char.IsWhiteSpace(text[pos]))
+        {
+            pos++;
+        }
+
+        return pos;
+    }
+
+    static bool IsWordChar(char c) =>
+        char.IsLetterOrDigit(c) || c == '_';
 }

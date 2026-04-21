@@ -57,6 +57,35 @@ public class RemoveRedundantConventionCodeFixProviderTests
         await Contains(fixedSource, "string pageHtml");
     }
 
+    [Test]
+    public async Task SSA008_LeavesUnrelatedCommentMentioningLanguage_Untouched()
+    {
+        // Regression: IsLanguageTrivia must not strip any comment that merely
+        // contains the substring "language" — only the real `// language=X`
+        // trivia. With the old loose match the codefix removed the first
+        // matching comment (here, the prose one) and left the injection
+        // directive in place.
+        var source =
+            """
+            public class Holder
+            {
+                public void Use()
+                {
+                    // notes about our query language preferences
+                    // language=html
+                    string pageHtml = "<p/>";
+                    System.Console.WriteLine(pageHtml);
+                }
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await DoesNotContain(fixedSource, "language=html");
+        await Contains(fixedSource, "notes about our query language preferences");
+        await Contains(fixedSource, "string pageHtml");
+    }
+
     static async Task Contains(string actual, string expected) =>
         await Assert.That(actual).Contains(expected);
 
