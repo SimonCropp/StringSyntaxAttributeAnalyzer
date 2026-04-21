@@ -220,6 +220,30 @@ public class NameConventionsTests
     }
 
     [Test]
+    public async Task Convention_MultiDeclaratorField_DoesNotFireSSA008()
+    {
+        // Regression: `[StringSyntax("Uri")]` on `string url, html;` applies to
+        // BOTH declarators. The symbol-level SSA008 check fires only for `url`
+        // (its name matches the attribute's value), not `html`. The codefix
+        // then strips the whole attribute, silently changing the meaning of
+        // the unflagged `html` declarator — its name convention kicks in with
+        // a different value. Multi-declarator fields must be skipped, same
+        // policy as multi-declarator locals in AnalyzeLocalForRedundantByConvention.
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Uri)]
+                public string url, html;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, conventions: true);
+        var ssa008 = diagnostics.Where(_ => _.Id == "SSA008").ToArray();
+        await Assert.That(ssa008.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task Convention_AttributeWithDifferentValue_DoesNotFireSSA008()
     {
         // Property `Url` carries `[StringSyntax(Json)]` — value is Json, name

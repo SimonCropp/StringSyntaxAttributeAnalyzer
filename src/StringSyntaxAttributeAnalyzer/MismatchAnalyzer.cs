@@ -270,6 +270,19 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
+        // Multi-declarator fields (`[StringSyntax("Uri")] string url, html;`)
+        // share the attribute across all declarators. SSA008 would only fire for
+        // the declarator whose name matches the attribute value, and removing
+        // the shared attribute silently changes what the unflagged declarator
+        // means. Skip, matching the multi-declarator-local policy in
+        // AnalyzeLocalForRedundantByConvention.
+        if (context.Symbol is IFieldSymbol &&
+            declaration.GetSyntax(context.CancellationToken)
+                is VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax { Variables.Count: > 1 } })
+        {
+            return;
+        }
+
         var conventionsEnabled = conventions.IsEnabled(declaration.SyntaxTree);
 
         foreach (var attribute in context.Symbol.GetAttributes())
