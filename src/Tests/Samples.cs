@@ -165,16 +165,33 @@ public class PagedReader
 
 #endregion
 
-#region UnsupportedMultiTCollection
+#region DictionaryPositional
 
-public class HtmlMap
+public class TemplateStore
 {
-    // [StringSyntax] on a Dictionary/KeyValuePair/tuple/grouping carries no
-    // element tag — the analyzer can't tell whether the tag applies to K, V, or
-    // both. Flows through these containers stay "unknown" and produce no
-    // diagnostics.
+    // Dictionary<K, V> with exactly one string-typed position: the attribute
+    // applies to that position. Here V is string, so [StringSyntax("Html")]
+    // describes the Value position — dict[k], kv.Value, dict.Values.First(),
+    // and foreach-bound kv.Value all carry the Html tag.
     [StringSyntax("Html")]
-    public Dictionary<string, int> ByBody { get; set; } = [];
+    public Dictionary<int, string> Bodies { get; set; } = [];
+
+    public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+    // SSA001: Bodies[0] is a Value-position read and carries Html.
+    public void Go() => ConsumeRegex(Bodies[0]);
+}
+
+#endregion
+
+#region DictionaryKeyPositional
+
+public class SyntaxIndex
+{
+    // Dictionary<string, V> with a non-string V: the tag applies to Key.
+    // Reads via kv.Key / .Keys.First() flow the tag; kv.Value is untagged.
+    [StringSyntax("Html")]
+    public Dictionary<string, int> Lengths { get; set; } = [];
 }
 
 #endregion
