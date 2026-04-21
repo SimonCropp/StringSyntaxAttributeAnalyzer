@@ -124,14 +124,14 @@ public class SyntaxConstantsGeneratorTests
         var typesTree = runResult.GeneratedTrees
             .Single(_ => _.FilePath.EndsWith("Syntax.Types.g.cs"));
 
-        var syntaxClass = typesTree.GetRoot()
+        var syntaxClass = (await typesTree.GetRootAsync())
             .DescendantNodes()
             .OfType<ClassDeclarationSyntax>()
             .Single(_ => _.Identifier.Text == "Syntax");
 
         var generatedNames = syntaxClass.Members
             .OfType<FieldDeclarationSyntax>()
-            .SelectMany(_ => _.Declaration.Variables.Select(v => v.Identifier.Text))
+            .SelectMany(_ => _.Declaration.Variables.Select(_ => _.Identifier.Text))
             .ToImmutableHashSet();
 
         var missing = generatedNames.Except(KnownSyntaxConstants.Names);
