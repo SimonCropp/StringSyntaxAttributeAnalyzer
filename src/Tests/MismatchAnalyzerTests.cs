@@ -1612,6 +1612,811 @@ public class MismatchAnalyzerTests
         await Assert.That(ssa007.Length).IsEqualTo(1);
     }
 
+    [Test]
+    public async Task LinqLambda_ParameterInheritsElementSyntax_Mismatch()
+    {
+        // `Values` carries `[StringSyntax("Html")]` on an IEnumerable<string>. The
+        // `s` lambda param in Select has no attribute but must inherit "Html" so
+        // the mismatched argument to ConsumeRegex fires SSA001.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go() => Values.Select(s => { ConsumeRegex(s); return s; }).ToList();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
+        await Assert.That(diagnostics[0].GetMessage().Contains("Regex")).IsTrue();
+    }
+
+    [Test]
+    public async Task LinqLambda_ParameterMatchesElementSyntax_NoDiagnostic()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public void ConsumeHtml([StringSyntax("Html")] string value) { }
+
+                public void Go() => Values.Select(s => { ConsumeHtml(s); return s; }).ToList();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task LinqLambda_ExpressionTreePredicate_ComparesAgainstTaggedParameter()
+    {
+        // Attributes aren't legal on lambdas inside expression trees (CS8972), so
+        // lambda-param inference is the only way this pattern can be checked.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Doc
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Bodies { get; set; } = null!;
+            }
+
+            public class Service
+            {
+                public bool Contains(IQueryable<Doc> docs, [StringSyntax("Html")] string needle) =>
+                    docs.Any(d => d.Bodies.Any(b => b == needle));
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task LinqLambda_ExpressionTreePredicate_MismatchedSyntaxFires()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Doc
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Bodies { get; set; } = null!;
+            }
+
+            public class Service
+            {
+                public bool Contains(IQueryable<Doc> docs, [StringSyntax("Regex")] string needle) =>
+                    docs.Any(d => d.Bodies.Any(b => b == needle));
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA004");
+    }
+
+    [Test]
+    public async Task LinqFirst_ReturnsElementSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task LinqChain_WhereThenFirst_PreservesElementSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.Where(x => x.Length > 0).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task LinqSelect_IdentityLambda_PreservesElementSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.Select(x => x).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task LinqSelect_MethodGroupWithReturnSyntax_UsesMethodSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                [ReturnSyntax("Html")]
+                private static string ToHtml(string v) => v;
+
+                public void Copy() => Target = Values.Select(ToHtml).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
+    }
+
+    [Test]
+    public async Task LinqSelect_DropsElementSyntax_WhenSelectorUntagged()
+    {
+        // `.Select(s => s.Length.ToString())` changes element type to an untagged
+        // string; element tag should drop at the Select boundary.
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public string Target { get; set; } = "";
+
+                public void Copy() => Target = Values.Select(s => s.Length.ToString()).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ForEach_LoopVariableInheritsElementSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go()
+                {
+                    foreach (var s in Values)
+                    {
+                        ConsumeRegex(s);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task ForEach_NestedOverBodies_FlowsSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+
+            public class Doc
+            {
+                [StringSyntax("Xml")]
+                public IEnumerable<string> Bodies { get; set; } = null!;
+            }
+
+            public class Service
+            {
+                public bool Find(IEnumerable<Doc> docs, [StringSyntax("Html")] string needle)
+                {
+                    foreach (var doc in docs)
+                    {
+                        foreach (var body in doc.Bodies)
+                        {
+                            if (body == needle) return true;
+                        }
+                    }
+                    return false;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA004");
+    }
+
+    [Test]
+    public async Task UserDefinedExtension_ElementPreserving_PropagatesSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public static class Paged
+            {
+                public static IEnumerable<T> TakePage<T>(this IEnumerable<T> source, int page, int size) =>
+                    source.Skip(page * size).Take(size);
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.TakePage(0, 10).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task UserDefinedExtension_LambdaParamInheritsElementSyntax()
+    {
+        var source = """
+            using System;
+            using System.Collections.Generic;
+
+            public static class ForEachExt
+            {
+                public static void Each<T>(this IEnumerable<T> source, Action<T> callback)
+                {
+                    foreach (var item in source) callback(item);
+                }
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go() => Values.Each(s => ConsumeRegex(s));
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task Dictionary_ElementAccess_NotTagged()
+    {
+        // Multi-T containers carry no element tag. foreach over the KV element
+        // type doesn't propagate — kv.Key is untagged, and the source-side symbol
+        // (KeyValuePair.Key) lives in System.Collections.Generic so SSA002 is
+        // suppressed by the default namespace suppression.
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Dictionary<string, int> Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go()
+                {
+                    foreach (var kv in Values)
+                    {
+                        ConsumeRegex(kv.Key);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task LinqLambda_ArrayReceiver_InheritsElementSyntax()
+    {
+        var source = """
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string[] Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go() => Values.Select(s => { ConsumeRegex(s); return s; }).ToList();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task LinqSelect_ExpressionBodiedLambda_UsesTaggedInvocation()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Xml")]
+                public string Target { get; set; }
+
+                [ReturnSyntax("Html")]
+                private static string Echo([StringSyntax("Html")] string v) => v;
+
+                public void Copy() => Target = Values.Select(x => Echo(x)).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
+        await Assert.That(diagnostics[0].GetMessage().Contains("Xml")).IsTrue();
+    }
+
+    [Test]
+    public async Task CollectionTag_DoesNotLeakAsScalar_PassedToUntaggedCollectionParam()
+    {
+        // A [StringSyntax]-tagged collection passed into a user-owned untagged
+        // IEnumerable parameter must not fire SSA003. The tag on a collection-
+        // typed member is an element tag, not a scalar tag.
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public void Accept(IEnumerable<string> list) { }
+
+                public void Go() => Accept(Values);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ArrayIndexer_ElementAccess_InheritsElementSyntax()
+    {
+        var source = """
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string[] Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go() => ConsumeRegex(Values[0]);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    [Arguments("Single")]
+    [Arguments("SingleOrDefault")]
+    [Arguments("Last")]
+    [Arguments("LastOrDefault")]
+    [Arguments("ElementAt")]
+    [Arguments("FirstOrDefault")]
+    public async Task LinqElementReturning_AllNamedMethods_SurfaceElementSyntax(string methodName)
+    {
+        var call = methodName == "ElementAt"
+            ? $"{methodName}(0)"
+            : $"{methodName}()";
+
+        var source = $$"""
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.{{call}};
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    [Arguments("OrderBy(x => x)")]
+    [Arguments("Take(5)")]
+    [Arguments("Skip(2)")]
+    [Arguments("Distinct()")]
+    [Arguments("Reverse()")]
+    [Arguments("ToList()")]
+    [Arguments("ToArray()")]
+    [Arguments("ToHashSet()")]
+    [Arguments("AsEnumerable()")]
+    [Arguments("Append(\"\")")]
+    [Arguments("Prepend(\"\")")]
+    public async Task LinqElementPreserving_ChainPropagatesElementSyntax(string call)
+    {
+        var source = $$"""
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Values.{{call}}.First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task UserDefinedExtension_StaticFormCall_PropagatesSyntax()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public static class Paged
+            {
+                public static IEnumerable<T> TakePage<T>(this IEnumerable<T> source, int page, int size) =>
+                    source.Skip(page * size).Take(size);
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy() => Target = Paged.TakePage(Values, 0, 10).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task UnionSyntaxOnCollection_ElementInheritsAnyOption()
+    {
+        // A [UnionSyntax("Html","Xml")] collection carries both values on its
+        // elements: AcceptHtml matches via Html; AcceptJson mismatches — fires
+        // SSA001.
+        var source = """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [UnionSyntax("Html", "Xml")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public void AcceptHtml([StringSyntax("Html")] string value) { }
+                public void AcceptJson([StringSyntax("Json")] string value) { }
+
+                public void Go()
+                {
+                    foreach (var s in Values)
+                    {
+                        AcceptHtml(s);
+                        AcceptJson(s);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Json")).IsTrue();
+    }
+
+    [Test]
+    public async Task ForEach_OverArray_InheritsElementSyntax()
+    {
+        var source = """
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public string[] Values { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go()
+                {
+                    foreach (var s in Values)
+                    {
+                        ConsumeRegex(s);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task InheritedTag_CollectionOnInterface_FlowsIntoLambda()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public interface IBodies
+            {
+                [StringSyntax("Html")]
+                IEnumerable<string> Bodies { get; }
+            }
+
+            public class Impl : IBodies
+            {
+                public IEnumerable<string> Bodies { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go(Impl impl) =>
+                    impl.Bodies.Select(s => { ConsumeRegex(s); return s; }).ToList();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task InheritedTag_CollectionOnAbstractBase_ForeachOverDerived()
+    {
+        var source = """
+            using System.Collections.Generic;
+
+            public abstract class Base
+            {
+                [StringSyntax("Html")]
+                public abstract IEnumerable<string> Bodies { get; }
+            }
+
+            public class Derived : Base
+            {
+                public override IEnumerable<string> Bodies => [];
+            }
+
+            public class Holder
+            {
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Go(Derived derived)
+                {
+                    foreach (var s in derived.Bodies)
+                    {
+                        ConsumeRegex(s);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task InheritedTag_ReturnSyntaxOnInterfaceMethod_FlowsThroughImpl()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public interface ISource
+            {
+                [ReturnSyntax("Html")]
+                IEnumerable<string> Load();
+            }
+
+            public class Impl : ISource
+            {
+                public IEnumerable<string> Load() => [];
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy(Impl impl) => Target = impl.Load().First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task InheritedTag_RecordPrimaryCtorParameterOnCollection()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public record Snapshot([StringSyntax("Html")] IEnumerable<string> Values);
+
+            public class Holder
+            {
+                [StringSyntax("Regex")]
+                public string Target { get; set; }
+
+                public void Copy(Snapshot s) => Target = s.Values.First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task LinqSelect_ChangingElementType_DropsSyntax_NoChainLeak()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public IEnumerable<string> Values { get; set; } = null!;
+
+                public int Target { get; set; }
+
+                public void Copy() => Target = Values.Select(s => s.Length).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,

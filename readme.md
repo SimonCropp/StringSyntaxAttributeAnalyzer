@@ -224,6 +224,144 @@ public void RecordCall(PatternRecord record) =>
 An explicit `[property: StringSyntax(...)]` on the property still wins — if both targets are attributed, the property's own attribute is used.
 
 
+## Tagged collections
+
+A `[StringSyntax(...)]` or `[UnionSyntax(...)]` on a collection-typed member describes the elements inside the collection, not the collection itself. The analyzer threads those element syntax values through LINQ queries, `foreach` loops, and user-defined extensions — so flow works without attributes on every lambda parameter (which are illegal inside `IQueryable` expression trees anyway, per CS8972).
+
+The collection must be a **single-T enumerable**: an array, or a type that implements exactly one `IEnumerable<T>` construction. That covers `T[]`, `IEnumerable<T>`, `IReadOnlyList<T>`, `List<T>`, `HashSet<T>`, `IQueryable<T>`, and the various immutable/concurrent flavours.
+
+<!-- snippet: TaggedCollectionLinqLambda -->
+<a id='snippet-TaggedCollectionLinqLambda'></a>
+```cs
+public class HtmlBodies
+{
+    // [StringSyntax] on a single-T collection describes its elements. The syntax
+    // flows into any site that extracts an element: lambda parameters, foreach
+    // variables, .First() results, and through chains of LINQ-shape element-
+    // preserving calls.
+    [StringSyntax("Html")]
+    public IEnumerable<string> Values { get; set; } = [];
+}
+
+public class RegexConsumer
+{
+    public void Consume([StringSyntax("Regex")] string value) { }
+
+    public void Go(HtmlBodies bodies) =>
+        // SSA001 on the argument: `s` inherits "Html" from bodies.Values, which
+        // is then passed into a parameter tagged "Regex".
+        bodies.Values.Select(s => { Consume(s); return s; }).ToList();
+}
+```
+<sup><a href='/src/Tests/Samples.cs#L97-L119' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionLinqLambda' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+Only **explicit** `[StringSyntax]` / `[UnionSyntax]` / `[ReturnSyntax]` (and generated shortcut attributes) on a collection-typed declaration participate in element-flow. Name-convention inference is not applied to collection-typed members — a `List<string>` happening to be named `Html` would otherwise spuriously acquire a syntax no caller can change.
+
+
+### LINQ
+
+Syntax values flow through three categories of call, classified by signature rather than by name:
+
+ * **Element-returning** — `First`, `FirstOrDefault`, `Single`, `SingleOrDefault`, `Last`, `LastOrDefault`, `ElementAt`, `ElementAtOrDefault`, `Min`, `Max`, `Aggregate` on `System.Linq.Enumerable`/`Queryable` surface the receiver's element syntax as the result's scalar syntax.
+ * **Element-preserving** — `Where`, `OrderBy` / `OrderByDescending`, `ThenBy` / `ThenByDescending`, `Reverse`, `Take` / `TakeWhile` / `TakeLast`, `Skip` / `SkipWhile` / `SkipLast`, `Distinct` / `DistinctBy`, `Concat`, `Union` / `UnionBy`, `Intersect` / `IntersectBy`, `Except` / `ExceptBy`, `AsEnumerable`, `AsQueryable`, `ToArray`, `ToList`, `ToHashSet`, `Append`, `Prepend` pass the element syntax through unchanged, so chains like `docs.Where(x => x.Length > 0).First()` work.
+ * **`Select` / `SelectMany`** transform the element syntax according to the selector:
+   * Identity lambda `x => x` keeps the receiver's element syntax.
+   * Method group `Select(Converter)` reads `[ReturnSyntax(...)]` / `[return: StringSyntax(...)]` on the target method.
+   * Expression-bodied lambda with a tagged body (`Select(x => GetTagged(x))`) adopts the body's resolved syntax.
+   * Any other selector shape drops the syntax.
+
+Lambda parameters in those calls inherit the receiver's element syntax without an attribute, which is the mechanism that makes `IQueryable` predicates analyzable.
+
+
+### `foreach`
+
+The loop variable inherits the collection's element syntax for the body of the loop. Nested `foreach` works the same way — the inner loop sees the inner collection's element syntax.
+
+<!-- snippet: TaggedCollectionForEach -->
+<a id='snippet-TaggedCollectionForEach'></a>
+```cs
+public class HtmlScan
+{
+    [StringSyntax("Html")]
+    public IEnumerable<string> Values { get; set; } = [];
+
+    public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+    public void Go()
+    {
+        foreach (var s in Values)
+        {
+            // SSA001: `s` carries the Html syntax inherited from the collection.
+            ConsumeRegex(s);
+        }
+    }
+}
+```
+<sup><a href='/src/Tests/Samples.cs#L121-L140' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionForEach' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+
+### User-defined LINQ-shape extensions
+
+An extension method whose first parameter is `IEnumerable<T>` or `T[]`, and whose return is an `IEnumerable<T>` over the same `T`, is treated as element-preserving by shape. MoreLINQ helpers, EF Core `IQueryable` extensions like `.Include`, and project-local paging helpers all propagate element syntax without being on an allowlist.
+
+<!-- snippet: TaggedCollectionUserExtension -->
+<a id='snippet-TaggedCollectionUserExtension'></a>
+```cs
+public static class Paged
+{
+    // An extension with shape `IEnumerable<T> → IEnumerable<T>` is treated as
+    // element-preserving, so element syntax flows through it just like through
+    // `Where`, `Take`, and `OrderBy`.
+    public static IEnumerable<T> TakePage<T>(this IEnumerable<T> source, int page, int size) =>
+        source.Skip(page * size).Take(size);
+}
+
+public class PagedReader
+{
+    [StringSyntax("Html")]
+    public IEnumerable<string> Values { get; set; } = [];
+
+    [StringSyntax("Regex")]
+    public string Target { get; set; } = "";
+
+    // SSA001 on the assignment: .First() returns an Html-tagged string after
+    // passing through the user-defined element-preserving extension.
+    public void Copy() => Target = Values.TakePage(0, 10).First();
+}
+```
+<sup><a href='/src/Tests/Samples.cs#L142-L166' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionUserExtension' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+Lambda-parameter binding applies to any extension method on `IEnumerable<T>` regardless of its return type — so `Action<T>` callbacks and void-returning helpers flow syntax the same way.
+
+Element-returning inference (`.First()` and friends) stays closed to the `System.Linq.Enumerable`/`Queryable` allowlist — a third-party method named `First` could have different semantics, and the element-returning category depends on the semantics, not the signature.
+
+
+### What is not supported
+
+Multi-type-parameter containers — `Dictionary<K,V>`, `KeyValuePair<K,V>`, `ILookup<K,V>`, `IGrouping<K,T>`, `ValueTuple<…>` — are deliberately excluded. A bare `[StringSyntax("Html")]` on a `Dictionary<string,string>` has no unambiguous target (key? value? both?), so the analyzer ignores the attribute on these shapes and produces no diagnostics for reads through them.
+
+<!-- snippet: UnsupportedMultiTCollection -->
+<a id='snippet-UnsupportedMultiTCollection'></a>
+```cs
+public class HtmlMap
+{
+    // [StringSyntax] on a Dictionary/KeyValuePair/tuple/grouping carries no
+    // element tag — the analyzer can't tell whether the tag applies to K, V, or
+    // both. Flows through these containers stay "unknown" and produce no
+    // diagnostics.
+    [StringSyntax("Html")]
+    public Dictionary<string, int> ByBody { get; set; } = [];
+}
+```
+<sup><a href='/src/Tests/Samples.cs#L168-L180' title='Snippet source file'>snippet source</a> | <a href='#snippet-UnsupportedMultiTCollection' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+Distinct attributes for the key and value positions, plus tuple-field-level tagging, are on the roadmap but will require a dedicated design pass.
+
+
 ## Suppressed target namespaces
 
 SSA003 and SSA005 point at the *target* symbol's declaration as the fix site. When the target lives in a namespace the consumer can't edit (the BCL, third-party packages), the warning is unfixable noise. The analyzer skips those diagnostics when the target's containing namespace matches one of the configured patterns.
