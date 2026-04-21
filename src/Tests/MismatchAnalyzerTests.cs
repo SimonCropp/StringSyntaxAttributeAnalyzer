@@ -1558,6 +1558,36 @@ public class MismatchAnalyzerTests
         await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task SSA007_StringSyntaxAtReturnTarget_FiresViaReturnAttributesLoop()
+    {
+        // `[return: StringSyntax("Html")]` is illegal C# (StringSyntaxAttribute's
+        // AttributeUsage excludes ReturnValue) but Roslyn still surfaces the
+        // attribute through IMethodSymbol.GetReturnTypeAttributes(). The return-
+        // attributes loop in AnalyzeSymbolForRedundantStringSyntax exists so
+        // SSA007 can fire here — rewriting to `[return: Html]` fixes both the
+        // compile error and the redundancy in one go. Regression: keep the loop
+        // live; removing it would hide a valid diagnostic on malformed source.
+        var source =
+            """
+            namespace StringSyntaxAttributeAnalyzer
+            {
+                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property | System.AttributeTargets.ReturnValue, AllowMultiple = false)]
+                sealed class HtmlAttribute : System.Attribute;
+            }
+
+            public class Holder
+            {
+                [return: StringSyntax("Html")]
+                public string Build() => "<p/>";
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+        var ssa007 = diagnostics.Where(_ => _.Id == "SSA007").ToArray();
+        await Assert.That(ssa007.Length).IsEqualTo(1);
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,
