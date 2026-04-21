@@ -815,6 +815,30 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task UnionSyntax_EmptyOptions_NoSSA006()
+    {
+        // Regression: `[UnionSyntax()]` (params array, zero values) previously
+        // tripped the singleton path — length < 2 short-circuited to a
+        // diagnostic whose message said "has only one option" with an empty
+        // "" value, and whose codefix emitted `[StringSyntax("")]`. The zero
+        // case isn't a singleton to collapse; it's a user error that should
+        // stay silent here (the empty attribute carries no useful info, so
+        // the replace-with-StringSyntax fix has nothing to target).
+        var source =
+            """
+            public class Holder
+            {
+                [UnionSyntax()]
+                public string Markup { get; set; }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+        var ssa006 = diagnostics.Where(_ => _.Id == "SSA006").ToArray();
+        await Assert.That(ssa006.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task UnionSyntax_CrossAssembly_FiresSSA003()
     {
         // Reproduces the real-world case where the UnionSyntax-attributed property lives
