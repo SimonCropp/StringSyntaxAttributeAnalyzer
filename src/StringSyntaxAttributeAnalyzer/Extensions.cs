@@ -141,23 +141,31 @@ static class Extensions
     // chain, avoiding a ToDisplayString allocation and working across assembly
     // boundaries.
     public static bool IsSystemCollectionsGenericKvp(INamedTypeSymbol type) =>
-        type is { Name: "KeyValuePair", Arity: 2 } &&
-        type.ContainingNamespace is
+        type is
         {
-            Name: "Generic",
+            Name: "KeyValuePair",
+            Arity: 2,
             ContainingNamespace:
             {
-                Name: "Collections",
-                ContainingNamespace.Name: "System"
+                Name: "Generic",
+                ContainingNamespace:
+                {
+                    Name: "Collections",
+                    ContainingNamespace.Name: "System"
+                }
             }
         };
 
     public static bool IsSystemLinqIGrouping(INamedTypeSymbol type) =>
-        type is { Name: "IGrouping", Arity: 2 } &&
-        type.ContainingNamespace is
+        type is
         {
-            Name: "Linq",
-            ContainingNamespace.Name: "System"
+            Name: "IGrouping",
+            Arity: 2,
+            ContainingNamespace:
+            {
+                Name: "Linq",
+                ContainingNamespace.Name: "System"
+            }
         };
 
     // Recognises a type that carries "key" and "value" positions — used to
@@ -191,12 +199,12 @@ static class Extensions
             return true;
         }
 
-        foreach (var iface in named.AllInterfaces)
+        foreach (var @interface in named.AllInterfaces)
         {
-            if (IsSystemLinqIGrouping(iface))
+            if (IsSystemLinqIGrouping(@interface))
             {
-                key = iface.TypeArguments[0];
-                value = iface.TypeArguments[1];
+                key = @interface.TypeArguments[0];
+                value = @interface.TypeArguments[1];
                 return true;
             }
         }
@@ -208,12 +216,7 @@ static class Extensions
         // positions — so `[StringSyntax]` on `IEnumerable<IGrouping<string, T>>`
         // picks up the same Key-position rule that applies to IGrouping itself.
         var element = type.TryGetEnumerableElementType();
-        if (element is not null &&
-            element.TryGetKvpTypeArgs(out key, out value))
-        {
-            return true;
-        }
-
-        return false;
+        return element is not null &&
+               element.TryGetKvpTypeArgs(out key, out value);
     }
 }

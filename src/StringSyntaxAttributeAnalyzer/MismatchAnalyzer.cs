@@ -1137,7 +1137,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // still needs the opt-in — see NameConventionsOption.
     static bool NameConventionMatches(ISymbol? symbol, ImmutableArray<string> attributedValues)
     {
-        if (symbol is null || attributedValues.IsDefaultOrEmpty)
+        if (symbol is null ||
+            attributedValues.IsDefaultOrEmpty)
         {
             return false;
         }
@@ -1253,11 +1254,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // from the symbol's type arguments.
     sealed class KvpBinding(SyntaxInfo key, SyntaxInfo value)
     {
-        public SyntaxInfo Key { get; } = key;
         public SyntaxInfo Value { get; } = value;
 
         public SyntaxInfo Pick(KvpPosition position) =>
-            position == KvpPosition.Key ? Key : Value;
+            position == KvpPosition.Key ? key : Value;
     }
 
     // Position-assignment rule:
@@ -1408,7 +1408,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        if (!((ITypeSymbol)containing).TryGetKvpTypeArgs(out _, out var value))
+        if (!containing.TryGetKvpTypeArgs(out _, out var value))
         {
             return false;
         }
@@ -1457,7 +1457,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        if (!((ITypeSymbol)propOwner).TryGetKvpTypeArgs(out _, out _))
+        if (!propOwner.TryGetKvpTypeArgs(out _, out _))
         {
             return false;
         }
@@ -1537,8 +1537,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // kv.Key / kv.Value on a KeyValuePair, or grouping.Key on IGrouping —
         // resolve via the KV binding of whatever produced the enclosing KV
         // (foreach-bound local, element-returning LINQ, direct KV-typed ref).
-        if (unwrapped is IPropertyReferenceOperation kvpProp &&
-            kvpProp.Instance is not null &&
+        if (unwrapped is IPropertyReferenceOperation
+            {
+                Instance: not null
+            } kvpProp &&
             IsKvpOrGroupingMember(kvpProp.Property, out var kvpSide))
         {
             var kvpBinding = GetKvpBindingFromOperation(kvpProp.Instance, types, linqFlow);
@@ -1553,8 +1555,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         // dict[k] indexer — returns the Value side of the enclosing KV shape.
-        if (unwrapped is IPropertyReferenceOperation { Property.IsIndexer: true } indexerRef &&
-            indexerRef.Instance is not null &&
+        if (unwrapped is IPropertyReferenceOperation
+            {
+                Property.IsIndexer: true,
+                Instance: not null
+            } indexerRef &&
             TryResolveDictionaryIndexer(indexerRef, types, linqFlow, out var indexerInfo))
         {
             return (indexerRef.Property, indexerInfo);
