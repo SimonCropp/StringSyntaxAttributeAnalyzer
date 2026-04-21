@@ -8,7 +8,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static readonly DiagnosticDescriptor formatMismatchRule = new(
         id: "SSA001",
         title: "StringSyntax format mismatch",
-        messageFormat: "Value with StringSyntax \"{0}\" is assigned to a target with StringSyntax \"{1}\"",
+        messageFormat: "Value with StringSyntax \"{0}\" is assigned to {1} with StringSyntax \"{2}\"",
         category: "StringSyntaxAttribute.Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -16,7 +16,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static readonly DiagnosticDescriptor missingSourceFormatRule = new(
         id: "SSA002",
         title: "Source has no StringSyntax while target requires one",
-        messageFormat: "Value has no StringSyntax attribute but is assigned to a target with StringSyntax \"{0}\"",
+        messageFormat: "Value has no StringSyntax attribute but is assigned to {0} with StringSyntax \"{1}\"",
         category: "StringSyntaxAttribute.Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -24,7 +24,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static readonly DiagnosticDescriptor droppedFormatRule = new(
         id: "SSA003",
         title: "Source has StringSyntax while target has none",
-        messageFormat: "Value with StringSyntax \"{0}\" is assigned to a target without a StringSyntax attribute",
+        messageFormat: "Value with StringSyntax \"{0}\" is assigned to {1} without a StringSyntax attribute",
         category: "StringSyntaxAttribute.Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -32,7 +32,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static readonly DiagnosticDescriptor equalityMismatchRule = new(
         id: "SSA004",
         title: "Equality comparison between mismatched StringSyntax values",
-        messageFormat: "Comparing a value with StringSyntax \"{0}\" to a value with StringSyntax \"{1}\"",
+        messageFormat: "Comparing {0} (StringSyntax \"{1}\") to {2} (StringSyntax \"{3}\")",
         category: "StringSyntaxAttribute.Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -40,7 +40,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static readonly DiagnosticDescriptor equalityMissingFormatRule = new(
         id: "SSA005",
         title: "Equality comparison with an unattributed value",
-        messageFormat: "Comparing a value with StringSyntax \"{0}\" to a value without a StringSyntax attribute",
+        messageFormat: "Comparing {0} (StringSyntax \"{1}\") to {2} without a StringSyntax attribute",
         category: "StringSyntaxAttribute.Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -597,7 +597,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(
                 equalityMismatchRule,
                 binary.Syntax.GetLocation(),
+                DescribeSymbol(leftSymbol),
                 SyntaxValueMatcher.FormatValues(leftInfo.Values),
+                DescribeSymbol(rightSymbol),
                 SyntaxValueMatcher.FormatValues(rightInfo.Values)));
             return;
         }
@@ -609,34 +611,54 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             if (IsGenericValueSlot(GetTargetType(rightSymbol!)) ||
                 suppression.Matches(rightSymbol, suppressedNamespaces) ||
-                KnownUnannotatedAssemblies.Contains(rightSymbol))
+                KnownUnannotatedAssemblies.Contains(rightSymbol) ||
+                NameConventionMatches(rightSymbol, leftInfo.Values))
             {
                 return;
             }
 
-            context.ReportDiagnostic(CreateFixableDiagnostic(
-                equalityMissingFormatRule,
+            context.ReportDiagnostic(CreateEqualityMissingDiagnostic(
                 binary.Syntax.GetLocation(),
-                rightSymbol,
-                leftInfo));
+                attributedSymbol: leftSymbol,
+                attributedInfo: leftInfo,
+                bareSymbol: rightSymbol));
         }
         else if (rightInfo.State == SyntaxState.Present &&
                  leftInfo.State == SyntaxState.NotPresent)
         {
             if (IsGenericValueSlot(GetTargetType(leftSymbol!)) ||
                 suppression.Matches(leftSymbol, suppressedNamespaces) ||
-                KnownUnannotatedAssemblies.Contains(leftSymbol))
+                KnownUnannotatedAssemblies.Contains(leftSymbol) ||
+                NameConventionMatches(leftSymbol, rightInfo.Values))
             {
                 return;
             }
 
-            context.ReportDiagnostic(CreateFixableDiagnostic(
-                equalityMissingFormatRule,
+            context.ReportDiagnostic(CreateEqualityMissingDiagnostic(
                 binary.Syntax.GetLocation(),
-                leftSymbol,
-                rightInfo));
+                attributedSymbol: rightSymbol,
+                attributedInfo: rightInfo,
+                bareSymbol: leftSymbol));
         }
     }
+
+    // SSA005 has two descriptions to render ({attributed, bare}) instead of
+    // SSA002/003's one, so it uses a dedicated factory rather than extending
+    // CreateFixableDiagnostic's message-arg switch.
+    static Diagnostic CreateEqualityMissingDiagnostic(
+        Location location,
+        ISymbol? attributedSymbol,
+        SyntaxInfo attributedInfo,
+        ISymbol? bareSymbol) =>
+        Diagnostic.Create(
+            equalityMissingFormatRule,
+            location,
+            additionalLocations: GetAdditionalLocations(bareSymbol),
+            properties: ImmutableDictionary<string, string?>.Empty
+                .Add(valueKey, SyntaxValueMatcher.FormatValues(attributedInfo.Values)),
+            DescribeSymbol(attributedSymbol),
+            SyntaxValueMatcher.FormatValues(attributedInfo.Values),
+            DescribeSymbol(bareSymbol));
 
     // A "value slot" is a typed-object or generic-T target where strings flow as plain
     // values (logging, collections, generic extension methods). Passing a StringSyntax-
@@ -1013,6 +1035,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     formatMismatchRule,
                     location,
                     SyntaxValueMatcher.FormatValues(source.Values),
+                    DescribeSymbol(targetSymbol),
                     SyntaxValueMatcher.FormatValues(target.Values)));
             }
 
@@ -1033,6 +1056,16 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
+            // A source whose name already implies the target's syntax (e.g. parameter
+            // `html` flowing into `[StringSyntax("Html")]`) is self-documenting — the
+            // analyzer suppresses the diagnostic regardless of whether the consumer
+            // opted in to `name_conventions`, since asking them to add the attribute
+            // would just produce an annotation SSA008 would then flag as redundant.
+            if (NameConventionMatches(sourceSymbol, target.Values))
+            {
+                return;
+            }
+
             // Fix site is the source symbol's declaration: add [StringSyntax] to a
             // field/property/parameter, or [ReturnSyntax] to a method.
             context.ReportDiagnostic(
@@ -1040,6 +1073,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     missingSourceFormatRule,
                     location,
                     sourceSymbol,
+                    DescribeSymbol(targetSymbol),
                     target));
             return;
         }
@@ -1056,20 +1090,101 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
+            // Target whose name matches the source's syntax convention (e.g. source
+            // `[Html]` → parameter named `html`) is treated as self-annotating. See
+            // NameConventionMatches; same rationale as the SSA002 branch above.
+            if (NameConventionMatches(targetSymbol, source.Values))
+            {
+                return;
+            }
+
             // Fix site is the target symbol's declaration (add StringSyntax matching source).
             context.ReportDiagnostic(
                 CreateFixableDiagnostic(
                     droppedFormatRule,
                     location,
                     targetSymbol,
+                    DescribeSymbol(targetSymbol),
                     source));
         }
     }
 
+    // Suppresses SSA002/SSA003/SSA005 when the unattributed side's symbol name
+    // matches a known convention whose value aligns with the attributed side.
+    // Intentionally runs regardless of the `name_conventions` opt-in: this is
+    // "don't warn when the name speaks for itself", not "promote to Present".
+    // The broader promote-on-convention behaviour that affects SSA001/SSA008
+    // still needs the opt-in — see NameConventionsOption.
+    static bool NameConventionMatches(ISymbol? symbol, ImmutableArray<string> attributedValues)
+    {
+        if (symbol is null || attributedValues.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        if (!NameConventions.TryMatch(symbol.Name, out var conventionValue))
+        {
+            return false;
+        }
+
+        foreach (var value in attributedValues)
+        {
+            if (SyntaxValueMatcher.SingleValuesMatch(conventionValue, value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Human-readable "<kind> 'Type.Name'" label used in diagnostic messages so the
+    // user sees which declaration is involved rather than a generic "a target".
+    // Parameters also include their enclosing method since `name` alone doesn't
+    // disambiguate across overloads.
+    static string DescribeSymbol(ISymbol? symbol)
+    {
+        if (symbol is null)
+        {
+            return "value";
+        }
+
+        return symbol switch
+        {
+            IPropertySymbol property => $"property '{QualifiedName(property)}'",
+            IFieldSymbol field => $"field '{QualifiedName(field)}'",
+            IParameterSymbol parameter => DescribeParameter(parameter),
+            IMethodSymbol method => $"method '{QualifiedName(method)}'",
+            ILocalSymbol local => $"local '{local.Name}'",
+            _ => "value"
+        };
+    }
+
+    static string QualifiedName(ISymbol symbol)
+    {
+        var type = symbol.ContainingType;
+        return type is null ? symbol.Name : $"{type.Name}.{symbol.Name}";
+    }
+
+    static string DescribeParameter(IParameterSymbol parameter)
+    {
+        if (parameter.ContainingSymbol is IMethodSymbol method)
+        {
+            return $"parameter '{parameter.Name}' of method '{QualifiedName(method)}'";
+        }
+
+        return $"parameter '{parameter.Name}'";
+    }
+
+    // Assignment/argument-style diagnostics (SSA002/SSA003) thread the opposite
+    // side's description into {1} so the user sees which declaration lacks the
+    // attribute. SSA002's format string is {source-desc, target-value}; SSA003
+    // is {source-value, target-desc}. Callers pick the matching format.
     static Diagnostic CreateFixableDiagnostic(
         DiagnosticDescriptor rule,
         Location location,
         ISymbol? fixTarget,
+        string oppositeDescription,
         SyntaxInfo info) =>
         Diagnostic.Create(
             rule,
@@ -1079,7 +1194,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // (one per value + one combined). The pipe is the same separator used in the
             // user-visible message — safe because values are identifier-like.
             properties: ImmutableDictionary<string, string?>.Empty.Add(valueKey, SyntaxValueMatcher.FormatValues(info.Values)),
-            messageArgs: SyntaxValueMatcher.FormatValues(info.Values));
+            messageArgs: rule.Id == "SSA002"
+                ? [oppositeDescription, SyntaxValueMatcher.FormatValues(info.Values)]
+                : [SyntaxValueMatcher.FormatValues(info.Values), oppositeDescription]);
 
     static Location[]? GetAdditionalLocations(ISymbol? fixTarget)
     {

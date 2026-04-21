@@ -25,8 +25,12 @@ public class NameConventionsTests
     }
 
     [Test]
-    public async Task Convention_Disabled_StillFiresMissingFormat()
+    public async Task Convention_Disabled_SuppressesMissingFormat_WhenNameMatchesTarget()
     {
+        // Name-based suppression of SSA002/003/005 is unconditional — the
+        // `name_conventions` opt-in still controls Present promotion for
+        // SSA001/008, but a self-documenting name never produces an
+        // unfixable "add the attribute we'd then flag as redundant" warning.
         var source =
             """
             public class Target
@@ -39,6 +43,30 @@ public class NameConventionsTests
                 public string Url { get; set; }
 
                 public void Use(Target target) => target.Consume(Url);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, conventions: false);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Convention_Disabled_StillFiresMissingFormat_WhenNameMismatchesTarget()
+    {
+        // Source name `Marker` doesn't match any convention → name-based
+        // suppression doesn't apply, so SSA002 still surfaces.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Uri)] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Marker { get; set; }
+
+                public void Use(Target target) => target.Consume(Marker);
             }
             """;
 
