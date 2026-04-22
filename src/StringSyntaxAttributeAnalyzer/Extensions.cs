@@ -211,12 +211,32 @@ static class Extensions
 
         // Dictionary / IDictionary / IReadOnlyDictionary / IEnumerable<KVP>,
         // plus IEnumerable<IGrouping<K,T>> (GroupBy results, ILookup emits,
-        // caller-supplied projections). The recursive call lets a single-T
-        // enumerable of a KV-shaped element type adopt that element's K/V
-        // positions — so `[StringSyntax]` on `IEnumerable<IGrouping<string, T>>`
-        // picks up the same Key-position rule that applies to IGrouping itself.
-        var element = type.TryGetEnumerableElementType();
-        return element is not null &&
-               element.TryGetKvpTypeArgs(out key, out value);
+        // caller-supplied projections). Peel exactly one enumerable layer —
+        // nested enumerables cannot become KV-shaped, and recursing unbounded
+        // stack-overflows on self-referential types like `class Node :
+        // IEnumerable<Node>`.
+        if (type.TryGetEnumerableElementType() is not INamedTypeSymbol element)
+        {
+            return false;
+        }
+
+        if (IsSystemCollectionsGenericKvp(element) || IsSystemLinqIGrouping(element))
+        {
+            key = element.TypeArguments[0];
+            value = element.TypeArguments[1];
+            return true;
+        }
+
+        foreach (var @interface in element.AllInterfaces)
+        {
+            if (IsSystemLinqIGrouping(@interface))
+            {
+                key = @interface.TypeArguments[0];
+                value = @interface.TypeArguments[1];
+                return true;
+            }
+        }
+
+        return false;
     }
 }
