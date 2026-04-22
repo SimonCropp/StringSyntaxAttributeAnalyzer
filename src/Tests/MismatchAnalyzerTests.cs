@@ -1665,6 +1665,38 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task SelfReferentialEnumerable_DoesNotStackOverflow()
+    {
+        // `Node : IEnumerable<Node>` would have infinite-recursed through
+        // TryGetKvpTypeArgs → TryGetEnumerableElementType → TryGetKvpTypeArgs
+        // before the one-level peel fix.
+        var source = """
+            using System.Collections;
+            using System.Collections.Generic;
+
+            public class Node : IEnumerable<Node>
+            {
+                public IEnumerator<Node> GetEnumerator() => null!;
+                IEnumerator IEnumerable.GetEnumerator() => null!;
+            }
+
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                public Node Values { get; set; } = null!;
+
+                public void Go()
+                {
+                    foreach (var n in Values) { }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+        await Assert.That(diagnostics.Any(_ => _.Id.StartsWith("AD0001"))).IsFalse();
+    }
+
+    [Test]
     public async Task LinqLambda_ExpressionTreePredicate_ComparesAgainstTaggedParameter()
     {
         // Attributes aren't legal on lambdas inside expression trees (CS8972), so
