@@ -8,4 +8,6 @@
   <Project Path="IntegrationTests/IntegrationTests.csproj" />
   <Project Path="NameConventionsConsumer/NameConventionsConsumer.csproj" />
   <Project Path="NoGlobalUsingsConsumer/NoGlobalUsingsConsumer.csproj" />
+  <Project Path="UpstreamLib/UpstreamLib.csproj" />
+  <Project Path="UpstreamReferencingConsumer/UpstreamReferencingConsumer.csproj" />
 </Solution>

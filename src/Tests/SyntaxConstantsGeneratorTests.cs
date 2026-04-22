@@ -149,6 +149,47 @@ public class SyntaxConstantsGeneratorTests
     }
 
     [Test]
+    public async Task SkipsTypesEmit_WhenAttributeVisibleFromReference()
+    {
+        // Simulate an upstream assembly that already exposes
+        // StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute (public here stands
+        // in for InternalsVisibleTo).
+        var upstreamSource =
+            """
+            namespace StringSyntaxAttributeAnalyzer;
+            using System;
+            public sealed class UnionSyntaxAttribute(params string[] options) : Attribute;
+            public static class Syntax
+            {
+                public const string Html = nameof(Html);
+            }
+            """;
+        var upstream = CSharpCompilation.Create(
+            "Upstream",
+            [CSharpSyntaxTree.ParseText(upstreamSource)],
+            TrustedPlatformReferences.All,
+            new(OutputKind.DynamicallyLinkedLibrary));
+
+        using var peStream = new MemoryStream();
+        var emitResult = upstream.Emit(peStream);
+        await Assert.That(emitResult.Success).IsTrue();
+        peStream.Position = 0;
+        var upstreamRef = MetadataReference.CreateFromStream(peStream);
+
+        var compilation = CSharpCompilation.Create(
+            "Downstream",
+            [CSharpSyntaxTree.ParseText("public class Dummy {}")],
+            [.. TrustedPlatformReferences.All, upstreamRef],
+            new(OutputKind.DynamicallyLinkedLibrary));
+
+        var driver = CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+
+        await Assert.That(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Types.g.cs"))).IsFalse();
+        await Assert.That(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs"))).IsTrue();
+    }
+
+    [Test]
     public async Task EmitShortcutAttributes_True_EmitsShortcutsForKnownConstants()
     {
         var compilation = BuildCompilation("public class Dummy {}");

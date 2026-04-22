@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>true</ImplicitUsings>
+    <!--
+      CS0436 fires when the generator emits types that conflict with types
+      already visible via an InternalsVisibleTo reference from UpstreamLib.
+      Treating it as an error means the build fails if the generator
+      double-emits types the downstream already sees.
+    -->
+    <WarningsAsErrors>CS0436</WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StringSyntaxAttributeAnalyzer" />
+    <ProjectReference Include="..\UpstreamLib\UpstreamLib.csproj" />
+  </ItemGroup>
+</Project>
