@@ -172,14 +172,29 @@ public class SyntaxConstantsGenerator :
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // The types (UnionSyntaxAttribute + Syntax class) always ship. The global usings
-        // that make them friction-free to use are opt-out via the
-        // `StringSyntaxAnalyzer_EmitGlobalUsings` MSBuild property (surfaced through the
-        // props file packed under `build/`). Shortcut-per-constant attributes
-        // (`[Html]`, `[Json]`, ...) are opt-IN via
-        // `StringSyntaxAnalyzer_EmitShortcutAttributes=true` — they only carry meaning
-        // inside projects that use this analyzer, so the default is off.
-        context.RegisterPostInitializationOutput(postInit => postInit.AddSource("Syntax.Types.g.cs", typesBody));
+        // The types (UnionSyntaxAttribute + Syntax class) ship into each consumer
+        // assembly as internals. The global usings that make them friction-free to
+        // use are opt-out via the `StringSyntaxAnalyzer_EmitGlobalUsings` MSBuild
+        // property (surfaced through the props file packed under `build/`).
+        // Shortcut-per-constant attributes (`[Html]`, `[Json]`, ...) are opt-IN via
+        // `StringSyntaxAnalyzer_EmitShortcutAttributes=true` — they only carry
+        // meaning inside projects that use this analyzer, so the default is off.
+        //
+        // If a referenced assembly already exposes the types to us (e.g. an
+        // upstream project that grants InternalsVisibleTo), skip emitting them to
+        // avoid CS0436 type-conflict warnings. The global usings still flow so
+        // unqualified references bind to the upstream's copy.
+        var typesAlreadyVisible = context.CompilationProvider.Select((compilation, _) =>
+            IsTypeVisibleFromReference(compilation, "StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute"));
+
+        context.RegisterSourceOutput(typesAlreadyVisible, (ctx, alreadyVisible) =>
+        {
+            if (alreadyVisible)
+            {
+                return;
+            }
+            ctx.AddSource("Syntax.Types.g.cs", typesBody);
+        });
 
         var emitGlobals = context.AnalyzerConfigOptionsProvider
             .Select((provider, _) =>
@@ -197,20 +212,43 @@ public class SyntaxConstantsGenerator :
             }
         });
 
+        var shortcutsAlreadyVisible = context.CompilationProvider.Select((compilation, _) =>
+            IsTypeVisibleFromReference(compilation, "StringSyntaxAttributeAnalyzer.HtmlAttribute"));
+
         var emitShortcuts = context.AnalyzerConfigOptionsProvider
             .Select((provider, _) =>
                 provider.GlobalOptions
                     .TryGetValue(
                         "build_property.StringSyntaxAnalyzer_EmitShortcutAttributes",
                         out var value) &&
-                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
+                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+            .Combine(shortcutsAlreadyVisible);
 
-        context.RegisterSourceOutput(emitShortcuts, (ctx, emit) =>
+        context.RegisterSourceOutput(emitShortcuts, (ctx, pair) =>
         {
-            if (emit)
+            var (emit, alreadyVisible) = pair;
+            if (emit && !alreadyVisible)
             {
                 ctx.AddSource("Syntax.Shortcuts.g.cs", BuildShortcutAttributesBody());
             }
         });
+    }
+
+    static bool IsTypeVisibleFromReference(Compilation compilation, string metadataName)
+    {
+        var types = compilation.GetTypesByMetadataName(metadataName);
+        var currentAssembly = compilation.Assembly;
+        foreach (var type in types)
+        {
+            if (SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, currentAssembly))
+            {
+                continue;
+            }
+            if (compilation.IsSymbolAccessibleWithin(type, currentAssembly))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
