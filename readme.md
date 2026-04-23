@@ -181,6 +181,60 @@ When the target is a union (`[UnionSyntax("Json", "Csv")]`), the code fix surfac
 Locals that never flow into a `[StringSyntax]` target are untouched — `var name = user.GetName();` on its own produces no diagnostic; only the passthrough into a formatted slot surfaces the warning.
 
 
+## Anonymous-type projections — `//language=<name>` on the member
+
+Anonymous-type members are compiler-synthesised and can't host `[StringSyntax]`. The analyzer resolves reads of anon members by tracing the instance back to the originating `new { … }` and looking at the member initializer:
+
+ 1. If the initializer expression is itself tagged (`[StringSyntax]` property/field, tagged parameter, tagged return), that tag flows through the anon read automatically — no comment required. `.Select(_ => new { _.Tagged }).First().Tagged` behaves the same as `_.Tagged`.
+ 2. Otherwise — the source is a plain string, a rename, or any other untagged expression — the anon member is Unknown by default. Authors can annotate the initializer with the same `//language=<name>` comment used for locals to give it a tag; the analyzer then treats the member as `Present(value)` on both sides of the projection.
+
+A comment on the member always wins over the inherited source tag, so authors can *override* the projected source's syntax when the intent is that the anon holds a different shape (e.g., a pre-serialised payload).
+
+<!-- snippet: AnonymousProjectionLanguageComment -->
+<a id='snippet-AnonymousProjectionLanguageComment'></a>
+```cs
+// Payload is a plain untagged string — there's nothing on the source for
+// the analyzer to inherit, so a naive projection would flow as Unknown.
+// (If Payload were `[StringSyntax("Json")]`, the tag would already flow
+// through the anon read automatically — no comment required.)
+public class DataRow
+{
+    public string Payload { get; set; } = "";
+}
+
+public class AnonProjectionReader
+{
+    public IEnumerable<DataRow> Rows { get; set; } = [];
+
+    public void ConsumeJson([StringSyntax("Json")] string value) { }
+
+    public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+    public void Go()
+    {
+        // Annotate the anon member initializer with `//language=<name>` to
+        // give the projected value a tag that flows both ways through the
+        // anon instance (write-site validation and read-side propagation).
+        var row = Rows.Select(_ => new
+        {
+            //language=Json
+            _.Payload
+        }).First();
+
+        // No diagnostic — row.Payload carries the annotated Json tag.
+        ConsumeJson(row.Payload);
+
+        // SSA001 — Json flowing into a Regex-tagged parameter.
+        ConsumeRegex(row.Payload);
+    }
+}
+```
+<sup><a href='/src/Tests/Samples.cs#L200-L238' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnonymousProjectionLanguageComment' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+The read-side trace follows the instance back through: direct `new { … }`, a local whose initializer evaluates to the anon, element-returning LINQ (`.First()` / `.Single()` / their `*Async` counterparts), element-preserving LINQ (`Where`, `Take`, …), and `Select(_ => new { … })`. Anon instances reached via method returns, parameters, or other unresolved expression shapes fall back to the silent default.
+
+
 ## `[ReturnSyntax(...)]` on methods
 
 `StringSyntaxAttribute` has `AttributeUsage(Field | Parameter | Property)`, so `[return: StringSyntax(...)]` is a compile error and the BCL attribute cannot describe the syntax of a method's return value. Broadening its targets is tracked in [dotnet/runtime#76203](https://github.com/dotnet/runtime/issues/76203); until that ships, the source generator emits `ReturnSyntaxAttribute` (targetable at `Method | Delegate`) as a bridge so invocation results can participate in format analysis.
@@ -266,7 +320,7 @@ Only **explicit** `[StringSyntax]` / `[UnionSyntax]` / `[ReturnSyntax]` (and gen
 
 Syntax values flow through three categories of call, classified by signature rather than by name:
 
- * **Element-returning** — `First`, `FirstOrDefault`, `Single`, `SingleOrDefault`, `Last`, `LastOrDefault`, `ElementAt`, `ElementAtOrDefault`, `Min`, `Max`, `Aggregate` on `System.Linq.Enumerable`/`Queryable` surface the receiver's element syntax as the result's scalar syntax.
+ * **Element-returning** — `First`, `FirstOrDefault`, `Single`, `SingleOrDefault`, `Last`, `LastOrDefault`, `ElementAt`, `ElementAtOrDefault`, `Min`, `Max`, `Aggregate` on `System.Linq.Enumerable`/`Queryable` surface the receiver's element syntax as the result's scalar syntax. The `*Async` counterparts from EF Core (`FirstAsync`, `SingleAsync`, …) are recognised by shape: any element-returning name + `Async` whose return type is `Task<T>` / `ValueTask<T>` over the receiver's element type flows the same way, so `await q.Select(_ => _.Tagged).SingleAsync()` is treated as a tagged scalar.
  * **Element-preserving** — `Where`, `OrderBy` / `OrderByDescending`, `ThenBy` / `ThenByDescending`, `Reverse`, `Take` / `TakeWhile` / `TakeLast`, `Skip` / `SkipWhile` / `SkipLast`, `Distinct` / `DistinctBy`, `Concat`, `Union` / `UnionBy`, `Intersect` / `IntersectBy`, `Except` / `ExceptBy`, `AsEnumerable`, `AsQueryable`, `ToArray`, `ToList`, `ToHashSet`, `Append`, `Prepend` pass the element syntax through unchanged, so chains like `docs.Where(x => x.Length > 0).First()` work.
  * **`Select` / `SelectMany`** transform the element syntax according to the selector:
    * Identity lambda `x => x` keeps the receiver's element syntax.

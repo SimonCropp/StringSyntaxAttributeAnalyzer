@@ -466,6 +466,31 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var targetSymbol = GetSymbol(assignment.Target);
         if (targetSymbol is null)
         {
+            // Anonymous-type member targets carry no attribute surface, but the
+            // author can opt into validation by writing `//language=X` on the
+            // member initializer — treat that comment as the target tag and run
+            // the normal mismatch / missing-source checks.
+            if (assignment.Target is IPropertyReferenceOperation
+                {
+                    Property: { ContainingType.IsAnonymousType: true } anonProperty
+                } &&
+                LanguageCommentReader.TryReadFromNode(assignment.Syntax, out var anonValue))
+            {
+                var anonInfo = BuildCommentInfo(anonValue);
+                var conventionsEnabledAnon = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
+                var (anonSourceSymbol, anonSourceInfo) = GetSourceInfo(
+                    assignment.Value, types, linqFlow, conventionsEnabledAnon);
+                Report(
+                    context,
+                    assignment.Value.Syntax.GetLocation(),
+                    anonSourceSymbol,
+                    anonSourceInfo,
+                    anonProperty,
+                    anonInfo,
+                    suppression,
+                    suppression.GetPatterns(context.Operation.Syntax.SyntaxTree));
+            }
+
             return;
         }
 
@@ -496,6 +521,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var property in init.InitializedProperties)
         {
+            // Anonymous-type properties can't host StringSyntax attributes —
+            // firing SSA002/003 on `new { _.Tagged }` projections would be
+            // unfixable. Tag propagation is handled on the read side via
+            // GetSourceInfo/GetSymbol instead.
+            if (property.ContainingType?.IsAnonymousType == true)
+            {
+                continue;
+            }
+
             var targetInfo = GetSyntax(property, types, conventionsEnabled);
             Report(
                 context,
@@ -706,6 +740,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         operation = UnwrapConversions(operation);
         return operation switch
         {
+            // Anonymous-type properties can't host StringSyntax attributes, so a
+            // read of one carries no usable metadata. Return null so GetSyntax
+            // maps it to Unknown and SSA002/003 don't fire on values read from
+            // `.Select(_ => new { _.Tagged })` projections.
+            IPropertyReferenceOperation prop when prop.Property.ContainingType?.IsAnonymousType == true => null,
             IPropertyReferenceOperation prop => prop.Property,
             IFieldReferenceOperation field => field.Field,
             IParameterReferenceOperation param => param.Parameter,
@@ -1594,6 +1633,31 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return (inv.TargetMethod, linqInfo);
         }
 
+        // Anon-type property read — honour `//language=X` written on the
+        // originating member initializer (e.g. `new { /*language=Json*/ _.Data }`).
+        // Only fires when the originating `new { … }` is reachable via unwrap +
+        // local-init + element-returning LINQ / Select tracing.
+        if (unwrapped is IPropertyReferenceOperation
+            {
+                Property.ContainingType.IsAnonymousType: true,
+                Instance: { } anonInstance
+            } anonReadRef &&
+            TryResolveAnonymousMemberRead(anonReadRef, anonInstance, types, linqFlow, conventionsEnabled, out var anonReadInfo))
+        {
+            return (anonReadRef.Property, anonReadInfo);
+        }
+
+        // Locals inherit the tag of their initializer expression when the
+        // initializer resolves to a Present (e.g. `var x = await q.Select(_ => _.Tagged)
+        // .SingleAsync()`). A language-injection comment still wins via GetSyntax;
+        // this path only kicks in when the local itself has no comment but its
+        // initializer carries a discoverable tag.
+        if (unwrapped is ILocalReferenceOperation localRefInit &&
+            TryResolveLocalInitializer(localRefInit, types, linqFlow, conventionsEnabled, out var initInfo))
+        {
+            return (localRefInit.Local, initInfo);
+        }
+
         if (unwrapped is IParameterReferenceOperation param &&
             TryResolveLambdaParameterFromLinq(param, types, linqFlow, out var lambdaInfo))
         {
@@ -1762,9 +1826,225 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return true;
     }
 
+    // Parses a `//language=X` (optionally pipe-delimited union) value into a
+    // SyntaxInfo for use as either a target tag on an anon-member write or a
+    // propagated source tag on an anon-member read.
+    static SyntaxInfo BuildCommentInfo(string value)
+    {
+        if (value.IndexOf('|') < 0)
+        {
+            return SyntaxInfo.Present(value);
+        }
+
+        var parts = value.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        return SyntaxInfo.PresentUnion([..parts]);
+    }
+
+    // For a read of `anon.Prop`, find the originating `new { … }` that produced
+    // the anon instance and resolve the member's effective syntax. A
+    // `//language=X` comment on the member initializer wins (authoritative
+    // author intent); otherwise the member inherits the tag of the assigned
+    // expression (`_.Tagged` flows through the anon without requiring a
+    // comment). The instance trace walks await/conversion wrappers, unwraps
+    // locals to their initializer, peels element-returning LINQ (sync + async)
+    // and element-preserving LINQ, and unwraps `.Select(_ => new { … })`.
+    static bool TryResolveAnonymousMemberRead(
+        IPropertyReferenceOperation anonProp,
+        IOperation instance,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        bool conventionsEnabled,
+        out SyntaxInfo info)
+    {
+        info = SyntaxInfo.Unknown;
+        var creation = FindOriginatingAnonymousCreation(instance);
+        if (creation is null)
+        {
+            return false;
+        }
+
+        var name = anonProp.Property.Name;
+        foreach (var initializer in creation.Initializers)
+        {
+            if (initializer is not ISimpleAssignmentOperation
+                {
+                    Target: IPropertyReferenceOperation targetProp
+                } assignment ||
+                !string.Equals(targetProp.Property.Name, name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (LanguageCommentReader.TryReadFromNode(assignment.Syntax, out var commentValue))
+            {
+                info = BuildCommentInfo(commentValue);
+                return true;
+            }
+
+            var (_, resolved) = GetSourceInfo(assignment.Value, types, linqFlow, conventionsEnabled);
+            if (resolved.State == SyntaxState.Present)
+            {
+                info = resolved;
+                return true;
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    // Walks instance → anon creation through: direct creation, local-init
+    // chasing, element-returning LINQ/async, element-preserving LINQ, and
+    // .Select projecting to an anon creation. Returns null if the origin can't
+    // be pinned down syntactically (method return, parameter, etc.).
+    static IAnonymousObjectCreationOperation? FindOriginatingAnonymousCreation(IOperation operation)
+    {
+        var visited = 0;
+        while (visited++ < 32)
+        {
+            operation = operation.Unwrap();
+
+            if (operation is IAnonymousObjectCreationOperation anon)
+            {
+                return anon;
+            }
+
+            if (operation is ILocalReferenceOperation localRef)
+            {
+                var reference = localRef.Local.DeclaringSyntaxReferences.FirstOrDefault();
+                if (reference?.GetSyntax() is not VariableDeclaratorSyntax
+                    {
+                        Initializer.Value: { } initializerSyntax
+                    } ||
+                    localRef.SemanticModel?.GetOperation(initializerSyntax) is not { } initOp)
+                {
+                    return null;
+                }
+
+                operation = initOp;
+                continue;
+            }
+
+            if (operation is IInvocationOperation invocation)
+            {
+                var methodName = invocation.TargetMethod.Name;
+                var baseName = methodName.Length > 5 &&
+                               methodName.EndsWith("Async", StringComparison.Ordinal)
+                    ? methodName.Substring(0, methodName.Length - 5)
+                    : methodName;
+
+                if (IsElementReturningLinq(baseName) || IsElementPreservingLinq(baseName))
+                {
+                    var receiver = GetLinqReceiver(invocation);
+                    if (receiver is null)
+                    {
+                        return null;
+                    }
+
+                    operation = receiver;
+                    continue;
+                }
+
+                if (IsSelectCall(invocation.TargetMethod))
+                {
+                    var selector = FindSelectorArgument(invocation);
+                    if (selector is null)
+                    {
+                        return null;
+                    }
+
+                    selector = selector.Unwrap();
+                    var lambda = selector switch
+                    {
+                        IDelegateCreationOperation creation => creation.Target.Unwrap() as IAnonymousFunctionOperation,
+                        IAnonymousFunctionOperation anonFunc => anonFunc,
+                        _ => null
+                    };
+
+                    if (lambda is null)
+                    {
+                        return null;
+                    }
+
+                    var body = GetSingleReturnExpression(lambda);
+                    if (body is null)
+                    {
+                        return null;
+                    }
+
+                    operation = body;
+                    continue;
+                }
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
+    // `var x = <expr>;` — trace <expr>'s SyntaxInfo and bind it to `x`. Only
+    // Present results propagate; NotPresent/Unknown fall through so existing
+    // local-level logic (language-injection comments, SSA002 codefix) still
+    // drives. Language-injection on the local takes precedence — this helper
+    // only fills the gap when the author has not commented the local.
+    static bool TryResolveLocalInitializer(
+        ILocalReferenceOperation localRef,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        bool conventionsEnabled,
+        out SyntaxInfo info)
+    {
+        info = SyntaxInfo.Unknown;
+
+        if (LanguageCommentReader.TryRead(localRef.Local, out _))
+        {
+            return false;
+        }
+
+        var reference = localRef.Local.DeclaringSyntaxReferences.FirstOrDefault();
+        if (reference is null)
+        {
+            return false;
+        }
+
+        if (reference.GetSyntax() is not VariableDeclaratorSyntax
+            {
+                Initializer.Value: { } initializerSyntax
+            })
+        {
+            return false;
+        }
+
+        var semanticModel = localRef.SemanticModel;
+        if (semanticModel is null)
+        {
+            return false;
+        }
+
+        var initializerOp = semanticModel.GetOperation(initializerSyntax);
+        if (initializerOp is null)
+        {
+            return false;
+        }
+
+        var (_, resolved) = GetSourceInfo(initializerOp, types, linqFlow, conventionsEnabled);
+        if (resolved.State != SyntaxState.Present)
+        {
+            return false;
+        }
+
+        info = resolved;
+        return true;
+    }
+
     // For element-returning LINQ (`.First()`, `.Single()`, `.ElementAt()` etc.)
     // surface the receiver's element syntax as the invocation's result syntax —
-    // so `jsonDocs.First()` is treated as a single Json-tagged string.
+    // so `jsonDocs.First()` is treated as a single Json-tagged string. Async
+    // variants (EF Core `FirstAsync`, `SingleAsync`, …) participate by shape:
+    // an element-returning name + "Async" returning Task<T> / ValueTask<T>
+    // where T matches the receiver's element type.
     static bool TryResolveLinqElementReturn(
         IInvocationOperation invocation,
         SyntaxTypes types,
@@ -1773,8 +2053,21 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         info = SyntaxInfo.Unknown;
 
-        if (!invocation.TargetMethod.IsLinqMethod() ||
-            !IsElementReturningLinq(invocation.TargetMethod.Name))
+        var targetMethod = invocation.TargetMethod;
+        var name = targetMethod.Name;
+        var isAsync = false;
+
+        if (targetMethod.IsLinqMethod() && IsElementReturningLinq(name))
+        {
+            // sync System.Linq variant
+        }
+        else if (name.Length > 5 &&
+                 name.EndsWith("Async", StringComparison.Ordinal) &&
+                 IsElementReturningLinq(name.Substring(0, name.Length - 5)))
+        {
+            isAsync = true;
+        }
+        else
         {
             return false;
         }
@@ -1785,9 +2078,23 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
+        var resultType = invocation.Type;
+        if (isAsync)
+        {
+            if (resultType is INamedTypeSymbol { IsGenericType: true, TypeArguments.Length: 1 } task &&
+                task.Name is "Task" or "ValueTask")
+            {
+                resultType = task.TypeArguments[0];
+            }
+            else
+            {
+                return false;
+            }
+        }
+
         var element = receiver.Type.TryGetEnumerableElementType();
         if (element is null ||
-            !SymbolEqualityComparer.Default.Equals(element, invocation.Type))
+            !SymbolEqualityComparer.Default.Equals(element, resultType))
         {
             return false;
         }
@@ -2061,54 +2368,61 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         selector = selector.Unwrap();
 
-        if (selector is IDelegateCreationOperation creation)
+        // IEnumerable<T>.Select passes a Func<T,R> — the lambda sits inside an
+        // IDelegateCreationOperation. IQueryable<T>.Select passes an
+        // Expression<Func<T,R>> — the lambda surfaces directly after unwrap.
+        // Peel either wrapper so method-group and expression-tree selectors flow
+        // through the same analysis.
+        var target = selector switch
         {
-            var target = creation.Target.Unwrap();
+            IDelegateCreationOperation creation => creation.Target.Unwrap(),
+            IAnonymousFunctionOperation or IMethodReferenceOperation => selector,
+            _ => (IOperation?)null
+        };
 
-            if (target is IMethodReferenceOperation methodRef)
+        if (target is IMethodReferenceOperation methodRef)
+        {
+            // [ReturnSyntax] is applied to the method symbol; [return: StringSyntax]
+            // / [return: Html] live on the return-value attribute set. Check both so
+            // either form drives the element syntax out of the Select.
+            var methodInfo = GetSyntaxFromAttributes(methodRef.Method.GetAttributes(), types);
+            if (methodInfo.State == SyntaxState.Present)
             {
-                // [ReturnSyntax] is applied to the method symbol; [return: StringSyntax]
-                // / [return: Html] live on the return-value attribute set. Check both so
-                // either form drives the element syntax out of the Select.
-                var methodInfo = GetSyntaxFromAttributes(methodRef.Method.GetAttributes(), types);
-                if (methodInfo.State == SyntaxState.Present)
-                {
-                    return methodInfo;
-                }
-
-                var returnInfo = GetSyntaxFromAttributes(
-                    methodRef.Method.GetReturnTypeAttributes(),
-                    types);
-                return returnInfo.State == SyntaxState.Present
-                    ? returnInfo
-                    : SyntaxInfo.Unknown;
+                return methodInfo;
             }
 
-            if (target is IAnonymousFunctionOperation lambda)
+            var returnInfo = GetSyntaxFromAttributes(
+                methodRef.Method.GetReturnTypeAttributes(),
+                types);
+            return returnInfo.State == SyntaxState.Present
+                ? returnInfo
+                : SyntaxInfo.Unknown;
+        }
+
+        if (target is IAnonymousFunctionOperation lambda)
+        {
+            var body = GetSingleReturnExpression(lambda);
+            if (body is null)
             {
-                var body = GetSingleReturnExpression(lambda);
-                if (body is null)
+                return SyntaxInfo.Unknown;
+            }
+
+            if (IsIdentityReference(body, lambda))
+            {
+                var next = GetLinqReceiver(invocation);
+                if (next is null)
                 {
                     return SyntaxInfo.Unknown;
                 }
 
-                if (IsIdentityReference(body, lambda))
-                {
-                    var next = GetLinqReceiver(invocation);
-                    if (next is null)
-                    {
-                        return SyntaxInfo.Unknown;
-                    }
-
-                    return GetReceiverElementTags(next, types, linqFlow);
-                }
-
-                // Fall back to a scalar-source resolution of the body — a tagged
-                // invocation or property access inside the lambda body becomes the
-                // new element syntax.
-                var (_, info) = GetSourceInfo(body, types, linqFlow, conventionsEnabled: false);
-                return info.State == SyntaxState.Present ? info : SyntaxInfo.Unknown;
+                return GetReceiverElementTags(next, types, linqFlow);
             }
+
+            // Fall back to a scalar-source resolution of the body — a tagged
+            // invocation or property access inside the lambda body becomes the
+            // new element syntax.
+            var (_, info) = GetSourceInfo(body, types, linqFlow, conventionsEnabled: false);
+            return info.State == SyntaxState.Present ? info : SyntaxInfo.Unknown;
         }
 
         return SyntaxInfo.Unknown;

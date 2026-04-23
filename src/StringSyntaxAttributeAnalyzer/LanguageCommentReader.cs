@@ -57,6 +57,34 @@ static class LanguageCommentReader
         return false;
     }
 
+    // Scans a syntax node's leading + internal trivia for a `language=` comment.
+    // Used for syntactic hosts that aren't a LocalDeclarationStatement (e.g. an
+    // anonymous-object member initializer). Walks the node's own leading trivia
+    // and its descendant trivia so preceding-line and inline comments both match.
+    public static bool TryReadFromNode(SyntaxNode node, [NotNullWhen(true)] out string? syntax)
+    {
+        if (TryMatch(node.GetLeadingTrivia(), out syntax))
+        {
+            return true;
+        }
+
+        foreach (var trivia in node.DescendantTrivia())
+        {
+            if (!IsCommentTrivia(trivia))
+            {
+                continue;
+            }
+
+            if (TryParse(trivia.ToString(), out syntax))
+            {
+                return true;
+            }
+        }
+
+        syntax = null;
+        return false;
+    }
+
     static bool TryMatch(SyntaxTriviaList trivia, [NotNullWhen(true)] out string? syntax)
     {
         foreach (var item in trivia)
