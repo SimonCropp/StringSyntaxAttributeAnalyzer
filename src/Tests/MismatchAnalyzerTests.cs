@@ -1311,6 +1311,85 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task LocalVariable_LanguageComment_PipeDelimitedUnion_MatchesUnionTarget()
+    {
+        // `//language=json|csv` expresses the same union shape as
+        // `[UnionSyntax(Syntax.Json, Syntax.Csv)]`. The local flows into the
+        // union-typed property without SSA002.
+        var source =
+            """
+            public class DataUpload
+            {
+                [UnionSyntax("Json", "Csv")]
+                public string FileContents { get; set; }
+            }
+
+            public class Consumer
+            {
+                public void Use(DataUpload upload)
+                {
+                    //language=json|csv
+                    var fileContents = "{}";
+                    upload.FileContents = fileContents;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task LocalVariable_LanguageComment_PipeDelimitedUnion_OverlapsSingleTarget()
+    {
+        // Union source overlaps a single-valued target on `Json` — no mismatch.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Json)] string value) { }
+
+                public void Use()
+                {
+                    //language=json|csv
+                    var payload = "{}";
+                    Consume(payload);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task LocalVariable_LanguageComment_PipeDelimitedUnion_NoOverlap_FiresSSA001()
+    {
+        // No overlap between `json|csv` and `Xml` — SSA001.
+        var source =
+            """
+            public class Consumer
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Xml)] string value) { }
+
+                public void Use()
+                {
+                    //language=json|csv
+                    var payload = "{}";
+                    Consume(payload);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
     public async Task ShortcutAttribute_OptedIn_StringSyntaxWithKnownValue_ReportsSSA007()
     {
         var source =

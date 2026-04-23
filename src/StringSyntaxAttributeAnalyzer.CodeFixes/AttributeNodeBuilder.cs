@@ -88,9 +88,10 @@ static class AttributeNodeBuilder
     // own docs (e.g. `//language=regex`); MismatchAnalyzer's read path is
     // first-character-case-insensitive, so this round-trips cleanly against the BCL
     // PascalCase constants (`Regex`, `Json`, ...).
-    public static SyntaxNode AddLanguageCommentToLocal(LocalDeclarationStatementSyntax local, string value)
+    public static SyntaxNode AddLanguageCommentToLocal(LocalDeclarationStatementSyntax local, params string[] values)
     {
-        var comment = Comment($"// language={ToRiderToken(value)}");
+        var token = string.Join('|', values.Select(ToRiderToken));
+        var comment = Comment($"// language={token}");
         var eol = CarriageReturnLineFeed;
 
         var existingLeading = local.GetLeadingTrivia();

@@ -505,6 +505,61 @@ public class AddStringSyntaxCodeFixProviderTests
     }
 
     [Test]
+    public async Task SSA002_UnionTarget_LocalSource_OffersUnionAndPerValueLanguageComments()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Json", "Csv")]
+                public string FileContents { get; set; }
+            }
+
+            public class Holder
+            {
+                public void Use(Target target)
+                {
+                    var fileContents = "{}";
+                    target.FileContents = fileContents;
+                }
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        await Assert.That(actions.Length).IsEqualTo(3);
+        await Assert.That(actions[0].Title).IsEqualTo("Add //language=json|csv to local 'fileContents'");
+        await Assert.That(actions[1].Title).IsEqualTo("Add //language=json to local 'fileContents'");
+        await Assert.That(actions[2].Title).IsEqualTo("Add //language=csv to local 'fileContents'");
+    }
+
+    [Test]
+    public async Task SSA002_UnionTarget_LocalSource_ApplyUnionLanguageCommentFix()
+    {
+        var source =
+            """
+            public class Target
+            {
+                [UnionSyntax("Json", "Csv")]
+                public string FileContents { get; set; }
+            }
+
+            public class Holder
+            {
+                public void Use(Target target)
+                {
+                    var fileContents = "{}";
+                    target.FileContents = fileContents;
+                }
+            }
+            """;
+
+        var fixedSource = await ApplyFixAtIndex(source, 0);
+
+        await Contains(fixedSource, "// language=json|csv");
+    }
+
+    [Test]
     public async Task SSA002_LocalFix_LowercasesJsonToken()
     {
         var source =
