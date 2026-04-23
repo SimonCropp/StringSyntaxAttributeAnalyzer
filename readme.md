@@ -183,16 +183,22 @@ Locals that never flow into a `[StringSyntax]` target are untouched — `var nam
 
 ## Anonymous-type projections — `//language=<name>` on the member
 
-Anonymous-type members are compiler-synthesised and can't host `[StringSyntax]`, so projections like `.Select(_ => new { _.Tagged })` silently drop the tag by default — passing a tagged source into a `new { … }` shape, or reading the anon member back out, produces no diagnostic.
+Anonymous-type members are compiler-synthesised and can't host `[StringSyntax]`. The analyzer resolves reads of anon members by tracing the instance back to the originating `new { … }` and looking at the member initializer:
 
-Authors who want to preserve the tag can annotate the anon member's initializer with the same `//language=<name>` comment used for locals. The analyzer then treats that member as `Present(value)` on both sides of the projection: the write site is checked against the source's tag, and reads of the anon instance (traced through local declarations, element-returning LINQ, and `Select` projections) surface the comment's value as the effective syntax.
+ 1. If the initializer expression is itself tagged (`[StringSyntax]` property/field, tagged parameter, tagged return), that tag flows through the anon read automatically — no comment required. `.Select(_ => new { _.Tagged }).First().Tagged` behaves the same as `_.Tagged`.
+ 2. Otherwise — the source is a plain string, a rename, or any other untagged expression — the anon member is Unknown by default. Authors can annotate the initializer with the same `//language=<name>` comment used for locals to give it a tag; the analyzer then treats the member as `Present(value)` on both sides of the projection.
+
+A comment on the member always wins over the inherited source tag, so authors can *override* the projected source's syntax when the intent is that the anon holds a different shape (e.g., a pre-serialised payload).
 
 <!-- snippet: AnonymousProjectionLanguageComment -->
 <a id='snippet-AnonymousProjectionLanguageComment'></a>
 ```cs
+// Payload is a plain untagged string — there's nothing on the source for
+// the analyzer to inherit, so a naive projection would flow as Unknown.
+// (If Payload were `[StringSyntax("Json")]`, the tag would already flow
+// through the anon read automatically — no comment required.)
 public class DataRow
 {
-    [StringSyntax("Json")]
     public string Payload { get; set; } = "";
 }
 
@@ -206,9 +212,9 @@ public class AnonProjectionReader
 
     public void Go()
     {
-        // Anonymous-type members can't host [StringSyntax]. Annotate the
-        // member initializer with `//language=<name>` to opt the projection
-        // into validation — the tag flows both ways through the anon instance.
+        // Annotate the anon member initializer with `//language=<name>` to
+        // give the projected value a tag that flows both ways through the
+        // anon instance (write-site validation and read-side propagation).
         var row = Rows.Select(_ => new
         {
             //language=Json
@@ -223,7 +229,7 @@ public class AnonProjectionReader
     }
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L200-L235' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnonymousProjectionLanguageComment' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L200-L238' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnonymousProjectionLanguageComment' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 The read-side trace follows the instance back through: direct `new { … }`, a local whose initializer evaluates to the anon, element-returning LINQ (`.First()` / `.Single()` / their `*Async` counterparts), element-preserving LINQ (`Where`, `Take`, …), and `Select(_ => new { … })`. Anon instances reached via method returns, parameters, or other unresolved expression shapes fall back to the silent default.

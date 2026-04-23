@@ -1642,7 +1642,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 Property.ContainingType.IsAnonymousType: true,
                 Instance: { } anonInstance
             } anonReadRef &&
-            TryResolveAnonymousMemberLanguageComment(anonReadRef, anonInstance, out var anonReadInfo))
+            TryResolveAnonymousMemberRead(anonReadRef, anonInstance, types, linqFlow, conventionsEnabled, out var anonReadInfo))
         {
             return (anonReadRef.Property, anonReadInfo);
         }
@@ -1841,14 +1841,19 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     }
 
     // For a read of `anon.Prop`, find the originating `new { … }` that produced
-    // the anon instance, then check whether the initializer for `Prop` carries a
-    // `//language=X` comment. The instance trace walks await/conversion wrappers,
-    // unwraps locals to their initializer, peels element-returning LINQ
-    // (`.First/.Single/.FirstAsync/…`) and unwraps a `.Select(_ => new { … })`
-    // projection to reach the anon creation.
-    static bool TryResolveAnonymousMemberLanguageComment(
+    // the anon instance and resolve the member's effective syntax. A
+    // `//language=X` comment on the member initializer wins (authoritative
+    // author intent); otherwise the member inherits the tag of the assigned
+    // expression (`_.Tagged` flows through the anon without requiring a
+    // comment). The instance trace walks await/conversion wrappers, unwraps
+    // locals to their initializer, peels element-returning LINQ (sync + async)
+    // and element-preserving LINQ, and unwraps `.Select(_ => new { … })`.
+    static bool TryResolveAnonymousMemberRead(
         IPropertyReferenceOperation anonProp,
         IOperation instance,
+        SyntaxTypes types,
+        LinqFlow linqFlow,
+        bool conventionsEnabled,
         out SyntaxInfo info)
     {
         info = SyntaxInfo.Unknown;
@@ -1870,13 +1875,20 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (!LanguageCommentReader.TryReadFromNode(assignment.Syntax, out var value))
+            if (LanguageCommentReader.TryReadFromNode(assignment.Syntax, out var commentValue))
             {
-                return false;
+                info = BuildCommentInfo(commentValue);
+                return true;
             }
 
-            info = BuildCommentInfo(value);
-            return true;
+            var (_, resolved) = GetSourceInfo(assignment.Value, types, linqFlow, conventionsEnabled);
+            if (resolved.State == SyntaxState.Present)
+            {
+                info = resolved;
+                return true;
+            }
+
+            return false;
         }
 
         return false;

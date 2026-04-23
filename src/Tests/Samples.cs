@@ -199,9 +199,12 @@ public class SyntaxIndex
 
 #region AnonymousProjectionLanguageComment
 
+// Payload is a plain untagged string — there's nothing on the source for
+// the analyzer to inherit, so a naive projection would flow as Unknown.
+// (If Payload were `[StringSyntax("Json")]`, the tag would already flow
+// through the anon read automatically — no comment required.)
 public class DataRow
 {
-    [StringSyntax("Json")]
     public string Payload { get; set; } = "";
 }
 
@@ -215,9 +218,9 @@ public class AnonProjectionReader
 
     public void Go()
     {
-        // Anonymous-type members can't host [StringSyntax]. Annotate the
-        // member initializer with `//language=<name>` to opt the projection
-        // into validation — the tag flows both ways through the anon instance.
+        // Annotate the anon member initializer with `//language=<name>` to
+        // give the projected value a tag that flows both ways through the
+        // anon instance (write-site validation and read-side propagation).
         var row = Rows.Select(_ => new
         {
             //language=Json

@@ -2975,6 +2975,42 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task AnonymousType_PropertyRead_PropagatesTaggedSourceWithoutComment()
+    {
+        // When the projected expression is itself tagged, reading the anon
+        // member carries that tag forward — no `//language=` comment needed.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IEnumerable<Row> Rows { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Use()
+                {
+                    var row = Rows.Select(_ => new { _.Data }).First();
+                    ConsumeRegex(row.Data);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
     public async Task AnonymousType_MemberLanguageComment_MatchesSource_NoDiagnostic()
     {
         // Author annotates the anon-member initializer with `//language=Json` —
