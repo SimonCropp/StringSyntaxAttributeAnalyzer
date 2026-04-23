@@ -3,6 +3,12 @@
 // Optional `prefix=`/`postfix=` follow-on options are ignored — they're renderer
 // hints, irrelevant to syntax identity. Doc:
 // https://www.jetbrains.com/help/rider/Language_Injections.html
+//
+// Pipe-delimited values (e.g. `//language=json|csv`) extend the native form to
+// express a syntax union — the same shape as `[UnionSyntax("Json","Csv")]` on a
+// property/field/parameter. Rider itself only honours the first segment for
+// injection, but the analyzer accepts the whole set so the local can flow into
+// a union-typed target without SSA002.
 
 using System.Diagnostics.CodeAnalysis;
 
@@ -102,7 +108,7 @@ static class LanguageCommentReader
 
             pos = SkipWhitespace(text, pos + 1);
             var start = pos;
-            while (pos < text.Length && IsWordChar(text[pos]))
+            while (pos < text.Length && (IsWordChar(text[pos]) || text[pos] == '|'))
             {
                 pos++;
             }
@@ -112,7 +118,7 @@ static class LanguageCommentReader
                 continue;
             }
 
-            syntax = Normalize(text.Substring(start, pos - start));
+            syntax = NormalizeUnion(text.Substring(start, pos - start));
             return true;
         }
 
@@ -151,4 +157,24 @@ static class LanguageCommentReader
     // without the user having to know the naming history.
     static string Normalize(string raw) =>
         raw.Equals("regexp", StringComparison.OrdinalIgnoreCase) ? "Regex" : raw;
+
+    // Rejoins a pipe-delimited value after normalizing each segment and discarding
+    // empties (so `//language=json|` or `//language=|csv` stay well-formed). Single
+    // values pass through as a plain string.
+    static string NormalizeUnion(string raw)
+    {
+        if (raw.IndexOf('|') < 0)
+        {
+            return Normalize(raw);
+        }
+
+        var parts = raw.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        var normalized = new string[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            normalized[i] = Normalize(parts[i]);
+        }
+
+        return string.Join('|', normalized);
+    }
 }

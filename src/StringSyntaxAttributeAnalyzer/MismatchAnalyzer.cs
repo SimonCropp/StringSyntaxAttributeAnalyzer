@@ -736,6 +736,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             if (LanguageCommentReader.TryRead(local, out var comment))
             {
+                if (comment.IndexOf('|') >= 0)
+                {
+                    return SyntaxInfo.PresentUnion(
+                        [..comment.Split('|', StringSplitOptions.RemoveEmptyEntries)]);
+                }
+
                 return SyntaxInfo.Present(comment);
             }
 
@@ -1321,9 +1327,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return null;
         }
 
-        return position == KvpPosition.Key
-            ? new KvpBinding(info, SyntaxInfo.NotPresent)
-            : new KvpBinding(SyntaxInfo.NotPresent, info);
+        if (position == KvpPosition.Key)
+        {
+            return new(info, SyntaxInfo.NotPresent);
+        }
+
+        return new(SyntaxInfo.NotPresent, info);
     }
 
     // Walks element-preserving LINQ calls back through a KV-shaped stream to

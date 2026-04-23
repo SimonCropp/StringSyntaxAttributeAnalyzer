@@ -74,7 +74,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             // for case-insensitive variants. Unknown values pass through unchanged so
             // custom format strings still emit as literals.
             var values = value
-                .Split('|')
+                .Split('|', StringSplitOptions.RemoveEmptyEntries)
                 .Select(_ => KnownSyntaxConstants.TryGetCanonical(_, out var canonical) ? canonical : _)
                 .ToArray();
 
@@ -146,7 +146,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         SyntaxNode? newTargetNode;
         if (targetNode is LocalDeclarationStatementSyntax localHost)
         {
-            newTargetNode = AttributeNodeBuilder.AddLanguageCommentToLocal(localHost, values[0]);
+            newTargetNode = AttributeNodeBuilder.AddLanguageCommentToLocal(localHost, values);
         }
         else if (values.Length > 1)
         {
@@ -233,6 +233,14 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     static (string Title, string EquivalenceKey) BuildUnionFixMetadata(SyntaxNode? host, string[] values)
     {
         var description = host is null ? "declaration" : HostDescription.Describe(host);
+        if (host is LocalDeclarationStatementSyntax)
+        {
+            var token = string.Join('|', values.Select(AttributeNodeBuilder.ToRiderToken));
+            return (
+                $"Add //language={token} to {description}",
+                $"AddLanguageCommentUnion:{string.Join('|', values)}");
+        }
+
         var argumentList = string.Join(", ", values.Select(AttributeNodeBuilder.FormatArgument));
         var attributeName = AttributeHost.IsMethod(host) ? "ReturnSyntax" : "UnionSyntax";
         return (

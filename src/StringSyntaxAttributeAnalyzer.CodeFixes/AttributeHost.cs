@@ -41,9 +41,9 @@ static class AttributeHost
             LocalFunctionStatementSyntax or
             DelegateDeclarationSyntax;
 
-    // Hosts that can carry [UnionSyntax(...)] / [ReturnSyntax(...)]. Local
-    // declarations use a `// language=` comment instead, which can't express a
-    // union, so they're excluded.
+    // Hosts that can carry [UnionSyntax(...)] / [ReturnSyntax(...)], or — for
+    // locals — a pipe-delimited `// language=a|b` comment that expresses the same
+    // union shape.
     public static bool CanHostUnion(SyntaxNode? host) =>
         host is
             PropertyDeclarationSyntax or
@@ -51,5 +51,6 @@ static class AttributeHost
             ParameterSyntax or
             MethodDeclarationSyntax or
             LocalFunctionStatementSyntax or
-            DelegateDeclarationSyntax;
+            DelegateDeclarationSyntax or
+            LocalDeclarationStatementSyntax;
 }

@@ -1,3 +1,4 @@
+// ReSharper disable ReturnValueOfPureMethodIsNotUsed
 // ReSharper disable UnusedMember.Local
 // ReSharper disable UnusedParameter.Local
 // ReSharper disable ClassNeverInstantiated.Local
@@ -113,7 +114,7 @@ public class RegexConsumer
     public void Go(HtmlBodies bodies) =>
         // SSA001 on the argument: `s` inherits "Html" from bodies.Values, which
         // is then passed into a parameter tagged "Regex".
-        bodies.Values.Select(s => { Consume(s); return s; }).ToList();
+        bodies.Values.Select(_ => { Consume(_); return _; }).ToList();
 }
 
 #endregion
