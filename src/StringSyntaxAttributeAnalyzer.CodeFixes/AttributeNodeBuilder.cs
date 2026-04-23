@@ -84,10 +84,10 @@ static class AttributeNodeBuilder
     }
 
     // Emits the Rider/IntelliJ-compatible `//language=<token>` comment above the
-    // declaration. The value is lowercased to match the convention used in Rider's
-    // own docs (e.g. `//language=regex`); MismatchAnalyzer's read path is
-    // first-character-case-insensitive, so this round-trips cleanly against the BCL
-    // PascalCase constants (`Regex`, `Json`, ...).
+    // declaration. The first character is lowered to match Rider's convention
+    // (e.g. `//language=regex`) and to round-trip against the BCL PascalCase
+    // constants (`Regex`, `Json`, ...) through MismatchAnalyzer's
+    // first-character-case-insensitive compare.
     public static SyntaxNode AddLanguageCommentToLocal(LocalDeclarationStatementSyntax local, params string[] values)
     {
         var token = string.Join('|', values.Select(ToRiderToken));
@@ -110,6 +110,11 @@ static class AttributeNodeBuilder
     // Rider docs spell regex as `regexp`. Normalizing on write means the emitted
     // comment lights up Rider's own highlighting; MismatchAnalyzer's read path maps
     // `regexp` back to `Regex` so the round-trip matches the BCL constant.
+    //
+    // Only the first character is lowered. The analyzer's SingleValueMatches is
+    // first-char-case-insensitive but ordinal beyond that, so lowercasing the whole
+    // value would break round-trip for compound constants like `DateOnlyFormat`
+    // (which would become `dateonlyformat` and no longer match `DateOnlyFormat`).
     public static string ToRiderToken(string value)
     {
         if (value.Equals("Regex", StringComparison.Ordinal))
@@ -117,7 +122,12 @@ static class AttributeNodeBuilder
             return "regexp";
         }
 
-        return value.ToLowerInvariant();
+        if (value.Length == 0 || !char.IsUpper(value[0]))
+        {
+            return value;
+        }
+
+        return char.ToLowerInvariant(value[0]) + value.Substring(1);
     }
 
     // The current-line indent is the trailing whitespace trivia of the leading trivia
