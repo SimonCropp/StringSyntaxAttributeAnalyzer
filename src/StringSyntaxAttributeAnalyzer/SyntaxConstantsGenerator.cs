@@ -241,10 +241,15 @@ public class SyntaxConstantsGenerator :
             ctx.AddSource("Syntax.Types.g.cs", typesBody);
         });
 
-        // Polyfill StringSyntaxAttribute when no referenced assembly exposes it.
+        // Polyfill StringSyntaxAttribute when no referenced assembly exposes it
+        // AND no in-compilation source defines it (e.g. via a source-only NuGet
+        // package that drops the attribute into the consumer's own assembly).
+        // Without the in-compilation check, both definitions would coexist and
+        // every `StringSyntaxAttribute.X` member access in Syntax.Types.g.cs
+        // would fail with CS0229 ambiguity.
         // The BCL ships it on net7+/netstandard2.1; older targets rely on this.
         var stringSyntaxAlreadyVisible = context.CompilationProvider.Select((compilation, _) =>
-            IsTypeVisibleFromReference(compilation, "System.Diagnostics.CodeAnalysis.StringSyntaxAttribute"));
+            IsTypeVisible(compilation, "System.Diagnostics.CodeAnalysis.StringSyntaxAttribute"));
 
         context.RegisterSourceOutput(stringSyntaxAlreadyVisible, (ctx, alreadyVisible) =>
         {
@@ -302,6 +307,28 @@ public class SyntaxConstantsGenerator :
             if (SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, currentAssembly))
             {
                 continue;
+            }
+            if (compilation.IsSymbolAccessibleWithin(type, currentAssembly))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Like IsTypeVisibleFromReference but also returns true when the type is
+    // defined in the current compilation (e.g. contributed by a source-only
+    // NuGet package). Used for polyfill suppression to avoid emitting a second
+    // copy that would collide with the source-only one.
+    static bool IsTypeVisible(Compilation compilation, string metadataName)
+    {
+        var types = compilation.GetTypesByMetadataName(metadataName);
+        var currentAssembly = compilation.Assembly;
+        foreach (var type in types)
+        {
+            if (SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, currentAssembly))
+            {
+                return true;
             }
             if (compilation.IsSymbolAccessibleWithin(type, currentAssembly))
             {

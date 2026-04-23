@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- netstandard2.0 has no BCL StringSyntaxAttribute, so the analyzer's
+         polyfill would normally emit. This project simulates a source-only
+         NuGet package that contributes its own StringSyntaxAttribute into the
+         consumer assembly — the polyfill must detect that and stand down,
+         otherwise Syntax.Types.g.cs hits CS0229. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StringSyntaxAttributeAnalyzer" />
+  </ItemGroup>
+</Project>
