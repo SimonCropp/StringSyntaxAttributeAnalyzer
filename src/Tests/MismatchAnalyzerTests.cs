@@ -2865,6 +2865,222 @@ public class MismatchAnalyzerTests
         await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
+    [Test]
+    public async Task AnonymousType_PropertyInitializer_FromTaggedSource_NoDiagnostic()
+    {
+        // `.Select(_ => new { _.Tagged })` projects a tagged source into an
+        // anonymous-type member. Anon-type properties can't host StringSyntax,
+        // so SSA003 would be unfixable — suppress it.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IEnumerable<Row> Rows { get; set; } = null!;
+
+                public object Project() => Rows.Select(_ => new { _.Data }).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AnonymousType_PropertyRead_NoDiagnostic()
+    {
+        // Reading a property on an anonymous type provides no usable StringSyntax
+        // metadata (anon props can't host the attribute). Treat as Unknown so
+        // SSA002/SSA003 don't fire when the anon-projected value is passed into
+        // a tagged target.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IEnumerable<Row> Rows { get; set; } = null!;
+
+                public void Consume([StringSyntax("Json")] string value) { }
+
+                public void Use()
+                {
+                    var row = Rows.Select(_ => new { _.Data }).First();
+                    Consume(row.Data);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task LocalFromAwaitedAsyncLinqSelect_PropagatesProjectionTag()
+    {
+        // `var x = await source.Select(_ => _.Tagged).SingleAsync();` must carry
+        // the projection's tag into `x`. Stand in for EF Core's
+        // EntityFrameworkQueryableExtensions with a local shim that returns Task<T>.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+            using System.Threading.Tasks;
+
+            public static class AsyncLinq
+            {
+                public static Task<T> SingleAsync<T>(this IQueryable<T> source) => Task.FromResult(default(T)!);
+            }
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IQueryable<Row> Rows { get; set; } = null!;
+
+                public void Consume([StringSyntax("Json")] string value) { }
+
+                public async Task Use()
+                {
+                    var data = await Rows.Select(_ => _.Data).SingleAsync();
+                    Consume(data);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AnonymousType_MemberLanguageComment_MatchesSource_NoDiagnostic()
+    {
+        // Author annotates the anon-member initializer with `//language=Json` —
+        // the tagged source matches, so no diagnostic.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IEnumerable<Row> Rows { get; set; } = null!;
+
+                public object Project() => Rows.Select(_ => new
+                {
+                    //language=Json
+                    _.Data
+                }).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AnonymousType_MemberLanguageComment_MismatchedSource_FiresSSA001()
+    {
+        // Author writes `//language=Regex` but source is [StringSyntax("Json")] —
+        // mismatch should surface SSA001.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IEnumerable<Row> Rows { get; set; } = null!;
+
+                public object Project() => Rows.Select(_ => new
+                {
+                    //language=Regex
+                    _.Data
+                }).First();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
+    public async Task AnonymousType_MemberLanguageComment_PropagatesToRead()
+    {
+        // Reading `upload.Data` should surface the anon-member's `//language=Json`
+        // when the anon flows through a local + element-returning LINQ chain.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IEnumerable<Row> Rows { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Use()
+                {
+                    var upload = Rows.Select(_ => new
+                    {
+                        //language=Json
+                        _.Data
+                    }).First();
+                    ConsumeRegex(upload.Data);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,

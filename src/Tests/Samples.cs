@@ -197,4 +197,69 @@ public class SyntaxIndex
 
 #endregion
 
+#region AnonymousProjectionLanguageComment
+
+public class DataRow
+{
+    [StringSyntax("Json")]
+    public string Payload { get; set; } = "";
+}
+
+public class AnonProjectionReader
+{
+    public IEnumerable<DataRow> Rows { get; set; } = [];
+
+    public void ConsumeJson([StringSyntax("Json")] string value) { }
+
+    public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+    public void Go()
+    {
+        // Anonymous-type members can't host [StringSyntax]. Annotate the
+        // member initializer with `//language=<name>` to opt the projection
+        // into validation — the tag flows both ways through the anon instance.
+        var row = Rows.Select(_ => new
+        {
+            //language=Json
+            _.Payload
+        }).First();
+
+        // No diagnostic — row.Payload carries the annotated Json tag.
+        ConsumeJson(row.Payload);
+
+        // SSA001 — Json flowing into a Regex-tagged parameter.
+        ConsumeRegex(row.Payload);
+    }
+}
+
+#endregion
+
+#region AsyncLinqElementReturn
+
+// Stand-in for EF Core's EntityFrameworkQueryableExtensions. Any element-
+// returning LINQ name + "Async" returning Task<T> / ValueTask<T> participates
+// by shape — no hard-coded list of method names.
+public static class AsyncQueryable
+{
+    public static System.Threading.Tasks.Task<T> SingleAsync<T>(this IQueryable<T> source) =>
+        System.Threading.Tasks.Task.FromResult(source.Single());
+}
+
+public class AsyncProjectionReader
+{
+    public IQueryable<DataRow> Rows { get; set; } = null!;
+
+    public void ConsumeJson([StringSyntax("Json")] string value) { }
+
+    public async System.Threading.Tasks.Task Go()
+    {
+        // The tag on DataRow.Payload flows through .Select(_ => _.Payload) and
+        // survives the await + SingleAsync — `payload` carries Json.
+        var payload = await Rows.Select(_ => _.Payload).SingleAsync();
+        ConsumeJson(payload); // no diagnostic
+    }
+}
+
+#endregion
+
 }
