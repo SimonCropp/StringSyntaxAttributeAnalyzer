@@ -1143,7 +1143,21 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        if (!NameConventions.TryMatch(symbol.Name, out var conventionValue))
+        var name = symbol.Name;
+
+        // Exact name ↔ value match (case-insensitive): a field `ModifiedBy` flowing
+        // into `[StringSyntax("ModifiedBy")]` is self-documenting and never needs
+        // the attribute. Runs regardless of the `name_conventions` opt-in for the
+        // same reason as the convention branch below.
+        foreach (var value in attributedValues)
+        {
+            if (string.Equals(name, value, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (!NameConventions.TryMatch(name, out var conventionValue))
         {
             return false;
         }

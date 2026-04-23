@@ -212,6 +212,45 @@ public class SyntaxConstantsGeneratorTests
         await Assert.That(text.Contains("sealed class RegexAttribute")).IsTrue();
     }
 
+    [Test]
+    public async Task SkipsPolyfill_WhenStringSyntaxAttributeVisibleFromReference()
+    {
+        // The BCL reference set for .NET 10 includes StringSyntaxAttribute, so
+        // polyfill should be suppressed.
+        var runResult = RunGenerator("public class Dummy {}");
+        await Assert.That(runResult.GeneratedTrees.Any(_ => _.FilePath.EndsWith("Syntax.Polyfill.g.cs"))).IsFalse();
+    }
+
+    [Test]
+    public async Task EmitsPolyfill_WhenStringSyntaxAttributeNotVisible()
+    {
+        // Filter out any reference that exposes StringSyntaxAttribute to simulate
+        // an older TFM (netstandard2.0, net472, net6.0).
+        var refsWithoutAttr = TrustedPlatformReferences.All
+            .Where(_ =>
+            {
+                var probe = CSharpCompilation.Create("probe", references: [_]);
+                return probe.GetTypesByMetadataName("System.Diagnostics.CodeAnalysis.StringSyntaxAttribute").Length == 0;
+            })
+            .ToImmutableArray();
+
+        var compilation = CSharpCompilation.Create(
+            "Tests",
+            [CSharpSyntaxTree.ParseText("public class Dummy {}")],
+            refsWithoutAttr,
+            new(OutputKind.DynamicallyLinkedLibrary));
+
+        var driver = CSharpGeneratorDriver.Create(new SyntaxConstantsGenerator());
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+
+        var polyfill = runResult.GeneratedTrees
+            .Single(_ => _.FilePath.EndsWith("Syntax.Polyfill.g.cs"));
+        var text = polyfill.ToString();
+        await Assert.That(text.Contains("namespace System.Diagnostics.CodeAnalysis")).IsTrue();
+        await Assert.That(text.Contains("sealed class StringSyntaxAttribute")).IsTrue();
+        await Assert.That(text.Contains("public const string Json = nameof(Json)")).IsTrue();
+    }
+
     static GeneratorDriverRunResult RunGenerator(string source)
     {
         var compilation = BuildCompilation(source);
