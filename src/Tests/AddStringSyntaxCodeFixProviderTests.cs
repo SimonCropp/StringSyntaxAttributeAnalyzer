@@ -581,6 +581,56 @@ public class AddStringSyntaxCodeFixProviderTests
         await Contains(fixedSource, "// language=json");
     }
 
+    // Compound PascalCase constants like `DateOnlyFormat` must not be fully
+    // lowercased — the analyzer's value compare is first-char-case-insensitive
+    // but ordinal beyond that, so `dateonlyformat` would no longer match
+    // `DateOnlyFormat` on round-trip. Only the first character is lowered.
+    [Test]
+    public async Task SSA002_LocalFix_CompoundTokenPreservesInnerCase()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.DateOnlyFormat)] string value) { }
+
+                public void Use()
+                {
+                    var outputFormat = "dd/MMM/yyyy";
+                    Consume(outputFormat);
+                }
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(fixedSource, "// language=dateOnlyFormat");
+        await Assert.That(fixedSource.Contains("dateonlyformat")).IsFalse();
+    }
+
+    [Test]
+    public async Task SSA002_LocalFix_CompoundTokenTitlePreservesInnerCase()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.DateOnlyFormat)] string value) { }
+
+                public void Use()
+                {
+                    var outputFormat = "dd/MMM/yyyy";
+                    Consume(outputFormat);
+                }
+            }
+            """;
+
+        var actions = await GetCodeActions(source);
+
+        await Assert.That(actions.Length).IsEqualTo(1);
+        await Assert.That(actions[0].Title).IsEqualTo("Add //language=dateOnlyFormat to local 'outputFormat'");
+    }
+
     [Test]
     public async Task SSA003_UnionSource_OffersUnionAndPerValueFixes()
     {
