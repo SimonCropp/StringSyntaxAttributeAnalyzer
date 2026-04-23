@@ -1583,6 +1583,57 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task SourceNameExactlyMatchesTargetValue_SuppressesSSA002()
+    {
+        // A field whose name equals the target's StringSyntax value is
+        // self-documenting — no attribute needed, no SSA002.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("ModifiedBy")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string ModifiedBy = "";
+
+                public void Use(Target target) => target.Consume(ModifiedBy);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TargetNameExactlyMatchesSourceValue_SuppressesSSA003()
+    {
+        // Target parameter named `ModifiedBy` receiving a `[StringSyntax("ModifiedBy")]`
+        // source is already self-documenting on the target side — no SSA003.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume(string ModifiedBy) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntax("ModifiedBy")]
+                public string Value { get; set; } = "";
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task SSA007_StringSyntaxAtReturnTarget_FiresViaReturnAttributesLoop()
     {
         // `[return: StringSyntax("Html")]` is illegal C# (StringSyntaxAttribute's
