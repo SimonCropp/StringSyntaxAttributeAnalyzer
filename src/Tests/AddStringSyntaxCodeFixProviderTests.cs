@@ -482,6 +482,35 @@ public class AddStringSyntaxCodeFixProviderTests
     }
 
     [Test]
+    public async Task SSA002_LocalFix_PreservesBlankLineAboveLocal()
+    {
+        // A blank-line separator above the local must stay *above* the inserted
+        // comment — previously its EOL trivia was pushed below the comment,
+        // leaving a redundant blank line between `// language=X` and the `var`.
+        var source =
+            """
+            public class Holder
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+
+                public void Use()
+                {
+                    System.Console.WriteLine("prelude");
+
+                    var pattern = "[a-z]+";
+                    Consume(pattern);
+                }
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+        var normalized = fixedSource.Replace("\r\n", "\n");
+
+        await Assert.That(normalized).Contains("// language=regexp\n        var pattern");
+        await Assert.That(normalized).DoesNotContain("// language=regexp\n\n");
+    }
+
+    [Test]
     public async Task SSA002_LocalFix_TitleUsesLanguageComment()
     {
         var source =
