@@ -95,13 +95,21 @@ static class AttributeNodeBuilder
         var eol = CarriageReturnLineFeed;
 
         var existingLeading = local.GetLeadingTrivia();
-        var indent = FindCurrentLineIndent(existingLeading);
+        var indentIndex = FindCurrentLineIndentIndex(existingLeading);
 
-        var prefix = indent.IsKind(SyntaxKind.WhitespaceTrivia)
-            ? TriviaList(indent, comment, eol)
-            : TriviaList(comment, eol);
+        // Insert the comment immediately above the `var` line so any pre-existing
+        // blank-line separator in `existingLeading` stays above the comment rather
+        // than sliding between the comment and the local.
+        if (indentIndex >= 0)
+        {
+            var indent = existingLeading[indentIndex];
+            var newLeading = existingLeading
+                .RemoveAt(indentIndex)
+                .AddRange([indent, comment, eol, indent]);
+            return local.WithLeadingTrivia(newLeading);
+        }
 
-        return local.WithLeadingTrivia(prefix.AddRange(existingLeading));
+        return local.WithLeadingTrivia(existingLeading.AddRange([comment, eol]));
     }
 
     public static string FormatArgument(string value) =>
@@ -133,7 +141,7 @@ static class AttributeNodeBuilder
     // The current-line indent is the trailing whitespace trivia of the leading trivia
     // list — i.e. the last whitespace before the token. Earlier whitespace may belong
     // to blank-line gaps between this statement and the previous one.
-    static SyntaxTrivia FindCurrentLineIndent(SyntaxTriviaList trivia)
+    static int FindCurrentLineIndentIndex(SyntaxTriviaList trivia)
     {
         for (var i = trivia.Count - 1; i >= 0; i--)
         {
@@ -141,7 +149,7 @@ static class AttributeNodeBuilder
 
             if (item.IsKind(SyntaxKind.WhitespaceTrivia))
             {
-                return item;
+                return i;
             }
 
             if (item.IsKind(SyntaxKind.EndOfLineTrivia))
@@ -150,6 +158,6 @@ static class AttributeNodeBuilder
             }
         }
 
-        return default;
+        return -1;
     }
 }

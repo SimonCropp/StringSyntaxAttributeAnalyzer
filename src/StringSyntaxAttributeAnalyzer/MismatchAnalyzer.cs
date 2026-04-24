@@ -744,7 +744,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // read of one carries no usable metadata. Return null so GetSyntax
             // maps it to Unknown and SSA002/003 don't fire on values read from
             // `.Select(_ => new { _.Tagged })` projections.
-            IPropertyReferenceOperation prop when prop.Property.ContainingType?.IsAnonymousType == true => null,
+            IPropertyReferenceOperation { Property.ContainingType.IsAnonymousType: true } => null,
             IPropertyReferenceOperation prop => prop.Property,
             IFieldReferenceOperation field => field.Field,
             IParameterReferenceOperation param => param.Parameter,
@@ -2081,8 +2081,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var resultType = invocation.Type;
         if (isAsync)
         {
-            if (resultType is INamedTypeSymbol { IsGenericType: true, TypeArguments.Length: 1 } task &&
-                task.Name is "Task" or "ValueTask")
+            if (resultType is INamedTypeSymbol
+                {
+                    IsGenericType: true,
+                    TypeArguments.Length: 1,
+                    Name: "Task" or "ValueTask"
+                } task)
             {
                 resultType = task.TypeArguments[0];
             }
@@ -2377,7 +2381,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             IDelegateCreationOperation creation => creation.Target.Unwrap(),
             IAnonymousFunctionOperation or IMethodReferenceOperation => selector,
-            _ => (IOperation?)null
+            _ => null
         };
 
         if (target is IMethodReferenceOperation methodRef)
