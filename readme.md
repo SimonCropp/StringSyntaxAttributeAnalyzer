@@ -229,7 +229,7 @@ public class AnonProjectionReader
     }
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L200-L238' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnonymousProjectionLanguageComment' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L207-L245' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnonymousProjectionLanguageComment' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 The read-side trace follows the instance back through: direct `new { … }`, a local whose initializer evaluates to the anon, element-returning LINQ (`.First()` / `.Single()` / their `*Async` counterparts), element-preserving LINQ (`Where`, `Take`, …), and `Select(_ => new { … })`. Anon instances reached via method returns, parameters, or other unresolved expression shapes fall back to the silent default.
@@ -273,9 +273,10 @@ When a record is declared with a primary constructor, `[StringSyntax(...)]` writ
 public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string Pattern);
 
 public void RecordCall(PatternRecord record) =>
-    ConsumeRegexStrict(record.Pattern); // no diagnostic — attribute flows to property
+    // no diagnostic — attribute flows to property
+    ConsumeRegexStrict(record.Pattern);
 ```
-<sup><a href='/src/Tests/Samples.cs#L82-L89' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L88-L96' title='Snippet source file'>snippet source</a> | <a href='#snippet-RecordPrimaryCtorParameter' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 An explicit `[property: StringSyntax(...)]` on the property still wins — if both targets are attributed, the property's own attribute is used.
@@ -310,7 +311,7 @@ public class RegexConsumer
         bodies.Values.Select(_ => { Consume(_); return _; }).ToList();
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L98-L120' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionLinqLambda' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L105-L127' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionLinqLambda' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Only **explicit** `[StringSyntax]` / `[UnionSyntax]` / `[ReturnSyntax]` (and generated shortcut attributes) on a collection-typed declaration participate in element-flow. Name-convention inference is not applied to collection-typed members — a `List<string>` happening to be named `Html` would otherwise spuriously acquire a syntax no caller can change.
@@ -355,7 +356,7 @@ public class HtmlScan
     }
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L122-L141' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionForEach' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L129-L148' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionForEach' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -388,7 +389,7 @@ public class PagedReader
     public void Copy() => Target = Values.TakePage(0, 10).First();
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L143-L167' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionUserExtension' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L150-L174' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionUserExtension' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Lambda-parameter binding applies to any extension method on `IEnumerable<T>` regardless of its return type — so `Action<T>` callbacks and void-returning helpers flow syntax the same way.
@@ -424,7 +425,7 @@ public class TemplateStore
     public void Go() => ConsumeRegex(Bodies[0]);
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L169-L186' title='Snippet source file'>snippet source</a> | <a href='#snippet-DictionaryPositional' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L176-L193' title='Snippet source file'>snippet source</a> | <a href='#snippet-DictionaryPositional' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Sites that surface the tagged position:
@@ -515,9 +516,10 @@ public void ConsumeRegex([StringSyntax(StringSyntaxAttribute.Regex)] string patt
 }
 
 public void FormatMismatchCall(MismatchHolder holder) =>
-    ConsumeRegex(holder.Format); // SSA001
+    // SSA001
+    ConsumeRegex(holder.Format);
 ```
-<sup><a href='/src/Tests/Samples.cs#L11-L26' title='Snippet source file'>snippet source</a> | <a href='#snippet-FormatMismatch' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L11-L27' title='Snippet source file'>snippet source</a> | <a href='#snippet-FormatMismatch' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -538,9 +540,10 @@ public void ConsumeRegexStrict([StringSyntax(StringSyntaxAttribute.Regex)] strin
 }
 
 public void MissingSourceCall(UntypedHolder holder) =>
-    ConsumeRegexStrict(holder.Value); // SSA002
+    // SSA002
+    ConsumeRegexStrict(holder.Value);
 ```
-<sup><a href='/src/Tests/Samples.cs#L28-L42' title='Snippet source file'>snippet source</a> | <a href='#snippet-MissingSourceFormat' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L29-L44' title='Snippet source file'>snippet source</a> | <a href='#snippet-MissingSourceFormat' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 SSA002 is the strongest signal — it catches unvalidated strings flowing into format-typed slots. It is the most likely of the three to surface real bugs.
@@ -564,9 +567,10 @@ public void ConsumeAnyString(string value)
 }
 
 public void DroppedFormatCall(RegexHolder holder) =>
-    ConsumeAnyString(holder.Pattern); // SSA003
+    // SSA003
+    ConsumeAnyString(holder.Pattern);
 ```
-<sup><a href='/src/Tests/Samples.cs#L44-L59' title='Snippet source file'>snippet source</a> | <a href='#snippet-DroppedFormat' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L46-L62' title='Snippet source file'>snippet source</a> | <a href='#snippet-DroppedFormat' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 SSA003 is the weakest signal — discarding format metadata is usually benign. Consider disabling it in projects where it produces noise.
@@ -578,9 +582,10 @@ SSA003 is the weakest signal — discarding format metadata is usually benign. C
 <a id='snippet-MatchingFormat'></a>
 ```cs
 public void MatchingCall(RegexHolder holder) =>
-    ConsumeRegexStrict(holder.Pattern); // no diagnostic
+    // no diagnostic
+    ConsumeRegexStrict(holder.Pattern);
 ```
-<sup><a href='/src/Tests/Samples.cs#L61-L66' title='Snippet source file'>snippet source</a> | <a href='#snippet-MatchingFormat' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L64-L70' title='Snippet source file'>snippet source</a> | <a href='#snippet-MatchingFormat' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -596,9 +601,10 @@ A literal has no backing symbol to inspect, so the analyzer cannot claim the att
 <a id='snippet-LiteralSource'></a>
 ```cs
 public void LiteralCall() =>
-    ConsumeRegexStrict("[a-z]+"); // no diagnostic — literal is Unknown
+    // no diagnostic — literal is Unknown
+    ConsumeRegexStrict("[a-z]+");
 ```
-<sup><a href='/src/Tests/Samples.cs#L68-L73' title='Snippet source file'>snippet source</a> | <a href='#snippet-LiteralSource' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L72-L78' title='Snippet source file'>snippet source</a> | <a href='#snippet-LiteralSource' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 #### Other non-resolvable expressions
@@ -609,9 +615,10 @@ Concatenations, interpolations, and `await` expressions don't reduce to a single
 <a id='snippet-OtherUnknownSource'></a>
 ```cs
 public void ConcatCall(string suffix) =>
-    ConsumeRegexStrict("[a-z]" + suffix); // no diagnostic — concatenation is Unknown
+    // no diagnostic — concatenation is Unknown
+    ConsumeRegexStrict("[a-z]" + suffix);
 ```
-<sup><a href='/src/Tests/Samples.cs#L75-L80' title='Snippet source file'>snippet source</a> | <a href='#snippet-OtherUnknownSource' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L80-L86' title='Snippet source file'>snippet source</a> | <a href='#snippet-OtherUnknownSource' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 

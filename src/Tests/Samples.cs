@@ -21,7 +21,8 @@ public class Samples
     }
 
     public void FormatMismatchCall(MismatchHolder holder) =>
-        ConsumeRegex(holder.Format); // SSA001
+        // SSA001
+        ConsumeRegex(holder.Format);
 
     #endregion
 
@@ -37,7 +38,8 @@ public class Samples
     }
 
     public void MissingSourceCall(UntypedHolder holder) =>
-        ConsumeRegexStrict(holder.Value); // SSA002
+        // SSA002
+        ConsumeRegexStrict(holder.Value);
 
     #endregion
 
@@ -54,28 +56,32 @@ public class Samples
     }
 
     public void DroppedFormatCall(RegexHolder holder) =>
-        ConsumeAnyString(holder.Pattern); // SSA003
+        // SSA003
+        ConsumeAnyString(holder.Pattern);
 
     #endregion
 
     #region MatchingFormat
 
     public void MatchingCall(RegexHolder holder) =>
-        ConsumeRegexStrict(holder.Pattern); // no diagnostic
+        // no diagnostic
+        ConsumeRegexStrict(holder.Pattern);
 
     #endregion
 
     #region LiteralSource
 
     public void LiteralCall() =>
-        ConsumeRegexStrict("[a-z]+"); // no diagnostic — literal is Unknown
+        // no diagnostic — literal is Unknown
+        ConsumeRegexStrict("[a-z]+");
 
     #endregion
 
     #region OtherUnknownSource
 
     public void ConcatCall(string suffix) =>
-        ConsumeRegexStrict("[a-z]" + suffix); // no diagnostic — concatenation is Unknown
+        // no diagnostic — concatenation is Unknown
+        ConsumeRegexStrict("[a-z]" + suffix);
 
     #endregion
 
@@ -84,7 +90,8 @@ public class Samples
     public record PatternRecord([StringSyntax(StringSyntaxAttribute.Regex)] string Pattern);
 
     public void RecordCall(PatternRecord record) =>
-        ConsumeRegexStrict(record.Pattern); // no diagnostic — attribute flows to property
+        // no diagnostic — attribute flows to property
+        ConsumeRegexStrict(record.Pattern);
 
     #endregion
 }
@@ -244,8 +251,8 @@ public class AnonProjectionReader
 // by shape — no hard-coded list of method names.
 public static class AsyncQueryable
 {
-    public static System.Threading.Tasks.Task<T> SingleAsync<T>(this IQueryable<T> source) =>
-        System.Threading.Tasks.Task.FromResult(source.Single());
+    public static Task<T> SingleAsync<T>(this IQueryable<T> source) =>
+        Task.FromResult(source.Single());
 }
 
 public class AsyncProjectionReader
@@ -254,12 +261,13 @@ public class AsyncProjectionReader
 
     public void ConsumeJson([StringSyntax("Json")] string value) { }
 
-    public async System.Threading.Tasks.Task Go()
+    public async Task Go()
     {
         // The tag on DataRow.Payload flows through .Select(_ => _.Payload) and
         // survives the await + SingleAsync — `payload` carries Json.
         var payload = await Rows.Select(_ => _.Payload).SingleAsync();
-        ConsumeJson(payload); // no diagnostic
+        // no diagnostic
+        ConsumeJson(payload);
     }
 }
 
