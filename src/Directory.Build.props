@@ -2,7 +2,7 @@
 <Project>
   <PropertyGroup>
     <NoWarn>CS1591;NU1608;NU1109</NoWarn>
-    <Version>1.3.4</Version>
+    <Version>1.3.5</Version>
     <LangVersion>preview</LangVersion>
     <AssemblyVersion>1.0.0</AssemblyVersion>
     <Description>Roslyn analyzer that reports mismatches between StringSyntaxAttribute values at assignment, argument, and return sites.</Description>
