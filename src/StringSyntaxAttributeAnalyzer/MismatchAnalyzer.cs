@@ -1012,16 +1012,19 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // consumer opts in with `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. The
     // attribute is generated per-assembly (internal), so we match by fully-qualified
     // name rather than symbol identity — same as UnionSyntax/ReturnSyntax.
+    // Matches a shortcut attribute (e.g. `[Html]`) by simple name regardless of
+    // namespace. The canonical shortcuts live in `StringSyntaxAttributeAnalyzer`
+    // (emitted when `EmitShortcutAttributes=true`), but consumers sometimes hand-roll
+    // an `HtmlAttribute` of their own — typically before discovering this analyzer,
+    // or because a sibling library (e.g. Parchment) recognises `[Html]` by simple
+    // name and they want the marker without opting into the source generator.
+    // Recognising both keeps mismatch analysis (SSA001/SSA002 etc.) consistent
+    // whichever flavour is used.
     static bool TryMatchShortcutAttribute(AttributeData attribute, out string value)
     {
         value = "";
         var type = attribute.AttributeClass;
         if (type is null)
-        {
-            return false;
-        }
-
-        if (!IsInShortcutNamespace(type))
         {
             return false;
         }

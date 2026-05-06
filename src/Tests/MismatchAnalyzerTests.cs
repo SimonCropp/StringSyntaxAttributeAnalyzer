@@ -1644,6 +1644,47 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task UserDefinedShortcutAttribute_OutsideCanonicalNamespace_RecognisedForMismatch()
+    {
+        // A user-defined `HtmlAttribute` in any namespace (not the canonical
+        // `StringSyntaxAttributeAnalyzer` one) should still be recognised as the
+        // `Html` shortcut. Sibling libraries like Parchment match by simple name
+        // and consumers sometimes hand-roll the marker — without this the
+        // analyzer silently misses real mismatches between the two attribute styles.
+        var source =
+            """
+            namespace MyApp;
+
+            [System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Parameter)]
+            public sealed class HtmlAttribute : System.Attribute;
+
+            [System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Parameter)]
+            public sealed class RegexAttribute : System.Attribute;
+
+            public class Target
+            {
+                public void Consume([Regex] string value) { }
+            }
+
+            public class Holder
+            {
+                [Html]
+                public string Value { get; set; } = "";
+
+                public void Use(Target target) => target.Consume(Value);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+        var message = diagnostics[0].GetMessage();
+        await Assert.That(message.Contains("Html")).IsTrue();
+        await Assert.That(message.Contains("Regex")).IsTrue();
+    }
+
+    [Test]
     public async Task StringSyntax_NameMatchesConvention_WithoutConventionsOptIn_NoSSA008()
     {
         // Plain `[StringSyntax("Html")]` without the name_conventions opt-in should
