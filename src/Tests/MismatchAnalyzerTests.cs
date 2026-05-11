@@ -3052,6 +3052,36 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task Coalesce_PropagatesLhsTag()
+    {
+        // `x ?? y` carries x's tag — RHS is conventionally an untagged
+        // fallback like "", so the LHS is the value-bearing side for
+        // syntax-tag purposes.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string? Data { get; set; }
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Use() => ConsumeRegex(Row.Data ?? "");
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
     public async Task AnonymousType_PropertyRead_PropagatesTaggedSourceThroughForeach()
     {
         // Anon-typed elements iterated via `foreach` carry their projected

@@ -28,10 +28,11 @@ static class Extensions
         };
     }
 
-    // Peels off conversions and `await` so the resolver sees the value-producing
+    // Peels off conversions, `await`, and `??` so the resolver sees the value-producing
     // operation underneath. An `await task` result carries the syntax of the method
     // that produced the task, so unwrapping lets `[return: StringSyntax]` on an async
-    // method flow through the await.
+    // method flow through the await. For `x ?? y`, the LHS is the tag-bearing side
+    // (RHS is typically an untagged fallback like `""`).
     public static IOperation Unwrap(this IOperation operation)
     {
         while (true)
@@ -43,6 +44,9 @@ static class Extensions
                     continue;
                 case IAwaitOperation await:
                     operation = await.Operation;
+                    continue;
+                case ICoalesceOperation coalesce:
+                    operation = coalesce.Value;
                     continue;
                 default:
                     return operation;

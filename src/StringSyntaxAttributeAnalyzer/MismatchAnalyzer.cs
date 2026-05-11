@@ -1677,8 +1677,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         // Scalar path: existing symbol → attributes resolution, plus collection-tag
-        // suppression for members typed as single-T enumerables.
-        var symbol = GetSymbol(operation);
+        // suppression for members typed as single-T enumerables. Resolve from the
+        // unwrapped operation so that conversions, `await`, and `??` peel away
+        // before the symbol lookup.
+        var symbol = GetSymbol(unwrapped);
         var info = GetSyntax(symbol, types, conventionsEnabled);
         info = SuppressCollectionTag(GetDeclaredType(symbol), info);
         return (symbol, info);
