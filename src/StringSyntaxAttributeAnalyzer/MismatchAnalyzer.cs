@@ -1898,9 +1898,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     }
 
     // Walks instance → anon creation through: direct creation, local-init
-    // chasing, element-returning LINQ/async, element-preserving LINQ, and
-    // .Select projecting to an anon creation. Returns null if the origin can't
-    // be pinned down syntactically (method return, parameter, etc.).
+    // chasing, foreach iter local → collection, element-returning LINQ/async,
+    // element-preserving LINQ, and .Select projecting to an anon creation.
+    // Returns null if the origin can't be pinned down syntactically (method
+    // return, parameter, etc.).
     static IAnonymousObjectCreationOperation? FindOriginatingAnonymousCreation(IOperation operation)
     {
         var visited = 0;
@@ -1915,17 +1916,21 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             if (operation is ILocalReferenceOperation localRef)
             {
-                var reference = localRef.Local.DeclaringSyntaxReferences.FirstOrDefault();
-                if (reference?.GetSyntax() is not VariableDeclaratorSyntax
-                    {
-                        Initializer.Value: { } initializerSyntax
-                    } ||
-                    localRef.SemanticModel?.GetOperation(initializerSyntax) is not { } initOp)
+                var syntax = localRef.Local.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+                var sourceSyntax = syntax switch
+                {
+                    VariableDeclaratorSyntax { Initializer.Value: { } init } => init,
+                    ForEachStatementSyntax forEach => forEach.Expression,
+                    _ => null
+                };
+
+                if (sourceSyntax is null ||
+                    localRef.SemanticModel?.GetOperation(sourceSyntax) is not { } sourceOp)
                 {
                     return null;
                 }
 
-                operation = initOp;
+                operation = sourceOp;
                 continue;
             }
 

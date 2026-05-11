@@ -3052,6 +3052,46 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task AnonymousType_PropertyRead_PropagatesTaggedSourceThroughForeach()
+    {
+        // Anon-typed elements iterated via `foreach` carry their projected
+        // member tags forward — the loop variable resolves back to the
+        // originating `new { … }` through the foreach collection.
+        var source =
+            """
+            using System.Collections.Generic;
+            using System.Linq;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IEnumerable<Row> Rows { get; set; } = null!;
+
+                public void ConsumeRegex([StringSyntax("Regex")] string value) { }
+
+                public void Use()
+                {
+                    var rows = Rows.Select(_ => new { _.Data }).ToList();
+                    foreach (var row in rows)
+                    {
+                        ConsumeRegex(row.Data);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
+    }
+
+    [Test]
     public async Task AnonymousType_MemberLanguageComment_MatchesSource_NoDiagnostic()
     {
         // Author annotates the anon-member initializer with `//language=Json` —
