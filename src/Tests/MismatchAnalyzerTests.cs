@@ -3228,6 +3228,276 @@ public class MismatchAnalyzerTests
         await Assert.That(diagnostics[0].Id).IsEqualTo("SSA001");
     }
 
+    [Test]
+    public async Task MissingReturnAnnotation_ExpressionBodyTaggedProperty_FiresSSA009()
+    {
+        // The body returns a value that resolves to a Present tag, but the method
+        // signature has no return annotation — SSA009 fires on the method identifier.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                public string Get() => Row.Data;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA009");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Json")).IsTrue();
+        await Assert.That(diagnostics[0].Properties["StringSyntaxValue"]).IsEqualTo("Json");
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_AsyncLinqProjection_FiresSSA009()
+    {
+        // The MinistersManager shape: `data.X.Where(...).Select(_ => _.Tagged).SingleAsync()`
+        // returns a tag-bearing string but the enclosing method's signature is bare
+        // `Task<string>` — SSA009 surfaces the laundering at the API boundary.
+        var source =
+            """
+            using System.Linq;
+            using System.Threading.Tasks;
+
+            public static class AsyncLinq
+            {
+                public static Task<T> SingleAsync<T>(this IQueryable<T> source) => Task.FromResult(default(T)!);
+            }
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public IQueryable<Row> Rows { get; set; } = null!;
+
+                public Task<string> Get() =>
+                    Rows.Select(_ => _.Data).SingleAsync();
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA009");
+        await Assert.That(diagnostics[0].Properties["StringSyntaxValue"]).IsEqualTo("Json");
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_ReturnSyntaxPresent_NoFire()
+    {
+        // Method already carries `[ReturnSyntax("Json")]` — no SSA009.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                [ReturnSyntax("Json")]
+                public string Get() => Row.Data;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_ReturnAttributeTargetPresent_NoFire()
+    {
+        // `[return: StringSyntax("Json")]` is recognized via `GetReturnTypeAttributes`
+        // and suppresses SSA009. The widened attribute usage is created via the
+        // canonical Syntax attribute, which the generator emits with broad targets.
+        var source =
+            """
+            using System;
+            using System.Diagnostics.CodeAnalysis;
+
+            [AttributeUsage(AttributeTargets.Property | AttributeTargets.ReturnValue)]
+            public sealed class MarkdownAttribute : Attribute { }
+
+            public class Row
+            {
+                [Markdown]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                [return: Markdown]
+                public string Get() => Row.Data;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_UntaggedLiteral_NoFire()
+    {
+        // String literals resolve to Unknown — no tagged returns, so SSA009 doesn't fire.
+        var source =
+            """
+            public class Holder
+            {
+                public string Get() => "hello";
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_MixedTaggedAndKnownUntagged_NoFire()
+    {
+        // One branch returns a Present-tagged property; the other returns a
+        // resolvable-but-untagged property (NotPresent). The body contradicts a
+        // uniform tag, so SSA009 stays quiet — within-body mismatch is SSA001/2/3's
+        // job to flag.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Tagged { get; set; } = null!;
+                public string Untagged { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+                public bool Flag { get; set; }
+
+                public string Get()
+                {
+                    if (Flag) return Row.Tagged;
+                    return Row.Untagged;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.All(_ => _.Id != "SSA009")).IsTrue();
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_DisagreeingTags_NoFire()
+    {
+        // Two tagged returns with different values — no single tag would correctly
+        // annotate the method's return, so SSA009 stays quiet.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string A { get; set; } = null!;
+
+                [StringSyntax("Regex")]
+                public string B { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+                public bool Flag { get; set; }
+
+                public string Get()
+                {
+                    if (Flag) return Row.A;
+                    return Row.B;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.All(_ => _.Id != "SSA009")).IsTrue();
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_LambdaReturningTagged_NoFire()
+    {
+        // SSA009 only targets ordinary methods and local functions — a lambda
+        // returning a tagged value is a value, not a declared API, and shouldn't
+        // surface the diagnostic.
+        var source =
+            """
+            using System;
+
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                public Func<string> Maker() => () => Row.Data;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.All(_ => _.Id != "SSA009")).IsTrue();
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_LocalFunctionReturningTagged_Fires()
+    {
+        // Local functions ARE in scope — their signature can carry [ReturnSyntax].
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                public string Use()
+                {
+                    string Inner() => Row.Data;
+                    return Inner();
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Any(_ => _.Id == "SSA009")).IsTrue();
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,
