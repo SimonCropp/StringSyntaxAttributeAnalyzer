@@ -1655,10 +1655,10 @@ public class MismatchAnalyzerTests
             """
             namespace MyApp;
 
-            [System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Parameter)]
+            [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Property | System.AttributeTargets.Parameter)]
             public sealed class HtmlAttribute : System.Attribute;
 
-            [System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Parameter)]
+            [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Property | System.AttributeTargets.Parameter)]
             public sealed class RegexAttribute : System.Attribute;
 
             public class Target
@@ -3332,7 +3332,7 @@ public class MismatchAnalyzerTests
             using System;
             using System.Diagnostics.CodeAnalysis;
 
-            [AttributeUsage(AttributeTargets.Property | AttributeTargets.ReturnValue)]
+            [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.ReturnValue)]
             public sealed class MarkdownAttribute : Attribute { }
 
             public class Row

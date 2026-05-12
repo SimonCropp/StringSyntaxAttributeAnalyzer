@@ -680,10 +680,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 }
 
                 var containing = ResolveContainingMethod(returnOp, owner);
-                if (containing is null)
-                {
-                    continue;
-                }
 
                 if (!perMethod.TryGetValue(containing, out var acc))
                 {
@@ -750,7 +746,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             var allAgree = true;
             foreach (var info in acc.Collected)
             {
-                if (info.Values.Length != 1 || info.Values[0] != value)
+                if (info.Values.Length != 1 ||
+                    info.Values[0] != value)
                 {
                     allAgree = false;
                     break;
@@ -768,7 +765,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // Returns nested in a lambda, local function, or query clause belong to that
     // inner symbol, not the outer method's body. Walk operation parents until we
     // hit a function-like operation; if none, the return belongs to the outer.
-    static IMethodSymbol? ResolveContainingMethod(IOperation returnOp, IMethodSymbol outer)
+    static IMethodSymbol ResolveContainingMethod(IOperation returnOp, IMethodSymbol outer)
     {
         for (var cur = returnOp.Parent; cur is not null; cur = cur.Parent)
         {
@@ -776,11 +773,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             {
                 return anon.Symbol;
             }
+
             if (cur is ILocalFunctionOperation local)
             {
                 return local.Symbol;
             }
         }
+
         return outer;
     }
 
@@ -797,18 +796,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return true;
         }
 
-        if (returnType is INamedTypeSymbol
-            {
-                IsGenericType: true,
-                TypeArguments.Length: 1,
-                Name: "Task" or "ValueTask"
-            } task &&
-            task.TypeArguments[0].SpecialType == SpecialType.System_String)
+        return returnType is INamedTypeSymbol
         {
-            return true;
-        }
-
-        return false;
+            IsGenericType: true,
+            TypeArguments: [{ SpecialType: SpecialType.System_String }],
+            Name: "Task" or "ValueTask"
+        };
     }
 
     static void ReportMissingReturnAnnotation(
