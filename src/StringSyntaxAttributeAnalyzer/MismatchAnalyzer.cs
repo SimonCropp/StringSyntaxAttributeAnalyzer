@@ -69,6 +69,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    static readonly DiagnosticDescriptor missingReturnAnnotationRule = new(
+        id: "SSA009",
+        title: "Method returns a tagged value but has no return annotation",
+        messageFormat: "Method returns a value tagged \"{0}\" but has no return annotation",
+        category: "StringSyntaxAttribute.Usage",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
     [
         formatMismatchRule,
@@ -78,7 +86,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         equalityMissingFormatRule,
         singletonUnionRule,
         redundantStringSyntaxRule,
-        redundantByConventionRule
+        redundantByConventionRule,
+        missingReturnAnnotationRule
     ];
 
     public override void Initialize(AnalysisContext context)
@@ -171,6 +180,16 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             start.RegisterSyntaxNodeAction(
                 _ => AnalyzeLocalForRedundantByConvention(_, conventions),
                 SyntaxKind.LocalDeclarationStatement);
+
+            // SSA009: a method body whose returns resolve to a Present-tagged
+            // source, but the method itself carries no return annotation, is
+            // silently laundering the tag at the API boundary. Drive this off
+            // operation blocks so we see every return statement (expression-body
+            // included) and decide once per method. Local functions get bucketed
+            // separately by ResolveContainingMethod since Roslyn doesn't fire a
+            // separate block callback for them.
+            start.RegisterOperationBlockAction(
+                _ => AnalyzeBlockForMissingReturnAnnotation(_, types, linqFlow));
         });
     }
 
@@ -608,6 +627,221 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 messageArgs: singleValue));
             return;
         }
+    }
+
+    // SSA009 — a method whose body returns a Present-tagged value but whose own
+    // signature carries no [return: <Shortcut>] / [ReturnSyntax] / [Markdown]-style
+    // annotation is silently dropping the tag at the API boundary. The diagnostic
+    // fires on the method identifier with the resolved tag in the property bag, so
+    // the existing AddStringSyntaxCodeFixProvider method/ReturnSyntax path applies
+    // the fix.
+    //
+    // Conservative firing rules to keep noise down:
+    //   * Only ordinary methods / local functions (skip ctors, accessors, lambdas).
+    //   * Only scalar string-returning shapes: `string`, `Task<string>`,
+    //     `ValueTask<string>`. Collection-element and IAsyncEnumerable shapes are
+    //     deliberately out of scope for the first iteration.
+    //   * Skip if the method already carries a return tag (method-level attribute
+    //     OR `[return: ...]` — same lookups GetSyntax uses).
+    //   * Fire only when every return whose source we can resolve agrees on a
+    //     single tag. A `NotPresent` source (known-untagged member) suppresses,
+    //     since that's a within-body mismatch SSA001/002/003 already covers and
+    //     adding a return tag would be wrong. `Unknown` sources (literals,
+    //     opaque invocations) are silently tolerated — they don't contradict a
+    //     tagged return.
+    static void AnalyzeBlockForMissingReturnAnnotation(
+        OperationBlockAnalysisContext blockContext,
+        SyntaxTypes types,
+        LinqFlow linqFlow)
+    {
+        if (blockContext.OwningSymbol is not IMethodSymbol owner)
+        {
+            return;
+        }
+
+        if (owner.MethodKind is not (MethodKind.Ordinary or MethodKind.LocalFunction))
+        {
+            return;
+        }
+
+        // Local functions don't get a separate block callback — they're nested
+        // operations inside the enclosing method's block. Bucket returns by the
+        // method symbol they actually belong to so a tagged local function
+        // surfaces its own SSA009 even when the outer method has untagged returns.
+        var perMethod = new Dictionary<IMethodSymbol, ReturnAccumulator>(SymbolEqualityComparer.Default);
+
+        foreach (var rootOp in blockContext.OperationBlocks)
+        {
+            foreach (var op in rootOp.DescendantsAndSelf())
+            {
+                if (op is not IReturnOperation { ReturnedValue: { } returnedValue } returnOp)
+                {
+                    continue;
+                }
+
+                var containing = ResolveContainingMethod(returnOp, owner);
+                if (containing is null)
+                {
+                    continue;
+                }
+
+                if (!perMethod.TryGetValue(containing, out var acc))
+                {
+                    acc = new();
+                    perMethod[containing] = acc;
+                    if (acc.Contradicted)
+                    {
+                        continue;
+                    }
+                }
+
+                if (acc.Contradicted)
+                {
+                    continue;
+                }
+
+                var (_, info) = GetSourceInfo(returnedValue, types, linqFlow, conventionsEnabled: false);
+                if (info.State == SyntaxState.Present)
+                {
+                    acc.Collected.Add(info);
+                }
+                else if (info.State == SyntaxState.NotPresent)
+                {
+                    acc.Contradicted = true;
+                }
+            }
+        }
+
+        foreach (var kvp in perMethod)
+        {
+            var method = kvp.Key;
+            var acc = kvp.Value;
+            if (acc.Contradicted || acc.Collected.Count == 0)
+            {
+                continue;
+            }
+
+            if (method.MethodKind is not (MethodKind.Ordinary or MethodKind.LocalFunction))
+            {
+                continue;
+            }
+
+            if (!ReturnTypeIsTaggableScalar(method.ReturnType))
+            {
+                continue;
+            }
+
+            if (GetSyntaxFromAttributes(method.GetAttributes(), types).State == SyntaxState.Present)
+            {
+                continue;
+            }
+
+            if (GetSyntaxFromAttributes(method.GetReturnTypeAttributes(), types).State == SyntaxState.Present)
+            {
+                continue;
+            }
+
+            if (acc.Collected[0].Values.Length != 1)
+            {
+                continue;
+            }
+
+            var value = acc.Collected[0].Values[0];
+            var allAgree = true;
+            foreach (var info in acc.Collected)
+            {
+                if (info.Values.Length != 1 || info.Values[0] != value)
+                {
+                    allAgree = false;
+                    break;
+                }
+            }
+            if (!allAgree)
+            {
+                continue;
+            }
+
+            ReportMissingReturnAnnotation(blockContext, method, value);
+        }
+    }
+
+    // Returns nested in a lambda, local function, or query clause belong to that
+    // inner symbol, not the outer method's body. Walk operation parents until we
+    // hit a function-like operation; if none, the return belongs to the outer.
+    static IMethodSymbol? ResolveContainingMethod(IOperation returnOp, IMethodSymbol outer)
+    {
+        for (var cur = returnOp.Parent; cur is not null; cur = cur.Parent)
+        {
+            if (cur is IAnonymousFunctionOperation anon)
+            {
+                return anon.Symbol;
+            }
+            if (cur is ILocalFunctionOperation local)
+            {
+                return local.Symbol;
+            }
+        }
+        return outer;
+    }
+
+    sealed class ReturnAccumulator
+    {
+        public List<SyntaxInfo> Collected { get; } = [];
+        public bool Contradicted { get; set; }
+    }
+
+    static bool ReturnTypeIsTaggableScalar(ITypeSymbol returnType)
+    {
+        if (returnType.SpecialType == SpecialType.System_String)
+        {
+            return true;
+        }
+
+        if (returnType is INamedTypeSymbol
+            {
+                IsGenericType: true,
+                TypeArguments.Length: 1,
+                Name: "Task" or "ValueTask"
+            } task &&
+            task.TypeArguments[0].SpecialType == SpecialType.System_String)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    static void ReportMissingReturnAnnotation(
+        OperationBlockAnalysisContext context,
+        IMethodSymbol method,
+        string value)
+    {
+        var declRef = method.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declRef is null)
+        {
+            return;
+        }
+
+        var declSyntax = declRef.GetSyntax(context.CancellationToken);
+        var identifierLoc = declSyntax switch
+        {
+            MethodDeclarationSyntax m => m.Identifier.GetLocation(),
+            LocalFunctionStatementSyntax l => l.Identifier.GetLocation(),
+            _ => null
+        };
+        if (identifierLoc is null)
+        {
+            return;
+        }
+
+        var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, value);
+        var diagnostic = Diagnostic.Create(
+            missingReturnAnnotationRule,
+            identifierLoc,
+            additionalLocations: [declSyntax.GetLocation()],
+            properties: properties,
+            messageArgs: value);
+        context.ReportDiagnostic(diagnostic);
     }
 
     static void AnalyzeBinaryOperator(
