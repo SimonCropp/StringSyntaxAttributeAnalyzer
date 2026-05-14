@@ -3565,6 +3565,134 @@ public class MismatchAnalyzerTests
         await Assert.That(diagnostics.Any(_ => _.Id == "SSA009")).IsTrue();
     }
 
+    [Test]
+    public async Task MissingReturnAnnotation_ExpressionBodiedPropertyGetter_Fires()
+    {
+        // Property getter laundering case: `=> Reason` returns a Present-tagged
+        // value but the property declaration has no [StringSyntax] of its own.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Html")]
+                public string Reason { get; set; } = null!;
+
+                public string ReasonDisplay => Reason;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA009");
+        await Assert.That(diagnostics[0].GetMessage().Contains("Property")).IsTrue();
+        await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
+        await Assert.That(diagnostics[0].Properties["StringSyntaxValue"]).IsEqualTo("Html");
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_GetAccessorBody_Fires()
+    {
+        // Same shape as the expression-bodied case but using a full `get { return X; }`
+        // accessor with a sibling setter — only the getter should drive SSA009.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+                string backing = "";
+
+                public string Display
+                {
+                    get { return Row.Data; }
+                    set { backing = value; }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA009");
+        await Assert.That(diagnostics[0].Properties["StringSyntaxValue"]).IsEqualTo("Json");
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_PropertyAlreadyTagged_NoFire()
+    {
+        // The property carries [StringSyntax("Json")] itself — the tag is not being
+        // dropped at the boundary, so SSA009 stays quiet.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                [StringSyntax("Json")]
+                public string Display => Row.Data;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.All(_ => _.Id != "SSA009")).IsTrue();
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_AutoProperty_NoFire()
+    {
+        // Auto-properties have no body returns at all — nothing to launder, no fire.
+        var source =
+            """
+            public class Holder
+            {
+                public string Display { get; set; } = "";
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.All(_ => _.Id != "SSA009")).IsTrue();
+    }
+
+    [Test]
+    public async Task MissingReturnAnnotation_Indexer_NoFire()
+    {
+        // Indexers don't have a plain identifier and `[StringSyntax]` on the indexer
+        // declaration is awkward to anchor — explicitly out of scope.
+        var source =
+            """
+            public class Row
+            {
+                [StringSyntax("Json")]
+                public string Data { get; set; } = null!;
+            }
+
+            public class Holder
+            {
+                public Row Row { get; set; } = null!;
+
+                public string this[int i] => Row.Data;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.All(_ => _.Id != "SSA009")).IsTrue();
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,

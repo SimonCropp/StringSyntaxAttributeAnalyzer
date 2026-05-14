@@ -71,8 +71,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static readonly DiagnosticDescriptor missingReturnAnnotationRule = new(
         id: "SSA009",
-        title: "Method returns a tagged value but has no return annotation",
-        messageFormat: "Method returns a value tagged \"{0}\" but has no return annotation",
+        title: "Member returns a tagged value but has no return annotation",
+        messageFormat: "{0} returns a value tagged \"{1}\" but has no return annotation",
         category: "StringSyntaxAttribute.Usage",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -181,13 +181,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 _ => AnalyzeLocalForRedundantByConvention(_, conventions),
                 SyntaxKind.LocalDeclarationStatement);
 
-            // SSA009: a method body whose returns resolve to a Present-tagged
-            // source, but the method itself carries no return annotation, is
-            // silently laundering the tag at the API boundary. Drive this off
-            // operation blocks so we see every return statement (expression-body
-            // included) and decide once per method. Local functions get bucketed
-            // separately by ResolveContainingMethod since Roslyn doesn't fire a
-            // separate block callback for them.
+            // SSA009: a member body whose returns resolve to a Present-tagged
+            // source, but the member itself carries no return / property
+            // annotation, is silently laundering the tag at the API boundary.
+            // Drive this off operation blocks so we see every return statement
+            // (expression-body included) and decide once per member. Local
+            // functions get bucketed separately by ResolveContainingMethod
+            // since Roslyn doesn't fire a separate block callback for them;
+            // property getters fire as their own block with MethodKind.PropertyGet.
             start.RegisterOperationBlockAction(
                 _ => AnalyzeBlockForMissingReturnAnnotation(_, types, linqFlow));
         });
@@ -629,20 +630,25 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    // SSA009 — a method whose body returns a Present-tagged value but whose own
+    // SSA009 — a member whose body returns a Present-tagged value but whose own
     // signature carries no [return: <Shortcut>] / [ReturnSyntax] / [Markdown]-style
-    // annotation is silently dropping the tag at the API boundary. The diagnostic
-    // fires on the method identifier with the resolved tag in the property bag, so
-    // the existing AddStringSyntaxCodeFixProvider method/ReturnSyntax path applies
-    // the fix.
+    // annotation (or, for property getters, no [StringSyntax]-style attribute on
+    // the property itself) is silently dropping the tag at the API boundary. The
+    // diagnostic fires on the member identifier with the resolved tag in the
+    // property bag, so the existing AddStringSyntaxCodeFixProvider path applies
+    // the fix — `[ReturnSyntax]` for methods, `[StringSyntax]` (or shortcut) for
+    // properties.
     //
     // Conservative firing rules to keep noise down:
-    //   * Only ordinary methods / local functions (skip ctors, accessors, lambdas).
+    //   * Only ordinary methods / local functions / property getters (skip ctors,
+    //     setters, lambdas, indexers).
     //   * Only scalar string-returning shapes: `string`, `Task<string>`,
     //     `ValueTask<string>`. Collection-element and IAsyncEnumerable shapes are
     //     deliberately out of scope for the first iteration.
-    //   * Skip if the method already carries a return tag (method-level attribute
-    //     OR `[return: ...]` — same lookups GetSyntax uses).
+    //   * Skip if the member already carries a tag — for methods that's a
+    //     method-level attribute or `[return: ...]`; for properties that's a
+    //     property-level attribute (the natural place for `[StringSyntax]` per its
+    //     AttributeUsage).
     //   * Fire only when every return whose source we can resolve agrees on a
     //     single tag. A `NotPresent` source (known-untagged member) suppresses,
     //     since that's a within-body mismatch SSA001/002/003 already covers and
@@ -659,7 +665,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (owner.MethodKind is not (MethodKind.Ordinary or MethodKind.LocalFunction))
+        if (owner.MethodKind is not (MethodKind.Ordinary or MethodKind.LocalFunction or MethodKind.PropertyGet))
         {
             return;
         }
@@ -717,22 +723,46 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (method.MethodKind is not (MethodKind.Ordinary or MethodKind.LocalFunction))
+            // For property getters the attribute home is the IPropertySymbol —
+            // `[StringSyntax]` lives on the property per its AttributeUsage, not
+            // on the synthesized getter method. Indexers are out of scope: their
+            // declaration syntax (IndexerDeclarationSyntax) has no plain
+            // identifier to anchor the diagnostic on.
+            ISymbol attributeHolder;
+            ITypeSymbol returnType;
+            if (method.MethodKind == MethodKind.PropertyGet)
+            {
+                if (method.AssociatedSymbol is not IPropertySymbol { IsIndexer: false } property)
+                {
+                    continue;
+                }
+                attributeHolder = property;
+                returnType = property.Type;
+            }
+            else if (method.MethodKind is MethodKind.Ordinary or MethodKind.LocalFunction)
+            {
+                attributeHolder = method;
+                returnType = method.ReturnType;
+            }
+            else
             {
                 continue;
             }
 
-            if (!ReturnTypeIsTaggableScalar(method.ReturnType))
+            if (!ReturnTypeIsTaggableScalar(returnType))
             {
                 continue;
             }
 
-            if (GetSyntaxFromAttributes(method.GetAttributes(), types).State == SyntaxState.Present)
+            if (GetSyntaxFromAttributes(attributeHolder.GetAttributes(), types).State == SyntaxState.Present)
             {
                 continue;
             }
 
-            if (GetSyntaxFromAttributes(method.GetReturnTypeAttributes(), types).State == SyntaxState.Present)
+            // `[return: ...]` only applies to methods/local functions — for
+            // property getters the property's own attributes are authoritative.
+            if (attributeHolder is IMethodSymbol asMethod &&
+                GetSyntaxFromAttributes(asMethod.GetReturnTypeAttributes(), types).State == SyntaxState.Present)
             {
                 continue;
             }
@@ -758,7 +788,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            ReportMissingReturnAnnotation(blockContext, method, value);
+            ReportMissingReturnAnnotation(blockContext, attributeHolder, value);
         }
     }
 
@@ -806,23 +836,24 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void ReportMissingReturnAnnotation(
         OperationBlockAnalysisContext context,
-        IMethodSymbol method,
+        ISymbol symbol,
         string value)
     {
-        var declRef = method.DeclaringSyntaxReferences.FirstOrDefault();
+        var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
         if (declRef is null)
         {
             return;
         }
 
         var declSyntax = declRef.GetSyntax(context.CancellationToken);
-        var identifierLoc = declSyntax switch
+        var (identifierLoc, memberKind) = declSyntax switch
         {
-            MethodDeclarationSyntax m => m.Identifier.GetLocation(),
-            LocalFunctionStatementSyntax l => l.Identifier.GetLocation(),
-            _ => null
+            MethodDeclarationSyntax m => (m.Identifier.GetLocation(), "Method"),
+            LocalFunctionStatementSyntax l => (l.Identifier.GetLocation(), "Method"),
+            PropertyDeclarationSyntax p => (p.Identifier.GetLocation(), "Property"),
+            _ => ((Location?)null, (string?)null)
         };
-        if (identifierLoc is null)
+        if (identifierLoc is null || memberKind is null)
         {
             return;
         }
@@ -833,7 +864,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             identifierLoc,
             additionalLocations: [declSyntax.GetLocation()],
             properties: properties,
-            messageArgs: value);
+            messageArgs: [memberKind, value]);
         context.ReportDiagnostic(diagnostic);
     }
 
