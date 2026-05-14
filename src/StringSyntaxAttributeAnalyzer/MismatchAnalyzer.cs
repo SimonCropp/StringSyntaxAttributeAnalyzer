@@ -1361,6 +1361,16 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
+            // `[UnionSyntax(..., "Text", ...)]` declares that the slot also accepts
+            // plain text. An untagged source IS plain text — adding [StringSyntax]
+            // wouldn't make it more correct, just noisier. Scoped to unions (>1
+            // value) so a strict `[StringSyntax("Text")]` still fires SSA002.
+            if (target.Values.Length > 1 &&
+                ContainsTextOption(target.Values))
+            {
+                return;
+            }
+
             // Fix site is the source symbol's declaration: add [StringSyntax] to a
             // field/property/parameter, or [ReturnSyntax] to a method.
             context.ReportDiagnostic(
@@ -1402,6 +1412,21 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     DescribeSymbol(targetSymbol),
                     source));
         }
+    }
+
+    // True when one of the union options is "Text" (case-folded first char, same
+    // rule SyntaxValueMatcher uses elsewhere). Used to gate the SSA002 suppression
+    // for `[UnionSyntax(..., "Text", ...)]` targets.
+    static bool ContainsTextOption(ImmutableArray<string> values)
+    {
+        foreach (var value in values)
+        {
+            if (SyntaxValueMatcher.SingleValuesMatch(value, "Text"))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Suppresses SSA002/SSA003/SSA005 when the unattributed side's symbol name

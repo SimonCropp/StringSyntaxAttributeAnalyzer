@@ -779,6 +779,73 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task UnionSyntax_WithText_AcceptsUntaggedSource()
+    {
+        // `[UnionSyntax("Html","Text")]` declares the slot also accepts plain text,
+        // so an untagged source flowing in is fine — no SSA002.
+        var source =
+            """
+            public class Holder
+            {
+                public string Description { get; set; }
+
+                public static void Consume([UnionSyntax("Html", "Text")] string value) { }
+
+                public void Use() => Consume(Description);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task UnionSyntax_WithoutText_UntaggedSourceFiresSSA002()
+    {
+        // A union without a Text option is still strict — SSA002 fires.
+        var source =
+            """
+            public class Holder
+            {
+                public string Description { get; set; }
+
+                public static void Consume([UnionSyntax("Html", "Xml")] string value) { }
+
+                public void Use() => Consume(Description);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
+    }
+
+    [Test]
+    public async Task StringSyntaxText_UntaggedSourceFiresSSA002()
+    {
+        // The lenient behaviour is scoped to unions — a single `[StringSyntax("Text")]`
+        // is still strict, so an untagged source fires SSA002.
+        var source =
+            """
+            public class Holder
+            {
+                public string Description { get; set; }
+
+                public static void Consume([StringSyntax("Text")] string value) { }
+
+                public void Use() => Consume(Description);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Id).IsEqualTo("SSA002");
+    }
+
+    [Test]
     public async Task UnionSyntax_SingleOption_FiresSSA006()
     {
         var source =
