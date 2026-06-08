@@ -273,8 +273,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             messageArgs: canonical));
     }
 
-    static string FoldShortcutKey(string name) =>
-        name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name.Substring(1);
+    static string FoldShortcutKey(string name)
+    {
+        if (name.Length == 0)
+        {
+            return name;
+        }
+
+        return char.ToLowerInvariant(name[0]) + name.Substring(1);
+    }
 
     static void AnalyzeSymbolForRedundantByConvention(
         SymbolAnalysisContext context,
@@ -302,7 +309,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // AnalyzeLocalForRedundantByConvention.
         if (context.Symbol is IFieldSymbol &&
             declaration.GetSyntax(context.CancellationToken)
-                is VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax { Variables.Count: > 1 } })
+                is VariableDeclaratorSyntax
+                {
+                    Parent: VariableDeclarationSyntax
+                    {
+                        Variables.Count: > 1
+                    }
+                })
         {
             return;
         }
@@ -665,7 +678,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        if (owner.MethodKind is not (MethodKind.Ordinary or MethodKind.LocalFunction or MethodKind.PropertyGet))
+        if (owner.MethodKind is not (
+            MethodKind.Ordinary or
+            MethodKind.LocalFunction or
+            MethodKind.PropertyGet))
         {
             return;
         }
@@ -718,7 +734,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             var method = kvp.Key;
             var acc = kvp.Value;
-            if (acc.Contradicted || acc.Collected.Count == 0)
+            if (acc.Contradicted ||
+                acc.Collected.Count == 0)
             {
                 continue;
             }
@@ -732,14 +749,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             ITypeSymbol returnType;
             if (method.MethodKind == MethodKind.PropertyGet)
             {
-                if (method.AssociatedSymbol is not IPropertySymbol { IsIndexer: false } property)
+                if (method.AssociatedSymbol is
+                    not IPropertySymbol { IsIndexer: false } property)
                 {
                     continue;
                 }
                 attributeHolder = property;
                 returnType = property.Type;
             }
-            else if (method.MethodKind is MethodKind.Ordinary or MethodKind.LocalFunction)
+            else if (method.MethodKind is
+                     MethodKind.Ordinary or
+                     MethodKind.LocalFunction)
             {
                 attributeHolder = method;
                 returnType = method.ReturnType;
@@ -757,7 +777,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // Present or an explicit `[StringSyntax("*")]` (Any) both count as already
             // annotated — the author has stated the return syntax (or that any is
             // acceptable), so don't demand a return tag.
-            if (GetSyntaxFromAttributes(attributeHolder.GetAttributes(), types).State is SyntaxState.Present or SyntaxState.Any)
+            if (GetSyntaxFromAttributes(attributeHolder.GetAttributes(), types).State is
+                SyntaxState.Present or
+                SyntaxState.Any)
             {
                 continue;
             }
@@ -765,7 +787,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // `[return: ...]` only applies to methods/local functions — for
             // property getters the property's own attributes are authoritative.
             if (attributeHolder is IMethodSymbol asMethod &&
-                GetSyntaxFromAttributes(asMethod.GetReturnTypeAttributes(), types).State is SyntaxState.Present or SyntaxState.Any)
+                GetSyntaxFromAttributes(asMethod.GetReturnTypeAttributes(), types).State is
+                    SyntaxState.Present or
+                    SyntaxState.Any)
             {
                 continue;
             }
@@ -854,7 +878,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             MethodDeclarationSyntax m => (m.Identifier.GetLocation(), "Method"),
             LocalFunctionStatementSyntax l => (l.Identifier.GetLocation(), "Method"),
             PropertyDeclarationSyntax p => (p.Identifier.GetLocation(), "Property"),
-            _ => ((Location?)null, (string?)null)
+            _ => (null, null)
         };
         if (identifierLoc is null || memberKind is null)
         {
