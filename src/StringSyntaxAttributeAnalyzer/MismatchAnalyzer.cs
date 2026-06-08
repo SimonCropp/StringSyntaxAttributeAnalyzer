@@ -754,7 +754,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (GetSyntaxFromAttributes(attributeHolder.GetAttributes(), types).State == SyntaxState.Present)
+            // Present or an explicit `[StringSyntax("*")]` (Any) both count as already
+            // annotated — the author has stated the return syntax (or that any is
+            // acceptable), so don't demand a return tag.
+            if (GetSyntaxFromAttributes(attributeHolder.GetAttributes(), types).State is SyntaxState.Present or SyntaxState.Any)
             {
                 continue;
             }
@@ -762,7 +765,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // `[return: ...]` only applies to methods/local functions — for
             // property getters the property's own attributes are authoritative.
             if (attributeHolder is IMethodSymbol asMethod &&
-                GetSyntaxFromAttributes(asMethod.GetReturnTypeAttributes(), types).State == SyntaxState.Present)
+                GetSyntaxFromAttributes(asMethod.GetReturnTypeAttributes(), types).State is SyntaxState.Present or SyntaxState.Any)
             {
                 continue;
             }
@@ -890,9 +893,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // Unknown side (literal, local, concatenation, await) — suppress. Comparing to
         // a literal is common and fine; the analyzer can't infer intent from an opaque
         // expression. Method invocations are NotPresent (fixable via [ReturnSyntax]),
-        // not Unknown.
-        if (leftInfo.State == SyntaxState.Unknown ||
-            rightInfo.State == SyntaxState.Unknown)
+        // not Unknown. An explicit `[StringSyntax("*")]` wildcard (Any) likewise
+        // accepts any syntax, so a comparison against it can never be a mismatch.
+        if (leftInfo.State is SyntaxState.Unknown or SyntaxState.Any ||
+            rightInfo.State is SyntaxState.Unknown or SyntaxState.Any)
         {
             return;
         }
@@ -1062,7 +1066,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         var info = GetSyntaxFromAttributes(symbol.GetAttributes(), types);
-        if (info.State == SyntaxState.Present)
+        // Present and Any are both authoritative author intent — return immediately so
+        // neither the method-return fallback, the record-parameter fallback, nor name-
+        // convention promotion can override an explicit `[StringSyntax("*")]`.
+        if (info.State is SyntaxState.Present or SyntaxState.Any)
         {
             return info;
         }
@@ -1074,7 +1081,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (symbol is IMethodSymbol method)
         {
             var returnInfo = GetSyntaxFromAttributes(method.GetReturnTypeAttributes(), types);
-            if (returnInfo.State == SyntaxState.Present)
+            if (returnInfo.State is SyntaxState.Present or SyntaxState.Any)
             {
                 return returnInfo;
             }
@@ -1339,6 +1346,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         if (source.State == SyntaxState.Unknown ||
             target.State == SyntaxState.Unknown)
+        {
+            return;
+        }
+
+        // A `[StringSyntax("*")]` wildcard on either side accepts any syntax — no
+        // mismatch (SSA001), no missing source (SSA002), no dropped format (SSA003).
+        if (source.State == SyntaxState.Any ||
+            target.State == SyntaxState.Any)
         {
             return;
         }

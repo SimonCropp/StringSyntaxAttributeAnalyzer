@@ -132,6 +132,11 @@ public class SyntaxConstantsGeneratorTests
         var generatedNames = syntaxClass.Members
             .OfType<FieldDeclarationSyntax>()
             .SelectMany(_ => _.Declaration.Variables.Select(_ => _.Identifier.Text))
+            // `Any` is the wildcard sentinel: its value is "*", not its name, and the
+            // codefix never emits `Syntax.Any` (the wildcard suppresses the very
+            // diagnostics that drive the codefix). So it is deliberately absent from
+            // KnownSyntaxConstants — exclude it from the name-parity check.
+            .Where(_ => _ != "Any")
             .ToImmutableHashSet();
 
         var missing = generatedNames.Except(KnownSyntaxConstants.Names);

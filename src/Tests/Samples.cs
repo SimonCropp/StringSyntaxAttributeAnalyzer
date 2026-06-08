@@ -94,6 +94,14 @@ public class Samples
         ConsumeRegexStrict(record.Pattern);
 
     #endregion
+
+    #region AnySyntax
+
+    public static void Verify([StringSyntax("*")] string target)
+    {
+    }
+
+    #endregion
 }
 
 namespace TaggedCollectionSamples

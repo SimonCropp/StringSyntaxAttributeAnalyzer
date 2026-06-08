@@ -229,6 +229,141 @@ public class MismatchAnalyzerTests
     }
 
     [Test]
+    public async Task AnyWildcard_TaggedSourceToWildcardParameter_NoSSA003()
+    {
+        // The `[StringSyntax("*")]` wildcard means "accepts any syntax" — passing a
+        // tagged value into it must not fire SSA003 (this is the Verify(...) case).
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("*")] string value) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                public void Use(Target target) => target.Consume(Pattern);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AnyWildcard_BareSourceToWildcardParameter_NoSSA002()
+    {
+        // Critical: the wildcard must NOT be modelled as a Present tag with value "*",
+        // or a bare (untagged) source flowing into it would spuriously fire SSA002.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("*")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Raw { get; set; }
+
+                public void Use(Target target) => target.Consume(Raw);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AnyWildcard_WildcardSourceToTaggedTarget_NoDiagnostic()
+    {
+        // The wildcard is symmetric — a value declared `[StringSyntax("*")]` matches
+        // any target, so neither SSA001 nor SSA002 fires when it flows into a tagged slot.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+
+            public class Holder
+            {
+                [StringSyntax("*")]
+                public string Anything { get; set; }
+
+                public void Use(Target target) => target.Consume(Anything);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AnyWildcard_Equality_NoDiagnostic()
+    {
+        // A `==`/`!=` comparison against a wildcard can never be a mismatch, so no
+        // SSA004/SSA005.
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Regex)]
+                public string Pattern { get; set; }
+
+                [StringSyntax("*")]
+                public string Anything { get; set; }
+
+                public bool Check() => Pattern == Anything;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AnyWildcard_CrossAssemblyTaggedReturn_NoSSA003()
+    {
+        // Mirrors the real Verify scenario: a referenced library exposes
+        // `Verify([StringSyntax("*")] string)` (read from metadata), and the consumer
+        // passes a `[ReturnSyntax]`-tagged method result into it.
+        var library =
+            """
+            namespace Lib;
+
+            public static class Verifier
+            {
+                public static void Verify([StringSyntax("*")] string target) { }
+            }
+            """;
+
+        var consumer =
+            """
+            using Lib;
+
+            public class Tests
+            {
+                [ReturnSyntax("Markdown")]
+                static string BuildBody() => "# heading";
+
+                public void Run() => Verifier.Verify(BuildBody());
+            }
+            """;
+
+        var diagnostics = await GetCrossAssemblyDiagnostics(library, consumer);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task StringLiteralSource_NoDiagnostic()
     {
         var source =

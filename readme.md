@@ -119,6 +119,31 @@ Two values are *compatible* when their option sets overlap on at least one entry
 A `[UnionSyntax("x")]` with a single option is always a mistake — use `[StringSyntax("x")]`. SSA006 flags it and suggests a fix.
 
 
+## `[StringSyntax("*")]` — accepts any syntax
+
+Some APIs are deliberately syntax-agnostic: snapshot testers (`Verify(target)`), loggers, and other passthrough/serialization sinks accept a string of *any* syntax and shouldn't pull a format tag off whatever flows in. Tag such a slot with the wildcard value `"*"`:
+
+<!-- snippet: AnySyntax -->
+<a id='snippet-AnySyntax'></a>
+```cs
+public static void Verify([StringSyntax("*")] string target)
+{
+}
+```
+<sup><a href='/src/Tests/Samples.cs#L98-L104' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnySyntax' title='Start of snippet'>anchor</a></sup>
+<!-- endSnippet -->
+
+When the generator's global usings are in scope the named constant `Syntax.Any` reads more clearly than the bare literal:
+
+```cs
+public static void Verify([StringSyntax(Syntax.Any)] string target)
+{
+}
+```
+
+A `"*"` on **either** side of an assignment, argument, initializer, or `==`/`!=` comparison matches everything, so none of SSA001/SSA002/SSA003/SSA004/SSA005 fire for that slot — regardless of whether the other side is tagged, bare, or a union. Unlike a real syntax value, it never demands a tag on the opposite side (a plain unattributed string flowing into `[StringSyntax("*")]` is fine, not an SSA002). The wildcard is read from metadata too, so a library can ship `[StringSyntax("*")]` on its public surface and consumers get the suppression automatically.
+
+
 ## Analyzed Sites
 
 Diagnostics fire on:
@@ -229,7 +254,7 @@ public class AnonProjectionReader
     }
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L207-L245' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnonymousProjectionLanguageComment' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L215-L253' title='Snippet source file'>snippet source</a> | <a href='#snippet-AnonymousProjectionLanguageComment' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 The read-side trace follows the instance back through: direct `new { … }`, a local whose initializer evaluates to the anon, element-returning LINQ (`.First()` / `.Single()` / their `*Async` counterparts), element-preserving LINQ (`Where`, `Take`, …), and `Select(_ => new { … })`. Anon instances reached via method returns, parameters, or other unresolved expression shapes fall back to the silent default.
@@ -311,7 +336,7 @@ public class RegexConsumer
         bodies.Values.Select(_ => { Consume(_); return _; }).ToList();
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L105-L127' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionLinqLambda' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L113-L135' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionLinqLambda' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Only **explicit** `[StringSyntax]` / `[UnionSyntax]` / `[ReturnSyntax]` (and generated shortcut attributes) on a collection-typed declaration participate in element-flow. Name-convention inference is not applied to collection-typed members — a `List<string>` happening to be named `Html` would otherwise spuriously acquire a syntax no caller can change.
@@ -356,7 +381,7 @@ public class HtmlScan
     }
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L129-L148' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionForEach' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L137-L156' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionForEach' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 
@@ -389,7 +414,7 @@ public class PagedReader
     public void Copy() => Target = Values.TakePage(0, 10).First();
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L150-L174' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionUserExtension' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L158-L182' title='Snippet source file'>snippet source</a> | <a href='#snippet-TaggedCollectionUserExtension' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Lambda-parameter binding applies to any extension method on `IEnumerable<T>` regardless of its return type — so `Action<T>` callbacks and void-returning helpers flow syntax the same way.
@@ -425,7 +450,7 @@ public class TemplateStore
     public void Go() => ConsumeRegex(Bodies[0]);
 }
 ```
-<sup><a href='/src/Tests/Samples.cs#L176-L193' title='Snippet source file'>snippet source</a> | <a href='#snippet-DictionaryPositional' title='Start of snippet'>anchor</a></sup>
+<sup><a href='/src/Tests/Samples.cs#L184-L201' title='Snippet source file'>snippet source</a> | <a href='#snippet-DictionaryPositional' title='Start of snippet'>anchor</a></sup>
 <!-- endSnippet -->
 
 Sites that surface the tagged position:
