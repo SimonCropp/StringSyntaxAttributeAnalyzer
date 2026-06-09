@@ -13,7 +13,13 @@
 
     public static SyntaxInfo Unknown { get; } = new(SyntaxState.Unknown, []);
     public static SyntaxInfo NotPresent { get; } = new(SyntaxState.NotPresent, []);
-    public static SyntaxInfo Present(string value) => new(SyntaxState.Present, [value]);
+
+    // The `[StringSyntax("*")]` wildcard. Carries no values — Any never participates
+    // in value matching; it short-circuits to "no diagnostic" wherever it appears.
+    public static SyntaxInfo Any { get; } = new(SyntaxState.Any, []);
+
+    public static SyntaxInfo Present(string value) =>
+        SyntaxValueMatcher.IsAnySentinel(value) ? Any : new(SyntaxState.Present, [value]);
     public static SyntaxInfo PresentUnion(ImmutableArray<string> values) =>
-        new(SyntaxState.Present, values);
+        SyntaxValueMatcher.ContainsAnySentinel(values) ? Any : new(SyntaxState.Present, values);
 }

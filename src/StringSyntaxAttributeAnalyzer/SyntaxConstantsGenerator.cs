@@ -98,6 +98,16 @@ public class SyntaxConstantsGenerator :
         [DebuggerNonUserCode]
         static class Syntax
         {
+            /// <summary>
+            /// Wildcard syntax: marks a field, parameter, property, or return value as
+            /// accepting a value of <em>any</em> syntax. Use on passthrough or
+            /// serialization APIs (snapshot testers, loggers, <c>string.Format</c>-style
+            /// sinks) that don't care which syntax flows through — e.g.
+            /// <c>[StringSyntax(Syntax.Any)]</c>. StringSyntaxAttributeAnalyzer suppresses
+            /// SSA001/SSA002/SSA003/SSA004/SSA005 on any slot tagged with it.
+            /// </summary>
+            public const string Any = "*";
+
             /// <summary>The syntax identifier for strings containing composite formats for string formatting.</summary>
             public const string CompositeFormat = StringSyntaxAttribute.CompositeFormat;
 

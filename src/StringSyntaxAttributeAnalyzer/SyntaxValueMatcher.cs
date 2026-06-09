@@ -4,6 +4,33 @@
 // when the intersection is non-empty.
 static class SyntaxValueMatcher
 {
+    // The wildcard syntax value. `[StringSyntax("*")]` (or any annotation whose
+    // value set includes "*") marks a slot as accepting a value of ANY syntax —
+    // used by passthrough/serialization APIs (snapshot testers, loggers) that
+    // don't care which syntax flows through. Mapped to SyntaxState.Any at info-
+    // construction time so it never reaches value comparison as a literal.
+    public const string AnySentinel = "*";
+
+    public static bool IsAnySentinel(string? value) => value == AnySentinel;
+
+    public static bool ContainsAnySentinel(ImmutableArray<string> values)
+    {
+        if (values.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (IsAnySentinel(value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // First character is compared case-insensitively so `"json"` and `"Json"` are
     // equivalent; the BCL constants (`Regex`, `Json`, `Xml`, `DateTimeFormat`, …) are
     // PascalCase and we want lowercase variants (Rider-style `//language=json`) to
