@@ -2074,19 +2074,76 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             _ => null
         };
 
-    // If `param` is a single-parameter LINQ-style lambda (e.g. `Where`, `Select`,
-    // `Any` body, or any extension method on IEnumerable<T> accepting a Func<T,..>),
-    // and the enclosing invocation's receiver is a collection carrying an element
-    // syntax, bind the lambda parameter to that element syntax. This is what lets
-    // `docs.Any(d => d == literal)` resolve `d` without requiring an attribute on
-    // the lambda parameter — attributes aren't even legal inside expression trees
-    // (CS8972), so inference is the only way IQueryable predicates work.
+    // The collection a single-parameter LINQ-style lambda's element parameter is
+    // bound to — the receiver of `Where`, `Select`, `Any`, or any extension method
+    // on IEnumerable<T> accepting a Func<T,..>. `param` must be the lambda's first
+    // parameter, TSource in every IEnumerable<T> extension shape. Index overloads
+    // (Select/Where with int) take TSource as parameter 0. Multi-source shapes like
+    // Zip / SelectMany with an intermediate collection aren't handled in this pass.
     //
     // The gate is shape-based rather than name-based: any extension whose first
     // parameter is IEnumerable<T> / array participates, so third-party helpers
     // (MoreLINQ, EF .Include, custom paging) flow syntax the same way built-in
     // LINQ does. Element-returning calls (First/Single/...) are kept on a closed
     // allowlist because their semantic is specific; see TryResolveLinqElementReturn.
+    //
+    // Both the tag path (a receiver carrying an element syntax) and the
+    // anonymous-creation path (a receiver projected from `new { … }`) enter through
+    // here, so a lambda parameter resolves against exactly one definition of what it
+    // iterates.
+    static IOperation? GetLinqLambdaReceiver(IParameterReferenceOperation param)
+    {
+        if (param.Parameter.ContainingSymbol is not IMethodSymbol
+            {
+                MethodKind: MethodKind.LambdaMethod
+            } lambdaMethod)
+        {
+            return null;
+        }
+
+        if (param.Parameter.Ordinal != 0 ||
+            lambdaMethod.Parameters.Length is 0 or > 2)
+        {
+            return null;
+        }
+
+        var anonymous = FindEnclosingAnonymousFunction(param);
+        if (anonymous is null)
+        {
+            return null;
+        }
+
+        var invocation = FindEnclosingLinqInvocation(anonymous);
+        if (invocation is null)
+        {
+            return null;
+        }
+
+        if (!IsEnumerableShapeExtension(invocation.TargetMethod))
+        {
+            return null;
+        }
+
+        var receiver = GetLinqReceiver(invocation);
+        if (receiver is null)
+        {
+            return null;
+        }
+
+        var element = receiver.Type.TryGetEnumerableElementType();
+        if (element is null ||
+            !SymbolEqualityComparer.Default.Equals(element, param.Parameter.Type))
+        {
+            return null;
+        }
+
+        return receiver;
+    }
+
+    // Bind a LINQ lambda parameter to the element syntax its receiver carries. This
+    // is what lets `docs.Any(d => d == literal)` resolve `d` without an attribute on
+    // the lambda parameter — attributes aren't even legal inside expression trees
+    // (CS8972), so inference is the only way IQueryable predicates work.
     static bool TryResolveLambdaParameterFromLinq(
         IParameterReferenceOperation param,
         SyntaxTypes types,
@@ -2095,50 +2152,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         info = SyntaxInfo.Unknown;
 
-        if (param.Parameter.ContainingSymbol is not IMethodSymbol
-            {
-                MethodKind: MethodKind.LambdaMethod
-            } lambdaMethod)
-        {
-            return false;
-        }
-
-        // Only bind the lambda's first parameter — TSource in every IEnumerable<T>
-        // extension shape. Index overloads (Select/Where with int) take TSource as
-        // parameter 0. Multi-source shapes like Zip / SelectMany with an
-        // intermediate collection aren't handled in this pass.
-        if (param.Parameter.Ordinal != 0 ||
-            lambdaMethod.Parameters.Length is 0 or > 2)
-        {
-            return false;
-        }
-
-        var anonymous = FindEnclosingAnonymousFunction(param);
-        if (anonymous is null)
-        {
-            return false;
-        }
-
-        var invocation = FindEnclosingLinqInvocation(anonymous);
-        if (invocation is null)
-        {
-            return false;
-        }
-
-        if (!IsEnumerableShapeExtension(invocation.TargetMethod))
-        {
-            return false;
-        }
-
-        var receiver = GetLinqReceiver(invocation);
+        var receiver = GetLinqLambdaReceiver(param);
         if (receiver is null)
-        {
-            return false;
-        }
-
-        var element = receiver.Type.TryGetEnumerableElementType();
-        if (element is null ||
-            !SymbolEqualityComparer.Default.Equals(element, param.Parameter.Type))
         {
             return false;
         }
@@ -2225,7 +2240,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // chasing, foreach iter local → collection, element-returning LINQ/async,
     // element-preserving LINQ, and .Select projecting to an anon creation.
     // Returns null if the origin can't be pinned down syntactically (method
-    // return, parameter, etc.).
+    // return, non-lambda parameter, etc.).
     static IAnonymousObjectCreationOperation? FindOriginatingAnonymousCreation(IOperation operation)
     {
         var visited = 0;
@@ -2255,6 +2270,22 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 }
 
                 operation = sourceOp;
+                continue;
+            }
+
+            // `rows.Select(row => … row.Member …)` — the lambda parameter stands
+            // for one element of the receiver, so the creation behind the receiver
+            // is the creation behind the parameter. Following the receiver rather
+            // than stopping here is what lets a projection be consumed by a
+            // Select/Where lambda instead of a foreach.
+            if (operation is IParameterReferenceOperation paramRef)
+            {
+                if (GetLinqLambdaReceiver(paramRef) is not { } lambdaSource)
+                {
+                    return null;
+                }
+
+                operation = lambdaSource;
                 continue;
             }
 
