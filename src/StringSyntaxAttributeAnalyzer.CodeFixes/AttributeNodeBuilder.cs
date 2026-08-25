@@ -25,8 +25,8 @@ static class AttributeNodeBuilder
         string attributeName,
         bool useConstant)
     {
-        var expression = useConstant
-            ? (ExpressionSyntax)MemberAccessExpression(
+        ExpressionSyntax expression = useConstant
+            ? MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
                 IdentifierName("Syntax"),
                 IdentifierName(value))

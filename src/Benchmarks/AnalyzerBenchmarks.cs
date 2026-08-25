@@ -18,7 +18,7 @@ public class AnalyzerBenchmarks
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
             .Where(_ => _.Length > 0)
-            .Select(_ => (MetadataReference)MetadataReference.CreateFromFile(_))
+            .Select(MetadataReference (_) => MetadataReference.CreateFromFile(_))
             .ToArray();
 
         compilation = CSharpCompilation.Create(
