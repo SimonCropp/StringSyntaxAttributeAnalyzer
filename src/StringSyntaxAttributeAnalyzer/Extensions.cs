@@ -2,31 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 
 static class Extensions
 {
-    // True when the method is declared on System.Linq.Enumerable or System.Linq.Queryable.
-    // Matching by containing-type name and namespace chain avoids a string allocation
-    // for ToDisplayString and works across assembly boundaries where identical type
-    // definitions have distinct symbol identities.
-    public static bool IsLinqMethod(this IMethodSymbol method)
-    {
-        var containing = method.ContainingType;
-        if (containing is null)
-        {
-            return false;
-        }
-
-        var name = containing.Name;
-        if (name != "Enumerable" &&
-            name != "Queryable")
-        {
-            return false;
-        }
-
-        return containing.ContainingNamespace is
-        {
-            Name: "Linq",
-            ContainingNamespace.Name: "System"
-        };
-    }
 
     // Peels off conversions, `await`, and `??` so the resolver sees the value-producing
     // operation underneath. An `await task` result carries the syntax of the method
@@ -242,5 +217,87 @@ static class Extensions
         }
 
         return false;
+    }
+
+    public static bool IsTaggableScalar(this ITypeSymbol returnType)
+    {
+        if (returnType.SpecialType == SpecialType.System_String)
+        {
+            return true;
+        }
+
+        return returnType is INamedTypeSymbol
+        {
+            IsGenericType: true,
+            TypeArguments: [{ SpecialType: SpecialType.System_String }],
+            Name: "Task" or "ValueTask"
+        };
+    }
+
+    // A "value slot" is a typed-object or generic-T target where strings flow as plain
+    // values (logging, collections, generic extension methods). Passing a StringSyntax-
+    // attributed value into such a slot doesn't meaningfully "drop" the format — the
+    // receiver was never going to honour it. Skip SSA001/003/004/005 in those cases.
+    public static bool IsGenericValueSlot(this ITypeSymbol? type) =>
+        type is not null &&
+        (type.SpecialType == SpecialType.System_Object ||
+         type.TypeKind == TypeKind.TypeParameter ||
+         (type is IArrayTypeSymbol array && array.ElementType.IsGenericValueSlot()));
+
+    // Use OriginalDefinition so a generic method's `T value` parameter reads as TypeKind
+    // TypeParameter even when the call site has substituted T=string.
+    public static ITypeSymbol? GetTargetType(this ISymbol symbol) =>
+        symbol.OriginalDefinition switch
+        {
+            IParameterSymbol p => p.Type,
+            IPropertySymbol p => p.Type,
+            IFieldSymbol f => f.Type,
+            _ => null
+        };
+
+    public static IParameterSymbol? FindPrimaryConstructorParameter(this IPropertySymbol property)
+    {
+        var type = property.ContainingType;
+        if (type is null || !type.IsRecord)
+        {
+            return null;
+        }
+
+        foreach (var constructor in type.InstanceConstructors)
+        {
+            foreach (var parameter in constructor.Parameters)
+            {
+                if (parameter.Name == property.Name &&
+                    SymbolEqualityComparer.Default.Equals(parameter.Type, property.Type))
+                {
+                    return parameter;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public static bool CanHostLanguageComment(this ILocalSymbol local)
+    {
+        foreach (var reference in local.DeclaringSyntaxReferences)
+        {
+            if (reference.GetSyntax().FirstAncestorOrSelf<LocalDeclarationStatementSyntax>() is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static IOperation UnwrapConversions(this IOperation operation)
+    {
+        while (operation is IConversionOperation conversion)
+        {
+            operation = conversion.Operand;
+        }
+
+        return operation;
     }
 }

@@ -3,92 +3,8 @@ using System.Diagnostics.CodeAnalysis;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class MismatchAnalyzer : DiagnosticAnalyzer
 {
-    const string valueKey = "StringSyntaxValue";
-
-    static readonly DiagnosticDescriptor formatMismatchRule = new(
-        id: "SSA001",
-        title: "StringSyntax format mismatch",
-        messageFormat: "Value with StringSyntax \"{0}\" is assigned to {1} with StringSyntax \"{2}\"",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor missingSourceFormatRule = new(
-        id: "SSA002",
-        title: "Source has no StringSyntax while target requires one",
-        messageFormat: "Value has no StringSyntax attribute but is assigned to {0} with StringSyntax \"{1}\"",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor droppedFormatRule = new(
-        id: "SSA003",
-        title: "Source has StringSyntax while target has none",
-        messageFormat: "Value with StringSyntax \"{0}\" is assigned to {1} without a StringSyntax attribute",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor equalityMismatchRule = new(
-        id: "SSA004",
-        title: "Equality comparison between mismatched StringSyntax values",
-        messageFormat: "Comparing {0} (StringSyntax \"{1}\") to {2} (StringSyntax \"{3}\")",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor equalityMissingFormatRule = new(
-        id: "SSA005",
-        title: "Equality comparison with an unattributed value",
-        messageFormat: "Comparing {0} (StringSyntax \"{1}\") to {2} without a StringSyntax attribute",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor singletonUnionRule = new(
-        id: "SSA006",
-        title: "UnionSyntax with a single option should be StringSyntax",
-        messageFormat: "[UnionSyntax(\"{0}\")] has only one option; use [StringSyntax(\"{0}\")] instead",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor redundantStringSyntaxRule = new(
-        id: "SSA007",
-        title: "StringSyntax can be replaced with a shortcut attribute",
-        messageFormat: "[StringSyntax(\"{0}\")] can be replaced with [{0}]",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor redundantByConventionRule = new(
-        id: "SSA008",
-        title: "StringSyntax annotation is redundant due to a name convention",
-        messageFormat: "Annotation \"{0}\" is redundant: the name already matches the {0} convention",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    static readonly DiagnosticDescriptor missingReturnAnnotationRule = new(
-        id: "SSA009",
-        title: "Member returns a tagged value but has no return annotation",
-        messageFormat: "{0} returns a value tagged \"{1}\" but has no return annotation",
-        category: "StringSyntaxAttribute.Usage",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-    [
-        formatMismatchRule,
-        missingSourceFormatRule,
-        droppedFormatRule,
-        equalityMismatchRule,
-        equalityMissingFormatRule,
-        singletonUnionRule,
-        redundantStringSyntaxRule,
-        redundantByConventionRule,
-        missingReturnAnnotationRule
-    ];
+        Rules.All;
 
     public override void Initialize(AnalysisContext context)
     {
@@ -119,10 +35,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // SSA007 to offer `[Html]` in place of `[StringSyntax("Html")]`. Keyed by
             // first-char-folded name so `"html"` also resolves to `Html`, matching the
             // case folding used elsewhere (SyntaxValueMatcher, KnownSyntaxConstants).
-            var availableShortcuts = shortcutAttributeNames
+            var availableShortcuts = SyntaxAttributeExtensions.ShortcutAttributeNames
                 .Where(_ => start.Compilation
-                    .GetTypeByMetadataName($"{shortcutAttributeNamespace}.{_}Attribute") is not null)
-                .ToImmutableDictionary(FoldShortcutKey, _ => _);
+                    .GetTypeByMetadataName($"{SyntaxAttributeExtensions.ShortcutAttributeNamespace}.{_}Attribute") is not null)
+                .ToImmutableDictionary(SyntaxAttributeExtensions.FoldShortcutKey, _ => _);
 
             var suppression = new NamespaceSuppression(start.Options);
             var conventions = new NameConventionsOption(start.Options);
@@ -233,11 +149,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
             value = s;
         }
-        else if (IsAttributeNamed(attribute, returnSyntaxAttributeName))
+        else if (attribute.IsNamed(SyntaxAttributeExtensions.ReturnSyntaxAttributeName))
         {
             // Only the single-value ReturnSyntax case maps to a shortcut. Multi-value
             // unions can't collapse to a single `[return: X]`.
-            var options = ExtractUnionOptions(attribute);
+            var options = attribute.ExtractUnionOptions();
             if (options.Length != 1)
             {
                 return;
@@ -252,7 +168,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // First-char-folded lookup so `"html"` and `"Html"` both resolve to the
         // canonical `Html` shortcut. The canonical form is what we report in the
         // message and put in the properties bag, so the codefix emits `[Html]`.
-        if (!availableShortcuts.TryGetValue(FoldShortcutKey(value), out var canonical))
+        if (!availableShortcuts.TryGetValue(value.FoldShortcutKey(), out var canonical))
         {
             return;
         }
@@ -265,22 +181,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, canonical);
-        context.ReportDiagnostic(Diagnostic.Create(
-            redundantStringSyntaxRule,
-            location,
-            properties: properties,
-            messageArgs: canonical));
-    }
-
-    static string FoldShortcutKey(string name)
-    {
-        if (name.Length == 0)
-        {
-            return name;
-        }
-
-        return char.ToLowerInvariant(name[0]) + name.Substring(1);
+        Rules.ReportRedundantShortcut(context, location, canonical);
     }
 
     static void AnalyzeSymbolForRedundantByConvention(
@@ -337,7 +238,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // / `[ReturnSyntax]` / `[UnionSyntax]` we still require the broader
             // `name_conventions` opt-in, since those attributes may be intentional
             // even when the name happens to match.
-            if (!conventionsEnabled && !TryMatchShortcutAttribute(attribute, out _))
+            if (!conventionsEnabled && !attribute.TryMatchShortcutAttribute(out _))
             {
                 continue;
             }
@@ -385,14 +286,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // The fix removes the language comment; the location pinpoints the local
         // declaration so the codefix can locate it. The actual comment trivia is
         // resolved at fix time by re-running the trivia walk.
-        var properties = ImmutableDictionary<string, string?>.Empty
-            .Add(valueKey, conventionValue)
-            .Add("ConventionTarget", "LanguageComment");
-        context.ReportDiagnostic(Diagnostic.Create(
-            redundantByConventionRule,
+        Rules.ReportRedundantByConvention(
+            context,
             declaration.GetLocation(),
-            properties: properties,
-            messageArgs: conventionValue));
+            conventionValue,
+            "LanguageComment");
     }
 
     static void ReportRedundantByConvention(
@@ -408,14 +306,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var properties = ImmutableDictionary<string, string?>.Empty
-            .Add(valueKey, conventionValue)
-            .Add("ConventionTarget", "Attribute");
-        context.ReportDiagnostic(Diagnostic.Create(
-            redundantByConventionRule,
-            location,
-            properties: properties,
-            messageArgs: conventionValue));
+        Rules.ReportRedundantByConvention(context, location, conventionValue, "Attribute");
     }
 
     // For SSA008 we only consider single-valued annotations. UnionSyntax with
@@ -438,10 +329,10 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        if (IsAttributeNamed(attribute, unionSyntaxAttributeName) ||
-            IsAttributeNamed(attribute, returnSyntaxAttributeName))
+        if (attribute.IsNamed(SyntaxAttributeExtensions.UnionSyntaxAttributeName) ||
+            attribute.IsNamed(SyntaxAttributeExtensions.ReturnSyntaxAttributeName))
         {
-            var options = ExtractUnionOptions(attribute);
+            var options = attribute.ExtractUnionOptions();
             if (options.Length == 1)
             {
                 value = options[0];
@@ -450,7 +341,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        if (TryMatchShortcutAttribute(attribute, out var shortcut))
+        if (attribute.TryMatchShortcutAttribute(out var shortcut))
         {
             value = shortcut;
             return true;
@@ -609,12 +500,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         foreach (var attribute in context.Symbol.GetAttributes())
         {
-            if (!IsAttributeNamed(attribute, unionSyntaxAttributeName))
+            if (!attribute.IsNamed(SyntaxAttributeExtensions.UnionSyntaxAttributeName))
             {
                 continue;
             }
 
-            var options = ExtractUnionOptions(attribute);
+            var options = attribute.ExtractUnionOptions();
             // Only the exact singleton case is redundant. Empty `[UnionSyntax()]`
             // is a different shape of user error — "has only one option" would
             // lie, and the codefix would emit `[StringSyntax("")]`, which is
@@ -632,13 +523,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            var singleValue = options[0];
-            var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, singleValue);
-            context.ReportDiagnostic(Diagnostic.Create(
-                singletonUnionRule,
-                location,
-                properties: properties,
-                messageArgs: singleValue));
+            Rules.ReportSingletonUnion(context, location, options[0]);
             return;
         }
     }
@@ -769,7 +654,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (!ReturnTypeIsTaggableScalar(returnType))
+            if (!returnType.IsTaggableScalar())
             {
                 continue;
             }
@@ -846,21 +731,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         public bool Contradicted { get; set; }
     }
 
-    static bool ReturnTypeIsTaggableScalar(ITypeSymbol returnType)
-    {
-        if (returnType.SpecialType == SpecialType.System_String)
-        {
-            return true;
-        }
-
-        return returnType is INamedTypeSymbol
-        {
-            IsGenericType: true,
-            TypeArguments: [{ SpecialType: SpecialType.System_String }],
-            Name: "Task" or "ValueTask"
-        };
-    }
-
     static void ReportMissingReturnAnnotation(
         OperationBlockAnalysisContext context,
         ISymbol symbol,
@@ -885,14 +755,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var properties = ImmutableDictionary<string, string?>.Empty.Add(valueKey, value);
-        var diagnostic = Diagnostic.Create(
-            missingReturnAnnotationRule,
+        Rules.ReportMissingReturnAnnotation(
+            context,
             identifierLoc,
-            additionalLocations: [declSyntax.GetLocation()],
-            properties: properties,
-            messageArgs: [memberKind, value]);
-        context.ReportDiagnostic(diagnostic);
+            declSyntax.GetLocation(),
+            memberKind,
+            value);
     }
 
     static void AnalyzeBinaryOperator(
@@ -934,13 +802,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             // Both sides have attributes, values differ — no codefix (picking which side
             // is wrong requires judgement, same reasoning as SSA001).
-            context.ReportDiagnostic(Diagnostic.Create(
-                equalityMismatchRule,
+            Rules.ReportEqualityMismatch(
+                context,
                 binary.Syntax.GetLocation(),
-                DescribeSymbol(leftSymbol),
-                SyntaxValueMatcher.FormatValues(leftInfo.Values),
-                DescribeSymbol(rightSymbol),
-                SyntaxValueMatcher.FormatValues(rightInfo.Values)));
+                leftSymbol,
+                leftInfo,
+                rightSymbol,
+                rightInfo);
             return;
         }
 
@@ -949,7 +817,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // is an object/T slot or lives in a suppressed namespace (BCL etc.).
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
         {
-            if (IsGenericValueSlot(GetTargetType(rightSymbol!)) ||
+            if (rightSymbol!.GetTargetType().IsGenericValueSlot() ||
                 suppression.Matches(rightSymbol, suppressedNamespaces) ||
                 KnownUnannotatedAssemblies.Contains(rightSymbol) ||
                 NameConventionMatches(rightSymbol, leftInfo.Values))
@@ -957,16 +825,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            context.ReportDiagnostic(CreateEqualityMissingDiagnostic(
+            Rules.ReportEqualityMissing(
+                context,
                 binary.Syntax.GetLocation(),
                 attributedSymbol: leftSymbol,
                 attributedInfo: leftInfo,
-                bareSymbol: rightSymbol));
+                bareSymbol: rightSymbol);
         }
         else if (rightInfo.State == SyntaxState.Present &&
                  leftInfo.State == SyntaxState.NotPresent)
         {
-            if (IsGenericValueSlot(GetTargetType(leftSymbol!)) ||
+            if (leftSymbol!.GetTargetType().IsGenericValueSlot() ||
                 suppression.Matches(leftSymbol, suppressedNamespaces) ||
                 KnownUnannotatedAssemblies.Contains(leftSymbol) ||
                 NameConventionMatches(leftSymbol, rightInfo.Values))
@@ -974,56 +843,18 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            context.ReportDiagnostic(CreateEqualityMissingDiagnostic(
+            Rules.ReportEqualityMissing(
+                context,
                 binary.Syntax.GetLocation(),
                 attributedSymbol: rightSymbol,
                 attributedInfo: rightInfo,
-                bareSymbol: leftSymbol));
+                bareSymbol: leftSymbol);
         }
     }
 
-    // SSA005 has two descriptions to render ({attributed, bare}) instead of
-    // SSA002/003's one, so it uses a dedicated factory rather than extending
-    // CreateFixableDiagnostic's message-arg switch.
-    static Diagnostic CreateEqualityMissingDiagnostic(
-        Location location,
-        ISymbol? attributedSymbol,
-        SyntaxInfo attributedInfo,
-        ISymbol? bareSymbol) =>
-        Diagnostic.Create(
-            equalityMissingFormatRule,
-            location,
-            additionalLocations: GetAdditionalLocations(bareSymbol),
-            properties: ImmutableDictionary<string, string?>.Empty
-                .Add(valueKey, SyntaxValueMatcher.FormatValues(attributedInfo.Values)),
-            DescribeSymbol(attributedSymbol),
-            SyntaxValueMatcher.FormatValues(attributedInfo.Values),
-            DescribeSymbol(bareSymbol));
-
-    // A "value slot" is a typed-object or generic-T target where strings flow as plain
-    // values (logging, collections, generic extension methods). Passing a StringSyntax-
-    // attributed value into such a slot doesn't meaningfully "drop" the format — the
-    // receiver was never going to honour it. Skip SSA001/003/004/005 in those cases.
-    static bool IsGenericValueSlot(ITypeSymbol? type) =>
-        type is not null &&
-        (type.SpecialType == SpecialType.System_Object ||
-         type.TypeKind == TypeKind.TypeParameter ||
-         (type is IArrayTypeSymbol array && IsGenericValueSlot(array.ElementType)));
-
-    // Use OriginalDefinition so a generic method's `T value` parameter reads as TypeKind
-    // TypeParameter even when the call site has substituted T=string.
-    static ITypeSymbol? GetTargetType(ISymbol symbol) =>
-        symbol.OriginalDefinition switch
-        {
-            IParameterSymbol p => p.Type,
-            IPropertySymbol p => p.Type,
-            IFieldSymbol f => f.Type,
-            _ => null
-        };
-
     static ISymbol? GetSymbol(IOperation operation)
     {
-        operation = UnwrapConversions(operation);
+        operation = operation.UnwrapConversions();
         return operation switch
         {
             // Anonymous-type properties can't host StringSyntax attributes, so a
@@ -1081,7 +912,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // them as Unknown rather than NotPresent — same reasoning as invocation
             // results: the source isn't attributable, so SSA002 would be an unfixable
             // warning. Only keep NotPresent for locals that can actually host the fix.
-            if (!CanHostLanguageComment(local))
+            if (!local.CanHostLanguageComment())
             {
                 return SyntaxInfo.Unknown;
             }
@@ -1116,7 +947,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // attribute target for such parameters is the parameter itself). Treat
         // the parameter's attribute as also applying to the generated property.
         if (symbol is IPropertySymbol property &&
-            FindPrimaryConstructorParameter(property) is { } parameter)
+            property.FindPrimaryConstructorParameter() is { } parameter)
         {
             var paramInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
             if (paramInfo.State == SyntaxState.Present)
@@ -1153,107 +984,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return info;
     }
 
-    static IParameterSymbol? FindPrimaryConstructorParameter(IPropertySymbol property)
-    {
-        var type = property.ContainingType;
-        if (type is null || !type.IsRecord)
-        {
-            return null;
-        }
-
-        foreach (var constructor in type.InstanceConstructors)
-        {
-            foreach (var parameter in constructor.Parameters)
-            {
-                if (parameter.Name == property.Name &&
-                    SymbolEqualityComparer.Default.Equals(parameter.Type, property.Type))
-                {
-                    return parameter;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    static bool CanHostLanguageComment(ILocalSymbol local)
-    {
-        foreach (var reference in local.DeclaringSyntaxReferences)
-        {
-            if (reference.GetSyntax().FirstAncestorOrSelf<LocalDeclarationStatementSyntax>() is not null)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    static IOperation UnwrapConversions(IOperation operation)
-    {
-        while (operation is IConversionOperation conversion)
-        {
-            operation = conversion.Operand;
-        }
-
-        return operation;
-    }
-
-    const string unionSyntaxAttributeName = "UnionSyntaxAttribute";
-    const string returnSyntaxAttributeName = "ReturnSyntaxAttribute";
-    const string shortcutAttributeNamespace = "StringSyntaxAttributeAnalyzer";
-
-    // Names of shortcut-per-constant attributes emitted by SyntaxConstantsGenerator when
-    // `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. E.g. `[Html]` is recognized as
-    // `[StringSyntax("Html")]`. Kept in sync with the generator's `shortcutNames` list.
-    static readonly ImmutableHashSet<string> shortcutAttributeNames =
-    [
-        "CompositeFormat",
-        "DateOnlyFormat",
-        "DateTimeFormat",
-        "EnumFormat",
-        "GuidFormat",
-        "Json",
-        "NumericFormat",
-        "Regex",
-        "TimeOnlyFormat",
-        "TimeSpanFormat",
-        "Uri",
-        "Xml",
-        "Html",
-        "Text",
-        "Email",
-        "Markdown",
-        "Yaml",
-        "Csv",
-        "Sql"
-    ];
-
     readonly struct SyntaxTypes(INamedTypeSymbol stringSyntax)
     {
         public INamedTypeSymbol StringSyntax { get; } = stringSyntax;
-    }
-
-    static bool IsAttributeNamed(AttributeData attribute, string typeName)
-    {
-        var type = attribute.AttributeClass;
-        if (type is null)
-        {
-            return false;
-        }
-
-        return type.Name == typeName && IsInShortcutNamespace(type);
-    }
-
-    static bool IsInShortcutNamespace(INamedTypeSymbol type)
-    {
-        var ns = type.ContainingNamespace;
-        if (ns is null || ns.Name != shortcutAttributeNamespace)
-        {
-            return false;
-        }
-
-        return ns.ContainingNamespace?.IsGlobalNamespace ?? false;
     }
 
     static SyntaxInfo GetSyntaxFromAttributes(
@@ -1272,15 +1005,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return new(SyntaxState.Present, []);
             }
 
-            if (IsAttributeNamed(attribute, unionSyntaxAttributeName))
+            if (attribute.IsNamed(SyntaxAttributeExtensions.UnionSyntaxAttributeName))
             {
-                var values = ExtractUnionOptions(attribute);
+                var values = attribute.ExtractUnionOptions();
                 return SyntaxInfo.PresentUnion(values);
             }
 
-            if (IsAttributeNamed(attribute, returnSyntaxAttributeName))
+            if (attribute.IsNamed(SyntaxAttributeExtensions.ReturnSyntaxAttributeName))
             {
-                var values = ExtractUnionOptions(attribute);
+                var values = attribute.ExtractUnionOptions();
                 if (values.Length == 1)
                 {
                     return SyntaxInfo.Present(values[0]);
@@ -1288,74 +1021,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return SyntaxInfo.PresentUnion(values);
             }
 
-            if (TryMatchShortcutAttribute(attribute, out var shortcutValue))
+            if (attribute.TryMatchShortcutAttribute(out var shortcutValue))
             {
                 return SyntaxInfo.Present(shortcutValue);
             }
         }
 
         return SyntaxInfo.NotPresent;
-    }
-
-    // Recognize `[Html]`, `[Json]`, ... emitted by SyntaxConstantsGenerator when the
-    // consumer opts in with `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. The
-    // attribute is generated per-assembly (internal), so we match by fully-qualified
-    // name rather than symbol identity — same as UnionSyntax/ReturnSyntax.
-    // Matches a shortcut attribute (e.g. `[Html]`) by simple name regardless of
-    // namespace. The canonical shortcuts live in `StringSyntaxAttributeAnalyzer`
-    // (emitted when `EmitShortcutAttributes=true`), but consumers sometimes hand-roll
-    // an `HtmlAttribute` of their own — typically before discovering this analyzer,
-    // or because a sibling library (e.g. Parchment) recognises `[Html]` by simple
-    // name and they want the marker without opting into the source generator.
-    // Recognising both keeps mismatch analysis (SSA001/SSA002 etc.) consistent
-    // whichever flavour is used.
-    static bool TryMatchShortcutAttribute(AttributeData attribute, out string value)
-    {
-        value = "";
-        var type = attribute.AttributeClass;
-        if (type is null)
-        {
-            return false;
-        }
-
-        var name = type.Name;
-        if (!name.EndsWith("Attribute", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var baseName = name.Substring(0, name.Length - "Attribute".Length);
-        if (!shortcutAttributeNames.Contains(baseName))
-        {
-            return false;
-        }
-
-        value = baseName;
-        return true;
-    }
-
-    static ImmutableArray<string> ExtractUnionOptions(AttributeData attribute)
-    {
-        if (attribute.ConstructorArguments.Length == 0)
-        {
-            return [];
-        }
-
-        var first = attribute.ConstructorArguments[0];
-        if (first.Kind != TypedConstantKind.Array)
-        {
-            return [];
-        }
-
-        var builder = ImmutableArray.CreateBuilder<string>(first.Values.Length);
-        foreach (var element in first.Values)
-        {
-            if (element.Value is string s)
-            {
-                builder.Add(s);
-            }
-        }
-        return builder.ToImmutable();
     }
 
     static void Report(
@@ -1386,7 +1058,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // value slot (log methods, collections, println, ToString-ers). The source's
         // format info isn't being meaningfully "dropped", so suppress SSA003/SSA001.
         if (target.State == SyntaxState.NotPresent &&
-            IsGenericValueSlot(GetTargetType(targetSymbol)))
+            targetSymbol.GetTargetType().IsGenericValueSlot())
         {
             return;
         }
@@ -1396,12 +1068,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             if (!SyntaxValueMatcher.ValuesMatch(source.Values, target.Values))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    formatMismatchRule,
-                    location,
-                    SyntaxValueMatcher.FormatValues(source.Values),
-                    DescribeSymbol(targetSymbol),
-                    SyntaxValueMatcher.FormatValues(target.Values)));
+                Rules.ReportMismatch(context, location, source, targetSymbol, target);
             }
 
             return;
@@ -1443,13 +1110,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             // Fix site is the source symbol's declaration: add [StringSyntax] to a
             // field/property/parameter, or [ReturnSyntax] to a method.
-            context.ReportDiagnostic(
-                CreateFixableDiagnostic(
-                    missingSourceFormatRule,
-                    location,
-                    sourceSymbol,
-                    DescribeSymbol(targetSymbol),
-                    target));
+            Rules.ReportMissingSource(context, location, sourceSymbol, targetSymbol, target);
             return;
         }
 
@@ -1474,13 +1135,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             // Fix site is the target symbol's declaration (add StringSyntax matching source).
-            context.ReportDiagnostic(
-                CreateFixableDiagnostic(
-                    droppedFormatRule,
-                    location,
-                    targetSymbol,
-                    DescribeSymbol(targetSymbol),
-                    source));
+            Rules.ReportDropped(context, location, targetSymbol, source);
         }
     }
 
@@ -1541,77 +1196,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         return false;
-    }
-
-    // Human-readable "<kind> 'Type.Name'" label used in diagnostic messages so the
-    // user sees which declaration is involved rather than a generic "a target".
-    // Parameters also include their enclosing method since `name` alone doesn't
-    // disambiguate across overloads.
-    static string DescribeSymbol(ISymbol? symbol)
-    {
-        if (symbol is null)
-        {
-            return "value";
-        }
-
-        return symbol switch
-        {
-            IPropertySymbol property => $"property '{QualifiedName(property)}'",
-            IFieldSymbol field => $"field '{QualifiedName(field)}'",
-            IParameterSymbol parameter => DescribeParameter(parameter),
-            IMethodSymbol method => $"method '{QualifiedName(method)}'",
-            ILocalSymbol local => $"local '{local.Name}'",
-            _ => "value"
-        };
-    }
-
-    static string QualifiedName(ISymbol symbol)
-    {
-        var type = symbol.ContainingType;
-        return type is null ? symbol.Name : $"{type.Name}.{symbol.Name}";
-    }
-
-    static string DescribeParameter(IParameterSymbol parameter)
-    {
-        if (parameter.ContainingSymbol is IMethodSymbol method)
-        {
-            return $"parameter '{parameter.Name}' of method '{QualifiedName(method)}'";
-        }
-
-        return $"parameter '{parameter.Name}'";
-    }
-
-    // Assignment/argument-style diagnostics (SSA002/SSA003) thread the opposite
-    // side's description into {1} so the user sees which declaration lacks the
-    // attribute. SSA002's format string is {source-desc, target-value}; SSA003
-    // is {source-value, target-desc}. Callers pick the matching format.
-    static Diagnostic CreateFixableDiagnostic(
-        DiagnosticDescriptor rule,
-        Location location,
-        ISymbol? fixTarget,
-        string oppositeDescription,
-        SyntaxInfo info) =>
-        Diagnostic.Create(
-            rule,
-            location,
-            additionalLocations: GetAdditionalLocations(fixTarget),
-            // Pipe-delimited so a UnionSyntax source can drive multiple codefix options
-            // (one per value + one combined). The pipe is the same separator used in the
-            // user-visible message — safe because values are identifier-like.
-            properties: ImmutableDictionary<string, string?>.Empty.Add(valueKey, SyntaxValueMatcher.FormatValues(info.Values)),
-            messageArgs: rule.Id == "SSA002"
-                ? [oppositeDescription, SyntaxValueMatcher.FormatValues(info.Values)]
-                : [SyntaxValueMatcher.FormatValues(info.Values), oppositeDescription]);
-
-    static Location[]? GetAdditionalLocations(ISymbol? fixTarget)
-    {
-        var declaration = fixTarget?.DeclaringSyntaxReferences.FirstOrDefault();
-        if (declaration is null)
-        {
-            return null;
-        }
-
-        return [Location.Create(declaration.SyntaxTree, declaration.Span)];
     }
 
     // Per-compilation bag for foreach loop-variable → element syntax bindings.
@@ -1711,9 +1295,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             receiver = receiver.Unwrap();
 
             if (receiver is IInvocationOperation inv &&
-                IsElementPreserving(inv.TargetMethod))
+                inv.TargetMethod.IsElementPreserving())
             {
-                var next = GetLinqReceiver(inv);
+                var next = inv.GetLinqReceiver();
                 if (next is null)
                 {
                     return null;
@@ -1759,9 +1343,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         if (operation is IInvocationOperation inv &&
             inv.TargetMethod.IsLinqMethod() &&
-            IsElementReturningLinq(inv.TargetMethod.Name))
+            LinqExtensions.IsElementReturningLinq(inv.TargetMethod.Name))
         {
-            var receiver = GetLinqReceiver(inv);
+            var receiver = inv.GetLinqReceiver();
             if (receiver is not null)
             {
                 return GetReceiverKvpTags(receiver, types, linqFlow);
@@ -2004,11 +1588,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // before the symbol lookup.
         var symbol = GetSymbol(unwrapped);
         var info = GetSyntax(symbol, types, conventionsEnabled);
-        info = SuppressCollectionTag(GetDeclaredType(symbol), info);
+        info = SuppressCollectionTag(symbol?.GetDeclaredType(), info);
         return (symbol, info);
     }
-
-    static ITypeSymbol? GetDeclaredType(ISymbol? symbol) => symbol?.GetDeclaredType();
 
     // If the symbol's declared type is a single-T enumerable, any StringSyntax on
     // it is semantically an element-tag — not meaningful in scalar contexts. Drop
@@ -2046,7 +1628,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var loopVar = ExtractLoopLocal(forEach.LoopControlVariable);
+        var loopVar = forEach.LoopControlVariable.ExtractLoopLocal();
         if (loopVar is null)
         {
             return;
@@ -2066,80 +1648,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    static ILocalSymbol? ExtractLoopLocal(IOperation? controlVariable) =>
-        controlVariable switch
-        {
-            IVariableDeclaratorOperation decl => decl.Symbol,
-            ILocalReferenceOperation localRef => localRef.Local,
-            _ => null
-        };
-
-    // The collection a single-parameter LINQ-style lambda's element parameter is
-    // bound to — the receiver of `Where`, `Select`, `Any`, or any extension method
-    // on IEnumerable<T> accepting a Func<T,..>. `param` must be the lambda's first
-    // parameter, TSource in every IEnumerable<T> extension shape. Index overloads
-    // (Select/Where with int) take TSource as parameter 0. Multi-source shapes like
-    // Zip / SelectMany with an intermediate collection aren't handled in this pass.
-    //
-    // The gate is shape-based rather than name-based: any extension whose first
-    // parameter is IEnumerable<T> / array participates, so third-party helpers
-    // (MoreLINQ, EF .Include, custom paging) flow syntax the same way built-in
-    // LINQ does. Element-returning calls (First/Single/...) are kept on a closed
-    // allowlist because their semantic is specific; see TryResolveLinqElementReturn.
-    //
-    // Both the tag path (a receiver carrying an element syntax) and the
-    // anonymous-creation path (a receiver projected from `new { … }`) enter through
-    // here, so a lambda parameter resolves against exactly one definition of what it
-    // iterates.
-    static IOperation? GetLinqLambdaReceiver(IParameterReferenceOperation param)
-    {
-        if (param.Parameter.ContainingSymbol is not IMethodSymbol
-            {
-                MethodKind: MethodKind.LambdaMethod
-            } lambdaMethod)
-        {
-            return null;
-        }
-
-        if (param.Parameter.Ordinal != 0 ||
-            lambdaMethod.Parameters.Length is 0 or > 2)
-        {
-            return null;
-        }
-
-        var anonymous = FindEnclosingAnonymousFunction(param);
-        if (anonymous is null)
-        {
-            return null;
-        }
-
-        var invocation = FindEnclosingLinqInvocation(anonymous);
-        if (invocation is null)
-        {
-            return null;
-        }
-
-        if (!IsEnumerableShapeExtension(invocation.TargetMethod))
-        {
-            return null;
-        }
-
-        var receiver = GetLinqReceiver(invocation);
-        if (receiver is null)
-        {
-            return null;
-        }
-
-        var element = receiver.Type.TryGetEnumerableElementType();
-        if (element is null ||
-            !SymbolEqualityComparer.Default.Equals(element, param.Parameter.Type))
-        {
-            return null;
-        }
-
-        return receiver;
-    }
-
     // Bind a LINQ lambda parameter to the element syntax its receiver carries. This
     // is what lets `docs.Any(d => d == literal)` resolve `d` without an attribute on
     // the lambda parameter — attributes aren't even legal inside expression trees
@@ -2152,7 +1660,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         info = SyntaxInfo.Unknown;
 
-        var receiver = GetLinqLambdaReceiver(param);
+        var receiver = param.GetLinqLambdaReceiver();
         if (receiver is null)
         {
             return false;
@@ -2280,7 +1788,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // Select/Where lambda instead of a foreach.
             if (operation is IParameterReferenceOperation paramRef)
             {
-                if (GetLinqLambdaReceiver(paramRef) is not { } lambdaSource)
+                if (paramRef.GetLinqLambdaReceiver() is not { } lambdaSource)
                 {
                     return null;
                 }
@@ -2297,9 +1805,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     ? methodName.Substring(0, methodName.Length - 5)
                     : methodName;
 
-                if (IsElementReturningLinq(baseName) || IsElementPreservingLinq(baseName))
+                if (LinqExtensions.IsElementReturningLinq(baseName) || LinqExtensions.IsElementPreservingLinq(baseName))
                 {
-                    var receiver = GetLinqReceiver(invocation);
+                    var receiver = invocation.GetLinqReceiver();
                     if (receiver is null)
                     {
                         return null;
@@ -2309,9 +1817,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     continue;
                 }
 
-                if (IsSelectCall(invocation.TargetMethod))
+                if (invocation.TargetMethod.IsSelectCall())
                 {
-                    var selector = FindSelectorArgument(invocation);
+                    var selector = invocation.FindSelectorArgument();
                     if (selector is null)
                     {
                         return null;
@@ -2330,7 +1838,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                         return null;
                     }
 
-                    var body = GetSingleReturnExpression(lambda);
+                    var body = lambda.GetSingleReturnExpression();
                     if (body is null)
                     {
                         return null;
@@ -2420,13 +1928,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var name = targetMethod.Name;
         var isAsync = false;
 
-        if (targetMethod.IsLinqMethod() && IsElementReturningLinq(name))
+        if (targetMethod.IsLinqMethod() && LinqExtensions.IsElementReturningLinq(name))
         {
             // sync System.Linq variant
         }
         else if (name.Length > 5 &&
                  name.EndsWith("Async", StringComparison.Ordinal) &&
-                 IsElementReturningLinq(name.Substring(0, name.Length - 5)))
+                 LinqExtensions.IsElementReturningLinq(name.Substring(0, name.Length - 5)))
         {
             isAsync = true;
         }
@@ -2435,7 +1943,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        var receiver = GetLinqReceiver(invocation);
+        var receiver = invocation.GetLinqReceiver();
         if (receiver is null)
         {
             return false;
@@ -2504,14 +2012,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             {
                 var targetMethod = inv.TargetMethod;
 
-                if (IsSelectCall(targetMethod))
+                if (targetMethod.IsSelectCall())
                 {
                     return GetSelectElementTags(inv, types, linqFlow);
                 }
 
-                if (IsElementPreserving(targetMethod))
+                if (targetMethod.IsElementPreserving())
                 {
-                    var next = GetLinqReceiver(inv);
+                    var next = inv.GetLinqReceiver();
                     if (next is null)
                     {
                         return SyntaxInfo.Unknown;
@@ -2642,7 +2150,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // Record primary-ctor parameters carry their [StringSyntax] on the
             // parameter itself, not the synthesized property. Surface them here so
             // element-flow through a record's collection property works.
-            if (FindPrimaryConstructorParameter(property) is { } recordParam)
+            if (property.FindPrimaryConstructorParameter() is { } recordParam)
             {
                 var fromParam = GetSyntaxFromAttributes(recordParam.GetAttributes(), types);
                 if (fromParam.State == SyntaxState.Present)
@@ -2727,7 +2235,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // Other selector shapes (multi-statement lambdas, untagged expressions) drop.
     static SyntaxInfo GetSelectElementTags(IInvocationOperation invocation, SyntaxTypes types, LinqFlow linqFlow)
     {
-        var selector = FindSelectorArgument(invocation);
+        var selector = invocation.FindSelectorArgument();
         if (selector is null)
         {
             return SyntaxInfo.Unknown;
@@ -2768,15 +2276,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         if (target is IAnonymousFunctionOperation lambda)
         {
-            var body = GetSingleReturnExpression(lambda);
+            var body = lambda.GetSingleReturnExpression();
             if (body is null)
             {
                 return SyntaxInfo.Unknown;
             }
 
-            if (IsIdentityReference(body, lambda))
+            if (body.IsIdentityReference(lambda))
             {
-                var next = GetLinqReceiver(invocation);
+                var next = invocation.GetLinqReceiver();
                 if (next is null)
                 {
                     return SyntaxInfo.Unknown;
@@ -2794,214 +2302,4 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         return SyntaxInfo.Unknown;
     }
-
-    // The selector sits after the source in Enumerable/Queryable.Select; for
-    // extension calls the source is Arguments[0] and the selector Arguments[1].
-    // For instance-form Select (custom providers), Instance is the source and
-    // Arguments[0] is the selector.
-    static IOperation? FindSelectorArgument(IInvocationOperation invocation)
-    {
-        if (invocation.Instance is not null)
-        {
-            return invocation.Arguments.Length > 0 ? invocation.Arguments[0].Value : null;
-        }
-
-        if (invocation.TargetMethod.IsExtensionMethod &&
-            invocation.Arguments.Length > 1)
-        {
-            return invocation.Arguments[1].Value;
-        }
-
-        return null;
-    }
-
-    // Lambda bodies surface as a synthesised block with a single return — both
-    // for expression-bodied and brace-bodied single-return lambdas. Anything
-    // with more than one statement is treated as opaque (the last statement
-    // isn't reliably the result).
-    static IOperation? GetSingleReturnExpression(IAnonymousFunctionOperation lambda)
-    {
-        var block = lambda.Body;
-        if (block.Operations.Length != 1)
-        {
-            return null;
-        }
-
-        if (block.Operations[0] is IReturnOperation { ReturnedValue: { } value })
-        {
-            return value.Unwrap();
-        }
-
-        return null;
-    }
-
-    static bool IsIdentityReference(IOperation body, IAnonymousFunctionOperation lambda)
-    {
-        if (body is not IParameterReferenceOperation paramRef)
-        {
-            return false;
-        }
-
-        var parameters = lambda.Symbol.Parameters;
-        return parameters.Length > 0 &&
-               SymbolEqualityComparer.Default.Equals(paramRef.Parameter, parameters[0]);
-    }
-
-    // Element preservation is accepted via two channels: the named-LINQ list
-    // (closed, covers every System.Linq.Enumerable/Queryable method whose
-    // signature matches IEnumerable<T> → IEnumerable<T>), and a shape-based rule
-    // that lets third-party extensions with the same signature participate —
-    // MoreLINQ, EF `.Include`, custom paging helpers. The shape rule requires
-    // the method to be an extension on IEnumerable<T> whose return is also
-    // IEnumerable<T> with the same element T.
-    //
-    // Comparison runs on OriginalDefinition so that generic methods declared as
-    // `IEnumerable<T> Foo<T>(IEnumerable<T>)` match — without OriginalDefinition
-    // the input type parameter and return type parameter are distinct symbols
-    // after construction, which would defeat the check.
-    static bool IsElementPreserving(IMethodSymbol method)
-    {
-        if (method.IsLinqMethod() && IsElementPreservingLinq(method.Name))
-        {
-            return true;
-        }
-
-        if (!method.IsExtensionMethod)
-        {
-            return false;
-        }
-
-        var definition = (method.ReducedFrom ?? method).OriginalDefinition;
-        if (definition.Parameters.Length == 0)
-        {
-            return false;
-        }
-
-        var inputElement = definition.Parameters[0].Type.TryGetEnumerableElementType();
-        var outputElement = definition.ReturnType.TryGetEnumerableElementType();
-        return inputElement is not null &&
-               outputElement is not null &&
-               SymbolEqualityComparer.Default.Equals(inputElement, outputElement);
-    }
-
-    static bool IsSelectCall(IMethodSymbol method) =>
-        method.IsLinqMethod() &&
-        method.Name is "Select" or "SelectMany";
-
-    // An extension method whose receiver carries a discoverable element type.
-    // This is the gate for LINQ-shape recognition — it lets `static T[] Custom<T>
-    // (this IEnumerable<T> src, Func<T,bool> f)` flow syntax without hard-coding
-    // the method name.
-    static bool IsEnumerableShapeExtension(IMethodSymbol method) =>
-        GetExtensionReceiverType(method) is { } receiverType &&
-        receiverType.TryGetEnumerableElementType() is not null;
-
-    // For a reduced extension-method call (`x.Ext(...)`), `method.Parameters`
-    // excludes the receiver — the "this" parameter only appears on the unreduced
-    // symbol, which ReducedFrom surfaces. For calls written in static form
-    // (`Ext(x, ...)`) the method is already unreduced, so ReducedFrom is null and
-    // Parameters[0] is the receiver.
-    static ITypeSymbol? GetExtensionReceiverType(IMethodSymbol method)
-    {
-        if (!method.IsExtensionMethod)
-        {
-            return null;
-        }
-
-        var full = method.ReducedFrom ?? method;
-        if (full.Parameters.Length == 0)
-        {
-            return null;
-        }
-
-        return full.Parameters[0].Type;
-    }
-
-    static IOperation? FindEnclosingAnonymousFunction(IOperation operation)
-    {
-        var current = operation.Parent;
-        while (current is not null)
-        {
-            if (current is IAnonymousFunctionOperation)
-            {
-                return current;
-            }
-
-            current = current.Parent;
-        }
-
-        return null;
-    }
-
-    static IInvocationOperation? FindEnclosingLinqInvocation(IOperation lambda)
-    {
-        var current = lambda.Parent;
-        while (current is not null)
-        {
-            if (current is IInvocationOperation invocation)
-            {
-                return invocation;
-            }
-
-            // Walk through delegate creation, conversion, argument wrappers that
-            // the compiler threads between the lambda and the invocation. An
-            // unrelated enclosing operation (e.g. a different invocation body)
-            // means the lambda isn't a direct argument of the LINQ call we care
-            // about.
-            if (current is IDelegateCreationOperation or IConversionOperation or IArgumentOperation)
-            {
-                current = current.Parent;
-                continue;
-            }
-
-            return null;
-        }
-
-        return null;
-    }
-
-    // Extension-method invocations of LINQ put the receiver in Arguments[0] and
-    // leave Instance null. Instance-method LINQ (rare but e.g. Queryable instance
-    // forms on custom providers) uses Instance. Handle both so both shapes
-    // propagate.
-    static IOperation? GetLinqReceiver(IInvocationOperation invocation)
-    {
-        if (invocation.Instance is not null)
-        {
-            return invocation.Instance;
-        }
-
-        if (invocation.TargetMethod.IsExtensionMethod &&
-            invocation.Arguments.Length > 0)
-        {
-            return invocation.Arguments[0].Value;
-        }
-
-        return null;
-    }
-
-    static bool IsElementReturningLinq(string methodName) =>
-        methodName is
-            "First" or "FirstOrDefault" or
-            "Single" or "SingleOrDefault" or
-            "Last" or "LastOrDefault" or
-            "ElementAt" or "ElementAtOrDefault" or
-            "Min" or "Max" or
-            "Aggregate";
-
-    static bool IsElementPreservingLinq(string methodName) =>
-        methodName is
-            "Where" or
-            "OrderBy" or "OrderByDescending" or
-            "ThenBy" or "ThenByDescending" or
-            "Reverse" or
-            "Take" or "TakeWhile" or "TakeLast" or
-            "Skip" or "SkipWhile" or "SkipLast" or
-            "Distinct" or "DistinctBy" or
-            "Concat" or "Union" or "UnionBy" or
-            "Intersect" or "IntersectBy" or
-            "Except" or "ExceptBy" or
-            "AsEnumerable" or "AsQueryable" or
-            "ToArray" or "ToList" or "ToHashSet" or
-            "Append" or "Prepend";
 }
