@@ -12,3 +12,4 @@ nul
 /BenchmarkDotNet.Artifacts
 /src/Benchmarks/BenchmarkDotNet.Artifacts
 /TestResults
+*.lnk
