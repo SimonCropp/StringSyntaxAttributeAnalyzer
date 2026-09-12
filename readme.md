@@ -10,17 +10,87 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 
 ## Diagnostics
 
-| ID     | Severity | Code fix | Description                                                        |
-|--------|----------|----------|--------------------------------------------------------------------|
-| SSA001 | Warning  | —        | Format mismatch — both sides have `StringSyntax` but values differ |
-| SSA002 | Warning  | Yes      | Source has no `StringSyntax` while the target requires one         |
-| SSA003 | Warning  | Yes      | Source has `StringSyntax` while the target has none                |
-| SSA004 | Warning  | —        | Equality comparison between mismatched `StringSyntax` values       |
-| SSA005 | Warning  | Yes      | Equality comparison where only one side has `StringSyntax`         |
-| SSA006 | Warning  | Yes      | `[UnionSyntax("x")]` with a single option — should be `[StringSyntax("x")]` |
-| SSA008 | Warning  | Yes      | Annotation is redundant — the symbol's name already matches a known convention (opt-in) |
+Each rule has its own page with the message anatomy, every fix option, and the cases where it deliberately stays silent. The page URL is also the diagnostic's help link, so IDEs and SARIF output point straight at it.
 
-SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA006 rewrites the attribute in place. SSA008 removes the redundant attribute or `//language=` comment. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
+| ID                       | Severity | Code fix | Summary                                                            |
+|--------------------------|----------|----------|--------------------------------------------------------------------|
+| [SSA001](docs/SSA001.md) | Warning  | —        | Format mismatch — both sides annotated, values differ              |
+| [SSA002](docs/SSA002.md) | Warning  | Yes      | Source has no `StringSyntax` while the target requires one         |
+| [SSA003](docs/SSA003.md) | Warning  | Yes      | Source has `StringSyntax` while the target has none                |
+| [SSA004](docs/SSA004.md) | Warning  | —        | Equality comparison between mismatched `StringSyntax` values       |
+| [SSA005](docs/SSA005.md) | Warning  | Yes      | Equality comparison where only one side has `StringSyntax`         |
+| [SSA006](docs/SSA006.md) | Warning  | Yes      | `[UnionSyntax("x")]` with a single option — should be `[StringSyntax("x")]` |
+| [SSA007](docs/SSA007.md) | Warning  | Yes      | Annotation can be written as a shortcut attribute (opt-in)         |
+| [SSA008](docs/SSA008.md) | Warning  | Yes      | Annotation is redundant — the name already matches a known convention (opt-in) |
+| [SSA009](docs/SSA009.md) | Warning  | Yes      | Member returns an annotated value but has no return annotation     |
+
+SSA002, SSA003, and SSA005 ship a code fix that adds `[StringSyntax("<value>")]` to the declaration that lacks one. SSA006 rewrites the attribute in place, SSA007 swaps it for the shortcut form, SSA008 removes the redundant attribute or `//language=` comment, and SSA009 annotates the return. SSA001 and SSA004 have no fix because both sides already have attributes and picking which side is wrong requires human judgement.
+
+
+### Reading a diagnostic
+
+Every message names both declarations involved, states the attribute to write, and says where to write it, so the build log alone is enough to act on — no IDE hover required:
+
+```
+SSA002: property 'Holder.Value' has no StringSyntax attribute but flows to parameter 'value' of method 'Target.Consume', which is [StringSyntax("Regex")]. Fix: add [StringSyntax("Regex")] to property 'Holder.Value' (line 8).
+```
+
+The location in the `Fix:` clause is the *declaration* to edit, which is usually not where the warning is reported — the warning sits at the call, the attribute goes on the declaration. `(line 8)` means the same file as the warning; a declaration elsewhere is given as `(D:\src\Holder.cs:8)`. MSBuild appends each rule's help link after the message, so the build log also carries the URL of the rule's page.
+
+The attribute named in the `Fix:` clause is the one that fits the declaration being fixed, which is not always the one the other side carries — a method gets `[ReturnSyntax(...)]`, a local gets a `// language=` comment, and a multi-value set renders as the `[UnionSyntax("A", "B")]` it is.
+
+The mechanically-fixable rules can be applied across a project from the command line, without an IDE, because the code fixes ship inside the analyzer package:
+
+```
+dotnet format analyzers --diagnostics SSA002 SSA003 SSA005 SSA006 SSA007 SSA008 SSA009
+```
+
+SSA001 and SSA004 are left out on purpose: each has two competing fixes (re-annotate one side, or supply a different value) and only a human can tell which one is the bug. See [SSA001](docs/SSA001.md).
+
+
+### Using with AI coding agents
+
+The messages and the per-rule pages are written so an agent reading a build log can act without further context. The failure mode to guard against is an agent making a warning disappear rather than fixing the bug it reports: suppressing with `#pragma`, deleting the annotation from the annotated side, or widening the target to `[UnionSyntax]` or `[StringSyntax("*")]`. The block below is ready to paste into a consumer repository's `AGENTS.md` or `CLAUDE.md` to head that off:
+
+```md
+## StringSyntaxAttributeAnalyzer (SSA001–SSA009)
+
+This project uses StringSyntaxAttributeAnalyzer to stop strings of one syntax
+(regex, JSON, HTML, SQL, ...) from flowing into slots that expect another.
+Syntax is declared with `[StringSyntax("Regex")]` on a property/field/parameter,
+`[ReturnSyntax("Regex")]` on a method, or a `// language=regex` comment on a
+local. Each warning names both declarations, ends with a `Fix:` clause giving
+the attribute to write and the line to write it on, and links to
+https://github.com/SimonCropp/StringSyntaxAttributeAnalyzer/blob/main/docs/<ID>.md.
+
+- SSA001 (mismatch): a value of one syntax flows into a slot expecting another.
+  Decide which side is wrong. Either re-annotate the target, or pass the right
+  value. This is the analyzer catching a real bug; never suppress it, never
+  delete the source's annotation, and never widen the target to `[UnionSyntax]`
+  or `[StringSyntax("*")]` to silence it.
+- SSA002 (source unannotated): add the attribute from the `Fix:` clause to the
+  source declaration. For a method that means `[ReturnSyntax(...)]`; for a local
+  it means a `// language=` comment.
+- SSA003 (target unannotated): add the attribute from the `Fix:` clause to the
+  target declaration. Do not remove the source's annotation instead.
+- SSA004 (equality mismatch): same judgement call as SSA001.
+- SSA005 (equality, one side unannotated): annotate the bare side.
+- SSA006 (single-option `[UnionSyntax]`): replace with `[StringSyntax]`.
+- SSA007 (long form where a shortcut exists): replace with the shortcut.
+- SSA008 (redundant annotation): delete the annotation, or rename the
+  declaration if the name is the part that is wrong.
+- SSA009 (unannotated return): annotate the return.
+
+Apply the mechanical fixes without an IDE:
+
+    dotnet format analyzers --diagnostics SSA002 SSA003 SSA005 SSA006 SSA007 SSA008 SSA009
+
+String literals, unannotated locals, concatenations and `await` expressions are
+deliberately not tracked; do not add annotations to make them tracked.
+`[UnionSyntax("A", "B")]` is for slots that genuinely accept several syntaxes,
+and `[StringSyntax("*")]` is for passthrough APIs that honour none — neither is
+a way to make a mismatch pass.
+```
 
 
 ## Code fix output — named constants vs. string literals
@@ -510,6 +580,8 @@ stringsyntax.name_conventions = enabled
 | `Email`    | `email`        | `userEmail`, `contactEmail`   |
 
 Format-style constants (`DateTimeFormat`, `NumericFormat`, ...) and the generic `Text` are deliberately omitted — their natural variable names (`format`, `text`) are too broad to safely promote.
+
+**Field underscore prefixes**: a field's leading underscores are punctuation, not part of its name, so they are stripped before matching. `_html` reads as `html` and `_pageHtml` as `pageHtml`. Without the trim only the second of those would match — the PascalCase-suffix rule sees the `Html` boundary regardless of the prefix, while an underscore sitting directly against the token blocks both rules. This applies to fields only: a leading underscore has no established meaning on a property, and on a parameter it marks a discard. A field named with nothing but underscores has no name left to match.
 
 **Effects** when enabled:
 

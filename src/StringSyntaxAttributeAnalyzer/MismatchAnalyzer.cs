@@ -189,7 +189,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         SyntaxTypes types,
         NameConventionsOption conventions)
     {
-        if (!NameConventions.TryMatch(context.Symbol.Name, out var conventionValue))
+        if (!NameConventions.TryMatch(context.Symbol, out var conventionValue))
         {
             return;
         }
@@ -290,7 +290,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             context,
             declaration.GetLocation(),
             conventionValue,
-            "LanguageComment");
+            "LanguageComment",
+            localSymbol);
     }
 
     static void ReportRedundantByConvention(
@@ -743,23 +744,23 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         var declSyntax = declRef.GetSyntax(context.CancellationToken);
-        var (identifierLoc, memberKind) = declSyntax switch
+        var identifierLocation = declSyntax switch
         {
-            MethodDeclarationSyntax m => (m.Identifier.GetLocation(), "Method"),
-            LocalFunctionStatementSyntax l => (l.Identifier.GetLocation(), "Method"),
-            PropertyDeclarationSyntax p => (p.Identifier.GetLocation(), "Property"),
-            _ => (null, null)
+            MethodDeclarationSyntax method => method.Identifier.GetLocation(),
+            LocalFunctionStatementSyntax localFunction => localFunction.Identifier.GetLocation(),
+            PropertyDeclarationSyntax property => property.Identifier.GetLocation(),
+            _ => (Location?)null
         };
-        if (identifierLoc is null || memberKind is null)
+        if (identifierLocation is null)
         {
             return;
         }
 
         Rules.ReportMissingReturnAnnotation(
             context,
-            identifierLoc,
+            identifierLocation,
             declSyntax.GetLocation(),
-            memberKind,
+            symbol,
             value);
     }
 
@@ -976,7 +977,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return info;
         }
 
-        if (NameConventions.TryMatch(symbol.Name, out var value))
+        if (NameConventions.TryMatch(symbol, out var value))
         {
             return SyntaxInfo.Present(value);
         }
@@ -1068,7 +1069,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             if (!SyntaxValueMatcher.ValuesMatch(source.Values, target.Values))
             {
-                Rules.ReportMismatch(context, location, source, targetSymbol, target);
+                Rules.ReportMismatch(context, location, sourceSymbol, source, targetSymbol, target);
             }
 
             return;
@@ -1135,7 +1136,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             }
 
             // Fix site is the target symbol's declaration (add StringSyntax matching source).
-            Rules.ReportDropped(context, location, targetSymbol, source);
+            Rules.ReportDropped(context, location, sourceSymbol, targetSymbol, source);
         }
     }
 
@@ -1168,7 +1169,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        var name = symbol.Name;
+        // Underscore-trimmed for fields, so `_modifiedBy` and `modifiedBy` reach the
+        // same verdict — see NameConventions.ConventionName.
+        var name = NameConventions.ConventionName(symbol);
 
         // Exact name ↔ value match (case-insensitive): a field `ModifiedBy` flowing
         // into `[StringSyntax("ModifiedBy")]` is self-documenting and never needs

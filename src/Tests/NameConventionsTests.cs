@@ -287,6 +287,123 @@ public class NameConventionsTests
         await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task Convention_UnderscorePascalField_StillMatches()
+    {
+        // `_pageHtml` matches with or without trimming — the PascalCase-suffix rule only
+        // looks at the `Html` boundary and never sees the prefix. Here as a guard that
+        // trimming didn't break the case that already worked.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("Html")] string value) { }
+            }
+
+            public class Holder
+            {
+                string _pageHtml = "";
+
+                public void Use(Target target) => target.Consume(_pageHtml);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, conventions: true);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Convention_UnderscoreField_WholeNameMatch()
+    {
+        // The case the trim exists for: `_html` puts the underscore directly against the
+        // token, so the suffix rule rejects it (`_` is no word boundary) and the
+        // whole-name rule can't see past it. Untrimmed this fires SSA002.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("Html")] string value) { }
+            }
+
+            public class Holder
+            {
+                string _html = "";
+
+                public void Use(Target target) => target.Consume(_html);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, conventions: true);
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Convention_UnderscoreField_FiresSSA008WhenAnnotated()
+    {
+        // The trim has to reach SSA008 too, or `_html` would be Present-by-name on the
+        // flow paths while its explicit annotation went unflagged as redundant.
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("Html")]
+                string _html = "";
+
+                public string Read() => _html;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, conventions: true);
+        await Assert.That(diagnostics.Any(_ => _.Id == "SSA008")).IsTrue();
+    }
+
+    [Test]
+    public async Task Convention_UnderscoreProperty_NotTrimmed()
+    {
+        // Field-only: a leading underscore has no established meaning on a property, so
+        // `_html` is left as-is, matches nothing, and SSA002 fires.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("Html")] string value) { }
+            }
+
+            public class Holder
+            {
+                public string _html { get; set; } = "";
+
+                public void Use(Target target) => target.Consume(_html);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, conventions: true);
+        await Assert.That(diagnostics.Any(_ => _.Id == "SSA002")).IsTrue();
+    }
+
+    [Test]
+    public async Task Convention_AllUnderscoreField_NoMatch()
+    {
+        // Nothing left after trimming, so no convention applies.
+        var source =
+            """
+            public class Target
+            {
+                public void Consume([StringSyntax("Html")] string value) { }
+            }
+
+            public class Holder
+            {
+                string __ = "";
+
+                public void Use(Target target) => target.Consume(__);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source, conventions: true);
+        await Assert.That(diagnostics.Any(_ => _.Id == "SSA002")).IsTrue();
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(string source, bool conventions)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
