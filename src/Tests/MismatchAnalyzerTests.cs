@@ -3762,7 +3762,7 @@ public class MismatchAnalyzerTests
 
         await Assert.That(diagnostics.Length).IsEqualTo(1);
         await Assert.That(diagnostics[0].Id).IsEqualTo("SSA009");
-        await Assert.That(diagnostics[0].GetMessage().Contains("Property")).IsTrue();
+        await Assert.That(diagnostics[0].GetMessage().Contains("property 'Row.ReasonDisplay'")).IsTrue();
         await Assert.That(diagnostics[0].GetMessage().Contains("Html")).IsTrue();
         await Assert.That(diagnostics[0].Properties["StringSyntaxValue"]).IsEqualTo("Html");
     }

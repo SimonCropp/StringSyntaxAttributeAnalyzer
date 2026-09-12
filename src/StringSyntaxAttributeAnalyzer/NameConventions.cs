@@ -32,6 +32,39 @@ static class NameConventions
         ("Email", ["email"])
     ];
 
+    // Symbol-aware entry point. Every check that has a symbol in hand should come
+    // through here rather than reaching for `.Name`, so the underscore rule below is
+    // applied uniformly — a field that is Present-by-name on one path and bare on
+    // another produces contradictory diagnostics.
+    public static bool TryMatch(ISymbol symbol, [NotNullWhen(true)] out string? value) =>
+        TryMatch(ConventionName(symbol), out value);
+
+    // A field's leading underscores are punctuation, not part of its name, so they are
+    // stripped before matching: `_html` reads as `html`, `_pageHtml` as `pageHtml`.
+    // What follows the prefix is already camelCase by the same convention, which is
+    // exactly what the matchers below expect, so no re-casing is needed.
+    //
+    // Field-only. A leading underscore has no established meaning on a property, and on
+    // a parameter it marks a discard. A field named with nothing but underscores has no
+    // name left to match and gets no value.
+    public static string ConventionName(ISymbol symbol)
+    {
+        var name = symbol.Name;
+        if (symbol is not IFieldSymbol)
+        {
+            return name;
+        }
+
+        var start = 0;
+        while (start < name.Length &&
+               name[start] == '_')
+        {
+            start++;
+        }
+
+        return start == 0 ? name : name[start..];
+    }
+
     public static bool TryMatch(string? name, [NotNullWhen(true)] out string? value)
     {
         if (name is { Length: > 0 })
