@@ -749,7 +749,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             MethodDeclarationSyntax method => method.Identifier.GetLocation(),
             LocalFunctionStatementSyntax localFunction => localFunction.Identifier.GetLocation(),
             PropertyDeclarationSyntax property => property.Identifier.GetLocation(),
-            _ => (Location?)null
+            _ => null
         };
         if (identifierLocation is null)
         {
