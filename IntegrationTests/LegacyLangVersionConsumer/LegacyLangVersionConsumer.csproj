@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- A consumer on the language version its target framework actually defaults to.
+         netstandard2.0 means C# 7.3, and net4x is the same — the very targets the
+         StringSyntaxAttribute polyfill exists to serve. Every other project here
+         inherits LangVersion=preview from Directory.Build.props, which is what hid the
+         generator emitting C# 12 (primary constructors, bodyless types, file-scoped
+         namespaces) into projects that cannot compile it.
+
+         LangVersion is pinned rather than left unset so the guard does not quietly
+         weaken if a future SDK raises the default for netstandard2.0. Nullable and
+         ImplicitUsings are off because both require a newer language version than this
+         project has: enabling them here fails before the generated code is even reached. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StringSyntaxAttributeAnalyzer" />
+  </ItemGroup>
+</Project>

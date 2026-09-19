@@ -86,66 +86,82 @@ public class RemoveRedundantConventionCodeFixProviderTests
         await Contains(fixedSource, "string pageHtml");
     }
 
+    [Test]
+    public async Task SSA008_KeepsDocCommentWhenRemovingAttribute()
+    {
+        // RemoveNode with KeepNoTrivia drops the attribute list's leading trivia, which
+        // is where the member's doc comment lives.
+        var source =
+            """
+            public class Holder
+            {
+                /// <summary>The endpoint.</summary>
+                [StringSyntax(StringSyntaxAttribute.Uri)]
+                public string Url { get; set; } = "";
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(fixedSource, "/// <summary>The endpoint.</summary>");
+    }
+
+    [Test]
+    public async Task SSA008_KeepsRegionDirectiveWhenRemovingAttribute()
+    {
+        // Same trivia loss, but the discarded trivia is a directive: removing the
+        // `#region` leaves an unmatched `#endregion`, which is CS1028 on the next parse.
+        var source =
+            """
+            public class Holder
+            {
+                #region Endpoints
+                [StringSyntax(StringSyntaxAttribute.Uri)]
+                public string Url { get; set; } = "";
+                #endregion
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(fixedSource, "#region Endpoints");
+    }
+
+    [Test]
+    public async Task SSA008_KeepsIndentationOfMultiLineParameter()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public void Use(
+                    [StringSyntax("Html")] string pageHtml,
+                    int count)
+                {
+                }
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(fixedSource, "        string pageHtml,");
+    }
+
     static async Task Contains(string actual, string expected) =>
         await Assert.That(actual).Contains(expected);
 
     static async Task DoesNotContain(string actual, string unexpected) =>
         await Assert.That(actual).DoesNotContain(unexpected);
 
-    static async Task<string> ApplyFix(string source)
-    {
-        var workspace = new AdhocWorkspace();
-        var projectInfo = ProjectInfo.Create(
-            ProjectId.CreateNewId(),
-            VersionStamp.Default,
-            name: "Tests",
-            assemblyName: "Tests",
-            language: LanguageNames.CSharp,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: TrustedPlatformReferences.All);
-
-        var solution = workspace.CurrentSolution.AddProject(projectInfo);
-        var documentId = DocumentId.CreateNewId(projectInfo.Id);
-        var generatedId = DocumentId.CreateNewId(projectInfo.Id);
-        solution = solution
-            .AddDocument(generatedId, "Generated.cs", """
-                global using System.Diagnostics.CodeAnalysis;
-                global using StringSyntaxAttributeAnalyzer;
-                """)
-            .AddDocument(documentId, "Test.cs", source);
-
-        var document = solution.GetDocument(documentId)!;
-        var compilation = (await document.Project.GetCompilationAsync())!;
-
-        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["stringsyntax.name_conventions"] = "enabled",
-        };
-        var options = new AnalyzerOptions(
-            additionalFiles: [],
-            optionsProvider: new TestConfigOptionsProvider(dict));
-
-        var diagnostics = await compilation
-            .WithAnalyzers([new MismatchAnalyzer()], options)
-            .GetAnalyzerDiagnosticsAsync();
-
-        var diagnostic = diagnostics.Single(_ => _.Id == "SSA008");
-
-        var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        var context = new CodeFixContext(
-            document,
-            diagnostic,
-            (action, _) => actions.Add(action),
-            Cancel.None);
-
-        await new RemoveRedundantConventionCodeFixProvider().RegisterCodeFixesAsync(context);
-
-        var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(Cancel.None);
-        var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
-
-        var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
-        var text = await newDocument.GetTextAsync();
-        return text.ToString();
-    }
+    static Task<string> ApplyFix(string source) =>
+        CodeFixVerify.Apply<RemoveRedundantConventionCodeFixProvider>(
+            source,
+            new()
+            {
+                DiagnosticId = "SSA008",
+                ConfigOptions = new(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["stringsyntax.name_conventions"] = "enabled",
+                }
+            });
 }

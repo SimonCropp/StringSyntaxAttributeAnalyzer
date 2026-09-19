@@ -10,6 +10,8 @@ static class HostDescription
         {
             PropertyDeclarationSyntax property =>
                 $"property '{property.Identifier.Text}'",
+            IndexerDeclarationSyntax =>
+                "indexer",
             FieldDeclarationSyntax { Declaration.Variables.Count: > 0 } field =>
                 $"field '{field.Declaration.Variables[0].Identifier.Text}'",
             ParameterSyntax parameter =>

@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class MismatchAnalyzer : DiagnosticAnalyzer
 {
@@ -13,22 +11,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         context.RegisterCompilationStartAction(start =>
         {
-            // Resolve StringSyntaxAttribute once per compilation. If the consumer doesn't
-            // reference System.Diagnostics.CodeAnalysis.StringSyntaxAttribute at all, this
-            // returns null and the analyzer stays dormant for this compilation.
-            var stringSyntaxType = start.Compilation
-                .GetTypeByMetadataName("System.Diagnostics.CodeAnalysis.StringSyntaxAttribute");
-            if (stringSyntaxType is null)
+            // Stay dormant when the consumer has no StringSyntaxAttribute at all: nothing
+            // can be annotated, so nothing can mismatch. Only the type's *presence*
+            // matters — annotations themselves are matched by name and namespace rather
+            // than against this symbol, because a polyfilled StringSyntaxAttribute is a
+            // distinct symbol in every assembly that declares one, and this package's own
+            // generator emits one per consumer. See SyntaxAttributeExtensions.IsStringSyntax.
+            if (start.Compilation
+                    .GetTypeByMetadataName("System.Diagnostics.CodeAnalysis.StringSyntaxAttribute") is null)
             {
                 return;
             }
-
-            // UnionSyntaxAttribute and ReturnSyntaxAttribute are source-generated as
-            // internal per-assembly, so the same metadata name can resolve to distinct
-            // symbols in different compilations (and GetTypeByMetadataName returns null
-            // when multiple references define it). Match by fully-qualified name
-            // instead of symbol identity so cross-assembly attribute use still works.
-            var types = new SyntaxTypes(stringSyntaxType);
 
             // Shortcut attributes present in this compilation (empty unless the consumer
             // opted in with `StringSyntaxAnalyzer_EmitShortcutAttributes=true`). Used by
@@ -45,22 +38,25 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             var linqFlow = new LinqFlow();
 
             start.RegisterOperationAction(
-                _ => AnalyzeArgument(_, types, suppression, conventions, linqFlow),
+                _ => AnalyzeArgument(_, suppression, conventions, linqFlow),
                 OperationKind.Argument);
             start.RegisterOperationAction(
-                _ => AnalyzeSimpleAssignment(_, types, suppression, conventions, linqFlow),
+                _ => AnalyzeSimpleAssignment(_, suppression, conventions, linqFlow),
                 OperationKind.SimpleAssignment);
             start.RegisterOperationAction(
-                _ => AnalyzePropertyInitializer(_, types, suppression, conventions, linqFlow),
+                _ => AnalyzePropertyInitializer(_, suppression, conventions, linqFlow),
                 OperationKind.PropertyInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeFieldInitializer(_, types, suppression, conventions, linqFlow),
+                _ => AnalyzeFieldInitializer(_, suppression, conventions, linqFlow),
                 OperationKind.FieldInitializer);
             start.RegisterOperationAction(
-                _ => AnalyzeBinaryOperator(_, types, suppression, conventions, linqFlow),
+                _ => AnalyzeVariableDeclarator(_, suppression, conventions, linqFlow),
+                OperationKind.VariableDeclarator);
+            start.RegisterOperationAction(
+                _ => AnalyzeBinaryOperator(_, suppression, conventions, linqFlow),
                 OperationKind.BinaryOperator);
             start.RegisterOperationAction(
-                _ => AnalyzeLoop(_, types, linqFlow),
+                _ => AnalyzeLoop(_, linqFlow),
                 OperationKind.Loop);
             start.RegisterSymbolAction(
                 AnalyzeSymbolForSingletonUnion,
@@ -71,7 +67,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             if (availableShortcuts.Count > 0)
             {
                 start.RegisterSymbolAction(
-                    _ => AnalyzeSymbolForRedundantStringSyntax(_, types, availableShortcuts),
+                    _ => AnalyzeSymbolForRedundantStringSyntax(_, availableShortcuts),
                     SymbolKind.Parameter,
                     SymbolKind.Property,
                     SymbolKind.Field,
@@ -85,7 +81,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // member/local *names* (a method name like `GetUrl` doesn't carry the
             // url through the return value).
             start.RegisterSymbolAction(
-                _ => AnalyzeSymbolForRedundantByConvention(_, types, conventions),
+                _ => AnalyzeSymbolForRedundantByConvention(_, conventions),
                 SymbolKind.Parameter,
                 SymbolKind.Property,
                 SymbolKind.Field);
@@ -106,18 +102,17 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // since Roslyn doesn't fire a separate block callback for them;
             // property getters fire as their own block with MethodKind.PropertyGet.
             start.RegisterOperationBlockAction(
-                _ => AnalyzeBlockForMissingReturnAnnotation(_, types, linqFlow));
+                _ => AnalyzeBlockForMissingReturnAnnotation(_, linqFlow));
         });
     }
 
     static void AnalyzeSymbolForRedundantStringSyntax(
         SymbolAnalysisContext context,
-        SyntaxTypes types,
         ImmutableDictionary<string, string> availableShortcuts)
     {
         foreach (var attribute in context.Symbol.GetAttributes())
         {
-            TryReportRedundant(context, types, availableShortcuts, attribute);
+            TryReportRedundant(context, availableShortcuts, attribute);
         }
 
         // A `[StringSyntax("X")]` at `[return: ...]` position lives on return-value
@@ -128,22 +123,22 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             foreach (var attribute in method.GetReturnTypeAttributes())
             {
-                TryReportRedundant(context, types, availableShortcuts, attribute);
+                TryReportRedundant(context, availableShortcuts, attribute);
             }
         }
     }
 
     static void TryReportRedundant(
         SymbolAnalysisContext context,
-        SyntaxTypes types,
         ImmutableDictionary<string, string> availableShortcuts,
         AttributeData attribute)
     {
         string value;
-        if (SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
+        if (attribute.IsStringSyntax())
         {
             if (attribute.ConstructorArguments.Length == 0 ||
-                attribute.ConstructorArguments[0].Value is not string s)
+                attribute.ConstructorArguments[0].Value is not string s ||
+                attribute.CarriesExtraArguments())
             {
                 return;
             }
@@ -186,7 +181,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeSymbolForRedundantByConvention(
         SymbolAnalysisContext context,
-        SyntaxTypes types,
         NameConventionsOption conventions)
     {
         if (!NameConventions.TryMatch(context.Symbol, out var conventionValue))
@@ -225,7 +219,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         foreach (var attribute in context.Symbol.GetAttributes())
         {
-            if (!TryGetSingleSyntaxValue(attribute, types, out var value) ||
+            if (!TryGetSingleSyntaxValue(attribute, out var value) ||
                 !SyntaxValueMatcher.SingleValuesMatch(value, conventionValue))
             {
                 continue;
@@ -315,14 +309,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // dropping the other values.
     static bool TryGetSingleSyntaxValue(
         AttributeData attribute,
-        SyntaxTypes types,
         [NotNullWhen(true)] out string? value)
     {
         value = null;
-        if (SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
+        if (attribute.IsStringSyntax())
         {
             if (attribute.ConstructorArguments.Length > 0 &&
-                attribute.ConstructorArguments[0].Value is string s)
+                attribute.ConstructorArguments[0].Value is string s &&
+                !attribute.CarriesExtraArguments())
             {
                 value = s;
                 return true;
@@ -353,7 +347,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeArgument(
         OperationAnalysisContext context,
-        SyntaxTypes types,
         NamespaceSuppression suppression,
         NameConventionsOption conventions,
         LinqFlow linqFlow)
@@ -366,9 +359,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
-        var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+        var targetInfo = GetSyntaxFromAttributes(parameter.GetAttributes());
         targetInfo = ApplyConvention(targetInfo, parameter, conventionsEnabled);
-        var (sourceSymbol, sourceInfo) = GetSourceInfo(argument.Value, types, linqFlow, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(argument.Value, linqFlow, conventionsEnabled);
         Report(
             context,
             argument.Value.Syntax.GetLocation(),
@@ -382,7 +375,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeSimpleAssignment(
         OperationAnalysisContext context,
-        SyntaxTypes types,
         NamespaceSuppression suppression,
         NameConventionsOption conventions,
         LinqFlow linqFlow)
@@ -404,7 +396,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 var anonInfo = BuildCommentInfo(anonValue);
                 var conventionsEnabledAnon = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
                 var (anonSourceSymbol, anonSourceInfo) = GetSourceInfo(
-                    assignment.Value, types, linqFlow, conventionsEnabledAnon);
+                    assignment.Value, linqFlow, conventionsEnabledAnon);
                 Report(
                     context,
                     assignment.Value.Syntax.GetLocation(),
@@ -420,8 +412,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
-        var targetInfo = GetSyntax(targetSymbol, types, conventionsEnabled);
-        var (sourceSymbol, sourceInfo) = GetSourceInfo(assignment.Value, types, linqFlow, conventionsEnabled);
+        var targetInfo = GetSyntax(targetSymbol, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(assignment.Value, linqFlow, conventionsEnabled);
         Report(
             context,
             assignment.Value.Syntax.GetLocation(),
@@ -433,16 +425,51 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             suppression.GetPatterns(context.Operation.Syntax.SyntaxTree));
     }
 
+    // A local's `//language=` comment states what it holds, and the initializer is the
+    // first thing that has to agree with it. No operation action covered this: the flow
+    // rules see arguments, assignments and member initializers, and a declaration with an
+    // initializer is none of those — so `// language=xml` above `var x = JsonProp;` was
+    // silent while the same code split into a declaration and an assignment reported.
+    //
+    // Only runs when the comment exists. Without one the initializer *supplies* the
+    // local's tag (see TryResolveLocalInitializer), so there is nothing to disagree with
+    // and checking it would report every inferred local against itself.
+    static void AnalyzeVariableDeclarator(
+        OperationAnalysisContext context,
+        NamespaceSuppression suppression,
+        NameConventionsOption conventions,
+        LinqFlow linqFlow)
+    {
+        var declarator = (IVariableDeclaratorOperation)context.Operation;
+        if (declarator.Initializer?.Value is not { } initializer ||
+            !LanguageCommentReader.TryRead(declarator.Symbol, out _))
+        {
+            return;
+        }
+
+        var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
+        var targetInfo = GetSyntax(declarator.Symbol, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(initializer, linqFlow, conventionsEnabled);
+        Report(
+            context,
+            initializer.Syntax.GetLocation(),
+            sourceSymbol,
+            sourceInfo,
+            declarator.Symbol,
+            targetInfo,
+            suppression,
+            suppression.GetPatterns(context.Operation.Syntax.SyntaxTree));
+    }
+
     static void AnalyzePropertyInitializer(
         OperationAnalysisContext context,
-        SyntaxTypes types,
         NamespaceSuppression suppression,
         NameConventionsOption conventions,
         LinqFlow linqFlow)
     {
         var init = (IPropertyInitializerOperation)context.Operation;
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
-        var (sourceSymbol, sourceInfo) = GetSourceInfo(init.Value, types, linqFlow, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(init.Value, linqFlow, conventionsEnabled);
         var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var property in init.InitializedProperties)
         {
@@ -455,7 +482,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            var targetInfo = GetSyntax(property, types, conventionsEnabled);
+            var targetInfo = GetSyntax(property, conventionsEnabled);
             Report(
                 context,
                 init.Value.Syntax.GetLocation(),
@@ -470,19 +497,18 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeFieldInitializer(
         OperationAnalysisContext context,
-        SyntaxTypes types,
         NamespaceSuppression suppression,
         NameConventionsOption conventions,
         LinqFlow linqFlow)
     {
         var init = (IFieldInitializerOperation)context.Operation;
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
-        var (sourceSymbol, sourceInfo) = GetSourceInfo(init.Value, types, linqFlow, conventionsEnabled);
+        var (sourceSymbol, sourceInfo) = GetSourceInfo(init.Value, linqFlow, conventionsEnabled);
         var patterns = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         foreach (var field in init.InitializedFields)
         {
             var targetInfo = ApplyConvention(
-                GetSyntaxFromAttributes(field.GetAttributes(), types),
+                GetSyntaxFromAttributes(field.GetAttributes()),
                 field,
                 conventionsEnabled);
             Report(
@@ -556,7 +582,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     //     tagged return.
     static void AnalyzeBlockForMissingReturnAnnotation(
         OperationBlockAnalysisContext blockContext,
-        SyntaxTypes types,
         LinqFlow linqFlow)
     {
         if (blockContext.OwningSymbol is not IMethodSymbol owner)
@@ -604,7 +629,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     continue;
                 }
 
-                var (_, info) = GetSourceInfo(returnedValue, types, linqFlow, conventionsEnabled: false);
+                var (_, info) = GetSourceInfo(returnedValue, linqFlow, conventionsEnabled: false);
                 if (info.State == SyntaxState.Present)
                 {
                     acc.Collected.Add(info);
@@ -663,7 +688,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // Present or an explicit `[StringSyntax("*")]` (Any) both count as already
             // annotated — the author has stated the return syntax (or that any is
             // acceptable), so don't demand a return tag.
-            if (GetSyntaxFromAttributes(attributeHolder.GetAttributes(), types).State is
+            if (GetSyntaxFromAttributes(attributeHolder.GetAttributes()).State is
                 SyntaxState.Present or
                 SyntaxState.Any)
             {
@@ -673,7 +698,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // `[return: ...]` only applies to methods/local functions — for
             // property getters the property's own attributes are authoritative.
             if (attributeHolder is IMethodSymbol asMethod &&
-                GetSyntaxFromAttributes(asMethod.GetReturnTypeAttributes(), types).State is
+                GetSyntaxFromAttributes(asMethod.GetReturnTypeAttributes()).State is
                     SyntaxState.Present or
                     SyntaxState.Any)
             {
@@ -766,7 +791,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
     static void AnalyzeBinaryOperator(
         OperationAnalysisContext context,
-        SyntaxTypes types,
         NamespaceSuppression suppression,
         NameConventionsOption conventions,
         LinqFlow linqFlow)
@@ -780,14 +804,16 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         var suppressedNamespaces = suppression.GetPatterns(context.Operation.Syntax.SyntaxTree);
         var conventionsEnabled = conventions.IsEnabled(context.Operation.Syntax.SyntaxTree);
 
-        var (leftSymbol, leftInfo) = GetSourceInfo(binary.LeftOperand, types, linqFlow, conventionsEnabled);
-        var (rightSymbol, rightInfo) = GetSourceInfo(binary.RightOperand, types, linqFlow, conventionsEnabled);
+        var (leftSymbol, leftInfo) = GetSourceInfo(binary.LeftOperand, linqFlow, conventionsEnabled);
+        var (rightSymbol, rightInfo) = GetSourceInfo(binary.RightOperand, linqFlow, conventionsEnabled);
 
-        // Unknown side (literal, local, concatenation, await) — suppress. Comparing to
-        // a literal is common and fine; the analyzer can't infer intent from an opaque
-        // expression. Method invocations are NotPresent (fixable via [ReturnSyntax]),
-        // not Unknown. An explicit `[StringSyntax("*")]` wildcard (Any) likewise
-        // accepts any syntax, so a comparison against it can never be a mismatch.
+        // Unknown side (literal, concatenation, await) — suppress. Comparing to a literal
+        // is common and fine; the analyzer can't infer intent from an opaque expression.
+        // Method invocations are NotPresent (fixable via [ReturnSyntax]), and so are
+        // locals that can host a `//language=` comment — both have a fix site, which is
+        // the whole line between NotPresent and Unknown. An explicit `[StringSyntax("*")]`
+        // wildcard (Any) likewise accepts any syntax, so a comparison against it can never
+        // be a mismatch.
         if (leftInfo.State is SyntaxState.Unknown or SyntaxState.Any ||
             rightInfo.State is SyntaxState.Unknown or SyntaxState.Any)
         {
@@ -819,6 +845,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (leftInfo.State == SyntaxState.Present && rightInfo.State == SyntaxState.NotPresent)
         {
             if (rightSymbol!.GetTargetType().IsGenericValueSlot() ||
+                AcceptsPlainText(leftInfo) ||
                 suppression.Matches(rightSymbol, suppressedNamespaces) ||
                 KnownUnannotatedAssemblies.Contains(rightSymbol) ||
                 NameConventionMatches(rightSymbol, leftInfo.Values))
@@ -837,6 +864,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                  leftInfo.State == SyntaxState.NotPresent)
         {
             if (leftSymbol!.GetTargetType().IsGenericValueSlot() ||
+                AcceptsPlainText(rightInfo) ||
                 suppression.Matches(leftSymbol, suppressedNamespaces) ||
                 KnownUnannotatedAssemblies.Contains(leftSymbol) ||
                 NameConventionMatches(leftSymbol, rightInfo.Values))
@@ -856,7 +884,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static ISymbol? GetSymbol(IOperation operation)
     {
         operation = operation.UnwrapConversions();
-        return operation switch
+        var symbol = operation switch
         {
             // Anonymous-type properties can't host StringSyntax attributes, so a
             // read of one carries no usable metadata. Return null so GetSyntax
@@ -865,19 +893,55 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             IPropertyReferenceOperation { Property.ContainingType.IsAnonymousType: true } => null,
             IPropertyReferenceOperation prop => prop.Property,
             IFieldReferenceOperation field => field.Field,
-            IParameterReferenceOperation param => param.Parameter,
-            // Generic methods returning T can't be usefully attributed with [ReturnSyntax]
-            // — the annotation would apply to every substitution, not just string. Treat
-            // as null so GetSyntax maps the source to Unknown and suppresses SSA002/003.
-            IInvocationOperation invocation
-                when invocation.TargetMethod.OriginalDefinition.ReturnType.TypeKind != TypeKind.TypeParameter
-                => invocation.TargetMethod,
+            IParameterReferenceOperation param => ResolveAccessorValue(param.Parameter),
+            IInvocationOperation invocation => invocation.TargetMethod,
             ILocalReferenceOperation local => local.Local,
             _ => null
         };
+
+        // A member declared as `T`, or as a Task/ValueTask of one, can't be usefully
+        // attributed — the annotation would apply to every substitution rather than the
+        // string one at this call site, so the fix would change the wrong thing. Mapping
+        // to null makes GetSyntax read Unknown, which keeps SSA002/SSA003 quiet. Applied
+        // after the switch so it covers properties, fields, parameters and returns alike;
+        // it used to guard only a method returning a bare `T`.
+        if (symbol is not null &&
+            symbol.IsGenericValueSource())
+        {
+            return null;
+        }
+
+        return symbol;
     }
 
-    static SyntaxInfo GetSyntax(ISymbol? symbol, SyntaxTypes types, bool conventionsEnabled)
+    // The implicit `value` of a set or init accessor *is* the property's value: assigning
+    // to `[StringSyntax("Json")] string Payload` means what is assigned is Json. Read as a
+    // bare parameter it carries no attributes and has no DeclaringSyntaxReferences, so the
+    // most ordinary shape there is — an annotated property over an annotated backing field
+    // — reported SSA002 against itself, with no fix site to attach anything to.
+    //
+    // Resolving to the property fixes both halves at once: the annotation becomes readable,
+    // and when the property has none the diagnostic lands on a declaration the codefix can
+    // actually write to.
+    static ISymbol ResolveAccessorValue(IParameterSymbol parameter)
+    {
+        // An indexer's set accessor takes its index parameters *before* `value`, so only
+        // the last one is the assigned value — binding `index` to the indexer would claim
+        // the index carries the indexer's syntax.
+        if (parameter.ContainingSymbol is IMethodSymbol
+            {
+                MethodKind: MethodKind.PropertySet,
+                AssociatedSymbol: IPropertySymbol property
+            } setter &&
+            parameter.Ordinal == setter.Parameters.Length - 1)
+        {
+            return property;
+        }
+
+        return parameter;
+    }
+
+    static SyntaxInfo GetSyntax(ISymbol? symbol, bool conventionsEnabled)
     {
         if (symbol is null)
         {
@@ -921,7 +985,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return SyntaxInfo.NotPresent;
         }
 
-        var info = GetSyntaxFromAttributes(symbol.GetAttributes(), types);
+        var info = GetSyntaxFromAttributes(symbol.GetAttributes());
         // Present and Any are both authoritative author intent — return immediately so
         // neither the method-return fallback, the record-parameter fallback, nor name-
         // convention promotion can override an explicit `[StringSyntax("*")]`.
@@ -936,10 +1000,25 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // the same as `[ReturnSyntax(Syntax.Json)]`.
         if (symbol is IMethodSymbol method)
         {
-            var returnInfo = GetSyntaxFromAttributes(method.GetReturnTypeAttributes(), types);
+            var returnInfo = GetSyntaxFromAttributes(method.GetReturnTypeAttributes());
             if (returnInfo.State is SyntaxState.Present or SyntaxState.Any)
             {
                 return returnInfo;
+            }
+
+            // `ReturnSyntaxAttribute` targets Method | Delegate, and on a delegate
+            // declaration the default target is the delegate *type* — so the annotation
+            // never lands on the Invoke method an invocation resolves to. Read it off
+            // the containing type, otherwise `[ReturnSyntax(Syntax.Json)] delegate string
+            // Producer();` is invisible at the call site and the codefix that writes it
+            // never clears its own diagnostic.
+            if (method is { MethodKind: MethodKind.DelegateInvoke, ContainingType: { } delegateType })
+            {
+                var delegateInfo = GetSyntaxFromAttributes(delegateType.GetAttributes());
+                if (delegateInfo.State is SyntaxState.Present or SyntaxState.Any)
+                {
+                    return delegateInfo;
+                }
             }
         }
 
@@ -950,7 +1029,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         if (symbol is IPropertySymbol property &&
             property.FindPrimaryConstructorParameter() is { } parameter)
         {
-            var paramInfo = GetSyntaxFromAttributes(parameter.GetAttributes(), types);
+            var paramInfo = GetSyntaxFromAttributes(parameter.GetAttributes());
             if (paramInfo.State == SyntaxState.Present)
             {
                 return paramInfo;
@@ -985,18 +1064,11 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return info;
     }
 
-    readonly struct SyntaxTypes(INamedTypeSymbol stringSyntax)
-    {
-        public INamedTypeSymbol StringSyntax { get; } = stringSyntax;
-    }
-
-    static SyntaxInfo GetSyntaxFromAttributes(
-        ImmutableArray<AttributeData> attributes,
-        SyntaxTypes types)
+    static SyntaxInfo GetSyntaxFromAttributes(ImmutableArray<AttributeData> attributes)
     {
         foreach (var attribute in attributes)
         {
-            if (SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, types.StringSyntax))
+            if (attribute.IsStringSyntax())
             {
                 if (attribute.ConstructorArguments.Length > 0 &&
                     attribute.ConstructorArguments[0].Value is string s)
@@ -1099,12 +1171,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            // `[UnionSyntax(..., "Text", ...)]` declares that the slot also accepts
-            // plain text. An untagged source IS plain text — adding [StringSyntax]
-            // wouldn't make it more correct, just noisier. Scoped to unions (>1
-            // value) so a strict `[StringSyntax("Text")]` still fires SSA002.
-            if (target.Values.Length > 1 &&
-                ContainsTextOption(target.Values))
+            if (AcceptsPlainText(target))
             {
                 return;
             }
@@ -1140,9 +1207,20 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
     }
 
+    // `[UnionSyntax(..., "Text", ...)]` declares that the slot also accepts plain text,
+    // and an untagged value IS plain text — annotating it wouldn't make it more correct,
+    // just noisier. Scoped to unions (>1 value) so a strict `[StringSyntax("Text")]` still
+    // reports.
+    //
+    // Shared by the flow rules and the equality rules rather than written out at each
+    // site: SSA002 had it and SSA005 did not, so the same pair of declarations was
+    // accepted as an argument and reported as a comparison.
+    static bool AcceptsPlainText(SyntaxInfo info) =>
+        info.Values.Length > 1 &&
+        ContainsTextOption(info.Values);
+
     // True when one of the union options is "Text" (case-folded first char, same
-    // rule SyntaxValueMatcher uses elsewhere). Used to gate the SSA002 suppression
-    // for `[UnionSyntax(..., "Text", ...)]` targets.
+    // rule SyntaxValueMatcher uses elsewhere).
     static bool ContainsTextOption(ImmutableArray<string> values)
     {
         foreach (var value in values)
@@ -1264,7 +1342,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // Reads attributes off a KV-shaped symbol and lifts them into a KvpBinding
     // positioned by ClassifyKvpPosition. Returns null when the symbol's type
     // isn't KV-shaped, no position is tag-eligible, or no attribute resolves.
-    static KvpBinding? GetKvpBinding(ISymbol symbol, SyntaxTypes types)
+    static KvpBinding? GetKvpBinding(ISymbol symbol)
     {
         var position = ClassifyKvpPosition(symbol.GetDeclaredType());
         if (position is null)
@@ -1272,7 +1350,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return null;
         }
 
-        var info = GetExplicitCollectionTags(symbol, types);
+        var info = GetExplicitCollectionTags(symbol);
         if (info.State != SyntaxState.Present)
         {
             return null;
@@ -1291,7 +1369,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // specific entry points (.Keys/.Values — handled separately in the single-T
     // path) break out of the walk. Returns null if the chain doesn't bottom out
     // at a KV-tagged symbol.
-    static KvpBinding? GetReceiverKvpTags(IOperation receiver, SyntaxTypes types, LinqFlow linqFlow)
+    static KvpBinding? GetReceiverKvpTags(IOperation receiver, LinqFlow linqFlow)
     {
         while (true)
         {
@@ -1322,7 +1400,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return null;
             }
 
-            return GetKvpBinding(symbol, types);
+            return GetKvpBinding(symbol);
         }
     }
 
@@ -1333,7 +1411,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // (`dict.First()` et al), and a direct reference to a KV-typed symbol.
     static KvpBinding? GetKvpBindingFromOperation(
         IOperation operation,
-        SyntaxTypes types,
         LinqFlow linqFlow)
     {
         operation = operation.Unwrap();
@@ -1351,7 +1428,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             var receiver = inv.GetLinqReceiver();
             if (receiver is not null)
             {
-                return GetReceiverKvpTags(receiver, types, linqFlow);
+                return GetReceiverKvpTags(receiver, linqFlow);
             }
         }
 
@@ -1361,7 +1438,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return null;
         }
 
-        return GetKvpBinding(symbol, types);
+        return GetKvpBinding(symbol);
     }
 
     // dict[k] read. Fires when the indexer is declared on a KV-shaped type and
@@ -1370,7 +1447,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // Kept narrow: doesn't claim indexers on non-dict-shaped types.
     static bool TryResolveDictionaryIndexer(
         IPropertyReferenceOperation indexerRef,
-        SyntaxTypes types,
         LinqFlow linqFlow,
         out SyntaxInfo info)
     {
@@ -1394,7 +1470,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        var binding = GetKvpBindingFromOperation(indexerRef.Instance!, types, linqFlow);
+        var binding = GetKvpBindingFromOperation(indexerRef.Instance!, linqFlow);
         if (binding is null ||
             binding.Value.State != SyntaxState.Present)
         {
@@ -1416,7 +1492,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // element-flow path.
     static bool TryResolveKvpCollectionView(
         IOperation receiver,
-        SyntaxTypes types,
         LinqFlow linqFlow,
         out SyntaxInfo info)
     {
@@ -1436,7 +1511,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        var binding = GetKvpBindingFromOperation(instance, types, linqFlow);
+        var binding = GetKvpBindingFromOperation(instance, linqFlow);
         if (binding is null)
         {
             return false;
@@ -1494,11 +1569,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // falls back to the scalar path (symbol + attributes + convention) otherwise.
     // The scalar path also has collection-tag suppression applied so passing a
     // tagged collection into a bare receiver slot doesn't spuriously fire SSA003.
+    // `tracing` carries the locals whose initializers are already being resolved further
+    // up this descent, so a self- or mutually-referential declaration terminates instead
+    // of recursing forever. Null at every entry point: only TryResolveLocalInitializer
+    // allocates it, and only once it actually descends. See the comment there.
     static (ISymbol? symbol, SyntaxInfo info) GetSourceInfo(
         IOperation operation,
-        SyntaxTypes types,
         LinqFlow linqFlow,
-        bool conventionsEnabled)
+        bool conventionsEnabled,
+        List<ISymbol>? tracing = null)
     {
         var unwrapped = operation.Unwrap();
 
@@ -1517,7 +1596,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             } kvpProp &&
             IsKvpOrGroupingMember(kvpProp.Property, out var kvpSide))
         {
-            var kvpBinding = GetKvpBindingFromOperation(kvpProp.Instance, types, linqFlow);
+            var kvpBinding = GetKvpBindingFromOperation(kvpProp.Instance, linqFlow);
             if (kvpBinding is not null)
             {
                 var picked = kvpBinding.Pick(kvpSide);
@@ -1534,13 +1613,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 Property.IsIndexer: true,
                 Instance: not null
             } indexerRef &&
-            TryResolveDictionaryIndexer(indexerRef, types, linqFlow, out var indexerInfo))
+            TryResolveDictionaryIndexer(indexerRef, linqFlow, out var indexerInfo))
         {
             return (indexerRef.Property, indexerInfo);
         }
 
         if (unwrapped is IInvocationOperation inv &&
-            TryResolveLinqElementReturn(inv, types, linqFlow, out var linqInfo))
+            TryResolveLinqElementReturn(inv, linqFlow, out var linqInfo))
         {
             return (inv.TargetMethod, linqInfo);
         }
@@ -1554,7 +1633,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 Property.ContainingType.IsAnonymousType: true,
                 Instance: { } anonInstance
             } anonReadRef &&
-            TryResolveAnonymousMemberRead(anonReadRef, anonInstance, types, linqFlow, conventionsEnabled, out var anonReadInfo))
+            TryResolveAnonymousMemberRead(anonReadRef, anonInstance, linqFlow, conventionsEnabled, tracing, out var anonReadInfo))
         {
             return (anonReadRef.Property, anonReadInfo);
         }
@@ -1565,20 +1644,20 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // this path only kicks in when the local itself has no comment but its
         // initializer carries a discoverable tag.
         if (unwrapped is ILocalReferenceOperation localRefInit &&
-            TryResolveLocalInitializer(localRefInit, types, linqFlow, conventionsEnabled, out var initInfo))
+            TryResolveLocalInitializer(localRefInit, linqFlow, conventionsEnabled, tracing, out var initInfo))
         {
             return (localRefInit.Local, initInfo);
         }
 
         if (unwrapped is IParameterReferenceOperation param &&
-            TryResolveLambdaParameterFromLinq(param, types, linqFlow, out var lambdaInfo))
+            TryResolveLambdaParameterFromLinq(param, linqFlow, out var lambdaInfo))
         {
             return (param.Parameter, lambdaInfo);
         }
 
         if (unwrapped is IArrayElementReferenceOperation arrayElement)
         {
-            var arrayInfo = GetReceiverElementTags(arrayElement.ArrayReference, types, linqFlow);
+            var arrayInfo = GetReceiverElementTags(arrayElement.ArrayReference, linqFlow);
             if (arrayInfo.State == SyntaxState.Present)
             {
                 return (null, arrayInfo);
@@ -1590,7 +1669,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         // unwrapped operation so that conversions, `await`, and `??` peel away
         // before the symbol lookup.
         var symbol = GetSymbol(unwrapped);
-        var info = GetSyntax(symbol, types, conventionsEnabled);
+        var info = GetSyntax(symbol, conventionsEnabled);
         info = SuppressCollectionTag(symbol?.GetDeclaredType(), info);
         return (symbol, info);
     }
@@ -1624,7 +1703,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // loop variable is a KeyValuePair; the tag lives on one position (Key or
     // Value, per ClassifyKvpPosition) and is recovered when `.Key` / `.Value`
     // is read inside the loop body.
-    static void AnalyzeLoop(OperationAnalysisContext context, SyntaxTypes types, LinqFlow linqFlow)
+    static void AnalyzeLoop(OperationAnalysisContext context, LinqFlow linqFlow)
     {
         if (context.Operation is not IForEachLoopOperation forEach)
         {
@@ -1637,14 +1716,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var info = GetReceiverElementTags(forEach.Collection, types, linqFlow);
+        var info = GetReceiverElementTags(forEach.Collection, linqFlow);
         if (info.State == SyntaxState.Present)
         {
             linqFlow.LocalBindings.TryAdd(loopVar, info.Values);
             return;
         }
 
-        var kvp = GetReceiverKvpTags(forEach.Collection, types, linqFlow);
+        var kvp = GetReceiverKvpTags(forEach.Collection, linqFlow);
         if (kvp is not null)
         {
             linqFlow.KvpBindings.TryAdd(loopVar, kvp);
@@ -1657,7 +1736,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // (CS8972), so inference is the only way IQueryable predicates work.
     static bool TryResolveLambdaParameterFromLinq(
         IParameterReferenceOperation param,
-        SyntaxTypes types,
         LinqFlow linqFlow,
         out SyntaxInfo info)
     {
@@ -1669,7 +1747,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        var elementInfo = GetReceiverElementTags(receiver, types, linqFlow);
+        var elementInfo = GetReceiverElementTags(receiver, linqFlow);
         if (elementInfo.State != SyntaxState.Present)
         {
             return false;
@@ -1704,9 +1782,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     static bool TryResolveAnonymousMemberRead(
         IPropertyReferenceOperation anonProp,
         IOperation instance,
-        SyntaxTypes types,
         LinqFlow linqFlow,
         bool conventionsEnabled,
+        List<ISymbol>? tracing,
         out SyntaxInfo info)
     {
         info = SyntaxInfo.Unknown;
@@ -1734,7 +1812,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return true;
             }
 
-            var (_, resolved) = GetSourceInfo(assignment.Value, types, linqFlow, conventionsEnabled);
+            var (_, resolved) = GetSourceInfo(assignment.Value, linqFlow, conventionsEnabled, tracing);
             if (resolved.State == SyntaxState.Present)
             {
                 info = resolved;
@@ -1858,6 +1936,65 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         return null;
     }
 
+    // A local that is assigned again no longer holds what its initializer held, so
+    // inferring a tag from the initializer states something untrue of every use after the
+    // assignment. On `var current = Json; current = Xml; TakeXml(current);` that produced a
+    // pair no single edit could satisfy: SSA003 asking for `current` to be tagged xml, and
+    // SSA001 insisting it was Json.
+    //
+    // Saying what the tag is at each individual use would take flow analysis. Declining to
+    // infer is the honest answer, and leaves the local NotPresent — so the `//language=`
+    // path and its codefix still apply, and what remains all points at the same edit.
+    static bool IsReassigned(ILocalReferenceOperation localRef)
+    {
+        // A local's scope is the block enclosing its declaration, so every assignment to
+        // it — including inside nested blocks and lambdas — is a descendant of that node.
+        if (localRef.Local.FindDeclarationStatement()?.Parent is not { } scope ||
+            localRef.SemanticModel is not { } semanticModel)
+        {
+            return false;
+        }
+
+        foreach (var node in scope.DescendantNodes())
+        {
+            IdentifierNameSyntax? identifier;
+            if (node is AssignmentExpressionSyntax assignment)
+            {
+                // Covers `=` and the compound forms alike; both replace the value.
+                identifier = assignment.Left as IdentifierNameSyntax;
+            }
+            else if (node is ArgumentSyntax argument &&
+                     !argument.RefKindKeyword.IsKind(SyntaxKind.None))
+            {
+                // `Try(out current)` and `ref current` rebind it just as much. An
+                // `out var` declares a *new* local, and is a DeclarationExpressionSyntax
+                // rather than an identifier, so it falls out here.
+                identifier = argument.Expression as IdentifierNameSyntax;
+            }
+            else
+            {
+                continue;
+            }
+
+            // Name first: the symbol lookup is the expensive half, and only runs for the
+            // handful of nodes that could possibly refer to this local.
+            if (identifier is null ||
+                identifier.Identifier.ValueText != localRef.Local.Name)
+            {
+                continue;
+            }
+
+            if (SymbolEqualityComparer.Default.Equals(
+                    semanticModel.GetSymbolInfo(identifier).Symbol,
+                    localRef.Local))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // `var x = <expr>;` — trace <expr>'s SyntaxInfo and bind it to `x`. Only
     // Present results propagate; NotPresent/Unknown fall through so existing
     // local-level logic (language-injection comments, SSA002 codefix) still
@@ -1865,9 +2002,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // only fills the gap when the author has not commented the local.
     static bool TryResolveLocalInitializer(
         ILocalReferenceOperation localRef,
-        SyntaxTypes types,
         LinqFlow linqFlow,
         bool conventionsEnabled,
+        List<ISymbol>? tracing,
         out SyntaxInfo info)
     {
         info = SyntaxInfo.Unknown;
@@ -1903,14 +2040,51 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        var (_, resolved) = GetSourceInfo(initializerOp, types, linqFlow, conventionsEnabled);
-        if (resolved.State != SyntaxState.Present)
+        if (IsReassigned(localRef))
         {
             return false;
         }
 
-        info = resolved;
-        return true;
+        // `string s = s;` does not compile, but an analyzer sees it constantly — it is
+        // what a half-typed rename looks like, and IDEs re-run analyzers on every
+        // keystroke. Resolving `s` means resolving its initializer, which is `s`, so
+        // without this the descent below and GetSourceInfo call each other until the
+        // stack runs out. A stack overflow cannot be caught, so it takes the whole IDE
+        // or build process down with it.
+        //
+        // Keyed on the symbol rather than checking for self-reference, because the cycle
+        // can span several locals (`string a = b; string b = a;`).
+        if (tracing is not null)
+        {
+            foreach (var traced in tracing)
+            {
+                if (SymbolEqualityComparer.Default.Equals(traced, localRef.Local))
+                {
+                    return false;
+                }
+            }
+        }
+
+        // Allocated on first descent into an initializer rather than per GetSourceInfo
+        // call — every argument, assignment and initializer in the compilation goes
+        // through that, and almost none of them reach here.
+        tracing ??= [];
+        tracing.Add(localRef.Local);
+        try
+        {
+            var (_, resolved) = GetSourceInfo(initializerOp, linqFlow, conventionsEnabled, tracing);
+            if (resolved.State != SyntaxState.Present)
+            {
+                return false;
+            }
+
+            info = resolved;
+            return true;
+        }
+        finally
+        {
+            tracing.RemoveAt(tracing.Count - 1);
+        }
     }
 
     // For element-returning LINQ (`.First()`, `.Single()`, `.ElementAt()` etc.)
@@ -1921,7 +2095,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // where T matches the receiver's element type.
     static bool TryResolveLinqElementReturn(
         IInvocationOperation invocation,
-        SyntaxTypes types,
         LinqFlow linqFlow,
         out SyntaxInfo info)
     {
@@ -1977,7 +2150,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
-        var elementInfo = GetReceiverElementTags(receiver, types, linqFlow);
+        var elementInfo = GetReceiverElementTags(receiver, linqFlow);
         if (elementInfo.State != SyntaxState.Present)
         {
             return false;
@@ -1997,7 +2170,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // Select / SelectMany get their own handling (GetSelectElementTags) because
     // the result element type can differ from the source — the selector decides
     // the new syntax.
-    static SyntaxInfo GetReceiverElementTags(IOperation receiver, SyntaxTypes types, LinqFlow linqFlow)
+    static SyntaxInfo GetReceiverElementTags(IOperation receiver, LinqFlow linqFlow)
     {
         // Iterates element-preserving LINQ chains instead of recursing — long
         // method chains (common in query-heavy code) would otherwise grow the
@@ -2006,7 +2179,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         {
             receiver = receiver.Unwrap();
 
-            if (TryResolveKvpCollectionView(receiver, types, linqFlow, out var kvpView))
+            if (TryResolveKvpCollectionView(receiver, linqFlow, out var kvpView))
             {
                 return kvpView;
             }
@@ -2017,7 +2190,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
                 if (targetMethod.IsSelectCall())
                 {
-                    return GetSelectElementTags(inv, types, linqFlow);
+                    return GetSelectElementTags(inv, linqFlow);
                 }
 
                 if (targetMethod.IsElementPreserving())
@@ -2072,7 +2245,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
                 if (position == KvpPosition.Value)
                 {
-                    return GetExplicitCollectionTags(symbol, types);
+                    return GetExplicitCollectionTags(symbol);
                 }
 
                 return SyntaxInfo.Unknown;
@@ -2083,7 +2256,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                 return SyntaxInfo.Unknown;
             }
 
-            return GetExplicitCollectionTags(symbol, types);
+            return GetExplicitCollectionTags(symbol);
         }
     }
 
@@ -2093,9 +2266,9 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // convention tagging is deliberately skipped — a collection-typed member whose
     // name happens to match the convention would spuriously acquire a tag no
     // caller can opt out of.
-    static SyntaxInfo GetExplicitCollectionTags(ISymbol symbol, SyntaxTypes types)
+    static SyntaxInfo GetExplicitCollectionTags(ISymbol symbol)
     {
-        var direct = GetSyntaxFromAttributes(symbol.GetAttributes(), types);
+        var direct = GetSyntaxFromAttributes(symbol.GetAttributes());
         if (direct.State == SyntaxState.Present)
         {
             return direct;
@@ -2103,7 +2276,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         if (symbol is IMethodSymbol method)
         {
-            var returnInfo = GetMethodSyntax(method, types);
+            var returnInfo = GetMethodSyntax(method);
             if (returnInfo.State == SyntaxState.Present)
             {
                 return returnInfo;
@@ -2112,7 +2285,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             var overridden = method.OverriddenMethod;
             while (overridden is not null)
             {
-                var info = GetMethodSyntax(overridden, types);
+                var info = GetMethodSyntax(overridden);
                 if (info.State == SyntaxState.Present)
                 {
                     return info;
@@ -2131,7 +2304,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                         continue;
                     }
 
-                    var info = GetMethodSyntax(ifaceMember, types);
+                    var info = GetMethodSyntax(ifaceMember);
                     if (info.State == SyntaxState.Present)
                     {
                         return info;
@@ -2144,7 +2317,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         if (symbol is IPropertySymbol property)
         {
-            var inherited = GetPropertyFromHierarchy(property, types);
+            var inherited = GetPropertyFromHierarchy(property);
             if (inherited.State == SyntaxState.Present)
             {
                 return inherited;
@@ -2155,7 +2328,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // element-flow through a record's collection property works.
             if (property.FindPrimaryConstructorParameter() is { } recordParam)
             {
-                var fromParam = GetSyntaxFromAttributes(recordParam.GetAttributes(), types);
+                var fromParam = GetSyntaxFromAttributes(recordParam.GetAttributes());
                 if (fromParam.State == SyntaxState.Present)
                 {
                     return fromParam;
@@ -2169,23 +2342,23 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     // [ReturnSyntax] lives on the method symbol itself; [return: StringSyntax] /
     // [return: Html] live on the method's return-value attribute set. Callers that
     // want the method's effective return-syntax need to check both.
-    static SyntaxInfo GetMethodSyntax(IMethodSymbol method, SyntaxTypes types)
+    static SyntaxInfo GetMethodSyntax(IMethodSymbol method)
     {
-        var direct = GetSyntaxFromAttributes(method.GetAttributes(), types);
+        var direct = GetSyntaxFromAttributes(method.GetAttributes());
         if (direct.State == SyntaxState.Present)
         {
             return direct;
         }
 
-        return GetSyntaxFromAttributes(method.GetReturnTypeAttributes(), types);
+        return GetSyntaxFromAttributes(method.GetReturnTypeAttributes());
     }
 
-    static SyntaxInfo GetPropertyFromHierarchy(IPropertySymbol property, SyntaxTypes types)
+    static SyntaxInfo GetPropertyFromHierarchy(IPropertySymbol property)
     {
         var overridden = property.OverriddenProperty;
         while (overridden is not null)
         {
-            var info = GetSyntaxFromAttributes(overridden.GetAttributes(), types);
+            var info = GetSyntaxFromAttributes(overridden.GetAttributes());
             if (info.State == SyntaxState.Present)
             {
                 return info;
@@ -2196,7 +2369,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
         foreach (var ifaceMember in property.ExplicitInterfaceImplementations)
         {
-            var info = GetSyntaxFromAttributes(ifaceMember.GetAttributes(), types);
+            var info = GetSyntaxFromAttributes(ifaceMember.GetAttributes());
             if (info.State == SyntaxState.Present)
             {
                 return info;
@@ -2219,7 +2392,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     continue;
                 }
 
-                var info = GetSyntaxFromAttributes(ifaceMember.GetAttributes(), types);
+                var info = GetSyntaxFromAttributes(ifaceMember.GetAttributes());
                 if (info.State == SyntaxState.Present)
                 {
                     return info;
@@ -2236,7 +2409,7 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     //   2. Method group `.Select(SomeMethod)` — result = method's [return: ...].
     //   3. Expression-bodied lambda whose body resolves to a known syntax.
     // Other selector shapes (multi-statement lambdas, untagged expressions) drop.
-    static SyntaxInfo GetSelectElementTags(IInvocationOperation invocation, SyntaxTypes types, LinqFlow linqFlow)
+    static SyntaxInfo GetSelectElementTags(IInvocationOperation invocation, LinqFlow linqFlow)
     {
         var selector = invocation.FindSelectorArgument();
         if (selector is null)
@@ -2263,15 +2436,14 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // [ReturnSyntax] is applied to the method symbol; [return: StringSyntax]
             // / [return: Html] live on the return-value attribute set. Check both so
             // either form drives the element syntax out of the Select.
-            var methodInfo = GetSyntaxFromAttributes(methodRef.Method.GetAttributes(), types);
+            var methodInfo = GetSyntaxFromAttributes(methodRef.Method.GetAttributes());
             if (methodInfo.State == SyntaxState.Present)
             {
                 return methodInfo;
             }
 
             var returnInfo = GetSyntaxFromAttributes(
-                methodRef.Method.GetReturnTypeAttributes(),
-                types);
+                methodRef.Method.GetReturnTypeAttributes());
             return returnInfo.State == SyntaxState.Present
                 ? returnInfo
                 : SyntaxInfo.Unknown;
@@ -2293,13 +2465,13 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
                     return SyntaxInfo.Unknown;
                 }
 
-                return GetReceiverElementTags(next, types, linqFlow);
+                return GetReceiverElementTags(next, linqFlow);
             }
 
             // Fall back to a scalar-source resolution of the body — a tagged
             // invocation or property access inside the lambda body becomes the
             // new element syntax.
-            var (_, info) = GetSourceInfo(body, types, linqFlow, conventionsEnabled: false);
+            var (_, info) = GetSourceInfo(body, linqFlow, conventionsEnabled: false);
             return info.State == SyntaxState.Present ? info : SyntaxInfo.Unknown;
         }
 

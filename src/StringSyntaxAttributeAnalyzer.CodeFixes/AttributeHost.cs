@@ -12,8 +12,12 @@ static class AttributeHost
     // refused in both cases — one attribute or comment would apply to all.
     public static SyntaxNode? Find(SyntaxNode node)
     {
-        var declarator = node.FirstAncestorOrSelf<VariableDeclaratorSyntax>();
-        if (declarator is not null)
+        // Matched on the node itself, never on an ancestor. A fix site nested inside an
+        // initializer has a declarator above it — the lambda parameter in
+        // `Func<string, Regex> Compile = (string pattern) => new Regex(pattern);` would
+        // otherwise resolve to the field `Compile`, putting the attribute on the wrong
+        // declaration and leaving the warning on `pattern` in place.
+        if (node is VariableDeclaratorSyntax declarator)
         {
             if (declarator.Parent is VariableDeclarationSyntax { Variables.Count: > 1 })
             {
@@ -29,6 +33,7 @@ static class AttributeHost
         return node.FirstAncestorOrSelf<SyntaxNode>(ancestor =>
             ancestor is
                 PropertyDeclarationSyntax or
+                IndexerDeclarationSyntax or
                 ParameterSyntax or
                 MethodDeclarationSyntax or
                 LocalFunctionStatementSyntax or
@@ -47,6 +52,7 @@ static class AttributeHost
     public static bool CanHostUnion(SyntaxNode? host) =>
         host is
             PropertyDeclarationSyntax or
+            IndexerDeclarationSyntax or
             FieldDeclarationSyntax or
             ParameterSyntax or
             MethodDeclarationSyntax or

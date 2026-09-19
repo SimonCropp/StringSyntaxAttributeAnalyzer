@@ -10,6 +10,7 @@
     <PackageReference Include="StringSyntaxAttributeAnalyzer" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="TUnit" />
+    <ProjectReference Include="..\SourceOnlyAttributeConsumer\SourceOnlyAttributeConsumer.csproj" />
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>AnalyzerPackageVersion</_Parameter1>
       <_Parameter2>$(Version)</_Parameter2>

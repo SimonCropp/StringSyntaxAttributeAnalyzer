@@ -8,6 +8,13 @@ Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https:
 **See [Milestones](../../milestones?state=closed) for release notes.**
 
 
+## Requirements
+
+Requires the **.NET 8 SDK or newer** (Roslyn 4.11+), which includes Visual Studio 2022 17.11+, Rider 2024.2+, and any newer SDK. An analyzer built against a newer compiler than the one running is skipped with `CS9057` — a warning, not an error — so on an older toolchain the diagnostics silently stop appearing and the source generator stops emitting, which surfaces as `CS0246` on `[UnionSyntax]` / `[ReturnSyntax]`.
+
+The generated code itself targets **C# 7.3**, so consumers on `netstandard2.0`, `net472` and other targets that default to an older language version compile it without setting `LangVersion`. The one exception is the `global using` file below, which requires C# 10 and is skipped otherwise — on those targets, import `System.Diagnostics.CodeAnalysis` and `StringSyntaxAttributeAnalyzer` per file.
+
+
 ## Diagnostics
 
 Each rule has its own page with the message anatomy, every fix option, and the cases where it deliberately stays silent. The page URL is also the diagnostic's help link, so IDEs and SARIF output point straight at it.

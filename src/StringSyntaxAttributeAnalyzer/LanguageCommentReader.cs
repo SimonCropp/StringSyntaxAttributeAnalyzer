@@ -10,52 +10,43 @@
 // injection, but the analyzer accepts the whole set so the local can flow into
 // a union-typed target without SSA002.
 
-using System.Diagnostics.CodeAnalysis;
-
 static class LanguageCommentReader
 {
     const string keyword = "language";
 
     public static bool TryRead(ILocalSymbol local, [NotNullWhen(true)] out string? syntax)
     {
-        foreach (var reference in local.DeclaringSyntaxReferences)
+        syntax = null;
+
+        // The local's *own* declaration statement — see FindDeclarationStatement for why
+        // this is not an ancestor walk.
+        var statement = local.FindDeclarationStatement();
+        if (statement is null)
         {
-            var node = reference.GetSyntax();
-            var statement = node.FirstAncestorOrSelf<LocalDeclarationStatementSyntax>();
-            if (statement is null)
-            {
-                continue;
-            }
-
-            // Preceding-line form — `// language=regex` on the line above the statement.
-            // Lives in the statement's own leading trivia.
-            if (TryMatch(statement.GetLeadingTrivia(), out syntax))
-            {
-                return true;
-            }
-
-            // Inline form — `var x = /*language=regex*/ "..."`. Roslyn attaches the
-            // block comment to the `=` token's trailing trivia (same-line trivia before
-            // a token sticks to the previous token in Roslyn's default policy), so a
-            // targeted check of the initializer's leading trivia misses it. Scan every
-            // trivia within the statement and take the first match.
-            foreach (var trivia in statement.DescendantTrivia())
-            {
-                if (!IsCommentTrivia(trivia))
-                {
-                    continue;
-                }
-
-                if (TryParse(trivia.ToString(), out syntax))
-                {
-                    return true;
-                }
-            }
+            return false;
         }
 
-        syntax = null;
-        return false;
+        // Preceding-line form — `// language=regex` on the line above the statement.
+        // Lives in the statement's own leading trivia.
+        if (TryMatch(statement.GetLeadingTrivia(), out syntax))
+        {
+            return true;
+        }
+
+        // Inline form — `var x = /*language=regex*/ "..."`. Roslyn attaches the
+        // block comment to the `=` token's trailing trivia (same-line trivia before
+        // a token sticks to the previous token in Roslyn's default policy), so a
+        // targeted check of the initializer's leading trivia misses it. Scan every
+        // trivia within the statement and take the first match.
+        return TryMatch(statement.DescendantTrivia(NotNestedScope), out syntax);
     }
+
+    // A lambda body inside an initializer is its own scope: comments in
+    // `Compute(() => { // language=sql … })` describe the locals declared *there*, not
+    // the local the initializer is assigned to. Scanning the whole statement pulled them
+    // out and tagged the outer declaration with them.
+    static bool NotNestedScope(SyntaxNode node) =>
+        node is not AnonymousFunctionExpressionSyntax;
 
     // Scans a syntax node's leading + internal trivia for a `language=` comment.
     // Used for syntactic hosts that aren't a LocalDeclarationStatement (e.g. an
@@ -85,16 +76,30 @@ static class LanguageCommentReader
         return false;
     }
 
+    // Overloaded rather than widened to IEnumerable so the leading-trivia path — the
+    // common one, hit for every local reference — keeps using the list's struct
+    // enumerator instead of boxing it.
     static bool TryMatch(SyntaxTriviaList trivia, [NotNullWhen(true)] out string? syntax)
     {
         foreach (var item in trivia)
         {
-            if (!IsCommentTrivia(item))
+            if (IsCommentTrivia(item) &&
+                TryParse(item.ToString(), out syntax))
             {
-                continue;
+                return true;
             }
+        }
 
-            if (TryParse(item.ToString(), out syntax))
+        syntax = null;
+        return false;
+    }
+
+    static bool TryMatch(IEnumerable<SyntaxTrivia> trivia, [NotNullWhen(true)] out string? syntax)
+    {
+        foreach (var item in trivia)
+        {
+            if (IsCommentTrivia(item) &&
+                TryParse(item.ToString(), out syntax))
             {
                 return true;
             }
@@ -114,48 +119,56 @@ static class LanguageCommentReader
     // comments are short, so linear scanning is cheap and avoids the Regex cache.
     static bool TryParse(string text, [NotNullWhen(true)] out string? syntax)
     {
-        for (var i = 0; i <= text.Length - keyword.Length; i++)
+        syntax = null;
+
+        // Anchored at the start of the comment body, not matched anywhere inside it. The
+        // JetBrains convention is that the whole comment *is* the directive, and scanning
+        // the text meant any prose mentioning it took effect — `// Falls back to
+        // language=en when the header is missing` tagged the declaration below as `en`.
+        if (!text.StartsWith("//", StringComparison.Ordinal) &&
+            !text.StartsWith("/*", StringComparison.Ordinal))
         {
-            if (!MatchesKeyword(text, i))
-            {
-                continue;
-            }
-
-            // Word boundary before: start of string, or previous char is non-word.
-            if (i > 0 && IsWordChar(text[i - 1]))
-            {
-                continue;
-            }
-
-            var pos = i + keyword.Length;
-            pos = SkipWhitespace(text, pos);
-            if (pos >= text.Length || text[pos] != '=')
-            {
-                continue;
-            }
-
-            pos = SkipWhitespace(text, pos + 1);
-            var start = pos;
-            while (pos < text.Length && (IsWordChar(text[pos]) || text[pos] == '|'))
-            {
-                pos++;
-            }
-
-            if (pos == start)
-            {
-                continue;
-            }
-
-            syntax = NormalizeUnion(text.Substring(start, pos - start));
-            return true;
+            return false;
         }
 
-        syntax = null;
-        return false;
+        var pos = SkipWhitespace(text, 2);
+        if (!MatchesKeyword(text, pos))
+        {
+            return false;
+        }
+
+        pos = SkipWhitespace(text, pos + keyword.Length);
+        if (pos >= text.Length ||
+            text[pos] != '=')
+        {
+            return false;
+        }
+
+        // Trailing options such as Rider's `prefix=`/`postfix=` are allowed to follow the
+        // value; only the leading `language=` is required.
+        pos = SkipWhitespace(text, pos + 1);
+        var start = pos;
+        while (pos < text.Length && (IsWordChar(text[pos]) || text[pos] == '|'))
+        {
+            pos++;
+        }
+
+        if (pos == start)
+        {
+            return false;
+        }
+
+        syntax = NormalizeUnion(text.Substring(start, pos - start));
+        return true;
     }
 
     static bool MatchesKeyword(string text, int index)
     {
+        if (index + keyword.Length > text.Length)
+        {
+            return false;
+        }
+
         for (var j = 0; j < keyword.Length; j++)
         {
             if (char.ToLowerInvariant(text[index + j]) != keyword[j])

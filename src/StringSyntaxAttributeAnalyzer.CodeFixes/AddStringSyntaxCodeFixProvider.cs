@@ -28,6 +28,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         var compilation = await context.Document.Project
             .GetCompilationAsync(context.CancellationToken)
             .ConfigureAwait(false);
+        var generatedUsings = HasGeneratedUsings(compilation);
 
         foreach (var diagnostic in context.Diagnostics)
         {
@@ -87,7 +88,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             // per-value fixes there.
             if (values.Length > 1 && AttributeHost.CanHostUnion(host))
             {
-                var (unionTitle, unionKey) = BuildUnionFixMetadata(host, values);
+                var (unionTitle, unionKey) = BuildUnionFixMetadata(host, values, generatedUsings);
                 context.RegisterCodeFix(
                     CodeAction.Create(
                         unionTitle,
@@ -103,7 +104,7 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             foreach (var singleValue in values)
             {
                 var useShortcut = CanUseShortcut(compilation, host, singleValue);
-                var (title, equivalenceKey) = BuildFixMetadata(host, singleValue, useShortcut);
+                var (title, equivalenceKey) = BuildFixMetadata(host, singleValue, generatedUsings, useShortcut);
                 context.RegisterCodeFix(
                     CodeAction.Create(
                         title,
@@ -145,6 +146,9 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             return solution;
         }
 
+        var compilation = await document.Project.GetCompilationAsync(cancel).ConfigureAwait(false);
+        var generatedUsings = HasGeneratedUsings(compilation);
+
         SyntaxNode? newTargetNode;
         if (targetNode is LocalDeclarationStatementSyntax localHost)
         {
@@ -152,33 +156,39 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         }
         else if (values.Length > 1)
         {
-            newTargetNode = AttributeNodeBuilder.AddUnionSyntax(targetNode, values);
+            // Both UnionSyntax and ReturnSyntax come from the generated namespace, so
+            // without the global usings they need qualifying — and `Syntax.X` with them.
+            var attributeName = Qualify(
+                AttributeHost.IsMethod(targetNode) ? "ReturnSyntax" : "UnionSyntax",
+                generatedUsings);
+            newTargetNode = AttributeNodeBuilder.AddUnionSyntax(
+                targetNode,
+                values,
+                attributeName,
+                generatedUsings);
+        }
+        else if (CanUseShortcut(compilation, targetNode, values[0]))
+        {
+            // Shortcut attributes (`[Html]`, `[Regex]`, ...) are source-generated
+            // into the consumer's compilation when they opt in with
+            // `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. When available,
+            // prefer them — they are what the user configured the project to use.
+            newTargetNode = AttributeNodeBuilder.AddParameterless(targetNode, values[0]);
         }
         else
         {
-            var compilation = await document.Project.GetCompilationAsync(cancel).ConfigureAwait(false);
-            if (CanUseShortcut(compilation, targetNode, values[0]))
-            {
-                // Shortcut attributes (`[Html]`, `[Regex]`, ...) are source-generated
-                // into the consumer's compilation when they opt in with
-                // `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. When available,
-                // prefer them — they are what the user configured the project to use.
-                newTargetNode = AttributeNodeBuilder.AddParameterless(targetNode, values[0]);
-            }
-            else
-            {
-                var resolvedName = ResolveAttributeName(compilation);
-                var attributeName = AttributeHost.IsMethod(targetNode)
-                    ? "ReturnSyntax"
-                    : resolvedName;
-                // Emit `Syntax.X` only when the short alias is available — the `Syntax`
-                // class lives in the StringSyntaxAttributeAnalyzer namespace, which the
-                // generator's global usings bring into scope alongside the alias. When
-                // the consumer has opted out of globals, fall back to a literal so the
-                // output compiles without a manual using directive.
-                var useConstant = resolvedName == "Syntax" && KnownSyntaxConstants.IsKnown(values[0]);
-                newTargetNode = AttributeNodeBuilder.AddStringSyntax(targetNode, values[0], attributeName, useConstant);
-            }
+            // `StringSyntax` is the one name that resolves without the generated usings,
+            // via the consumer's own `using System.Diagnostics.CodeAnalysis;`.
+            var attributeName = AttributeHost.IsMethod(targetNode)
+                ? Qualify("ReturnSyntax", generatedUsings)
+                : SingleValueAttributeName(generatedUsings);
+            // Emit `Syntax.X` only when the short alias is available — the `Syntax`
+            // class lives in the StringSyntaxAttributeAnalyzer namespace, which the
+            // generator's global usings bring into scope alongside the alias. When
+            // the consumer has opted out of globals, fall back to a literal so the
+            // output compiles without a manual using directive.
+            var useConstant = generatedUsings && KnownSyntaxConstants.IsKnown(values[0]);
+            newTargetNode = AttributeNodeBuilder.AddStringSyntax(targetNode, values[0], attributeName, useConstant);
         }
 
         if (newTargetNode is null)
@@ -205,19 +215,18 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     static (string Title, string EquivalenceKey) BuildFixMetadata(
         SyntaxNode? host,
         string value,
+        bool generatedUsings,
         bool useShortcut = false)
     {
         var description = host is null ? "declaration" : HostDescription.Describe(host);
-        // Known values surface as `Syntax.X` so the user gets a named constant rather
-        // than a bare string literal; unknown values (e.g. "custom-format") fall back
-        // to a literal. Titles mirror what the fix actually writes.
         if (useShortcut)
         {
             return (
                 $"Add [{value}] to {description}",
                 $"AddShortcut:{value}");
         }
-        var argument = AttributeNodeBuilder.FormatArgument(value);
+
+        var argument = FormatArgument(value, generatedUsings);
         return host switch
         {
             LocalDeclarationStatementSyntax => (
@@ -227,12 +236,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                 $"Add [ReturnSyntax({argument})] to {description}",
                 $"AddReturnSyntax:{value}"),
             _ => (
-                $"Add [Syntax({argument})] to {description}",
+                $"Add [{SingleValueAttributeName(generatedUsings)}({argument})] to {description}",
                 $"AddSyntax:{value}")
         };
     }
 
-    static (string Title, string EquivalenceKey) BuildUnionFixMetadata(SyntaxNode? host, string[] values)
+    static (string Title, string EquivalenceKey) BuildUnionFixMetadata(
+        SyntaxNode? host,
+        string[] values,
+        bool generatedUsings)
     {
         var description = host is null ? "declaration" : HostDescription.Describe(host);
         if (host is LocalDeclarationStatementSyntax)
@@ -243,12 +255,19 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                 $"AddLanguageCommentUnion:{string.Join('|', values)}");
         }
 
-        var argumentList = string.Join(", ", values.Select(AttributeNodeBuilder.FormatArgument));
+        var argumentList = string.Join(", ", values.Select(_ => FormatArgument(_, generatedUsings)));
         var attributeName = AttributeHost.IsMethod(host) ? "ReturnSyntax" : "UnionSyntax";
         return (
             $"Add [{attributeName}({argumentList})] to {description}",
             $"Add{attributeName}:{string.Join('|', values)}");
     }
+
+    // Known values surface as `Syntax.X` so the user gets a named constant rather than a
+    // bare string literal; unknown values (e.g. "custom-format") fall back to a literal,
+    // and so does everything once the generated usings are gone — the `Syntax` class is
+    // no more in scope than the attributes are. Titles mirror what the fix writes.
+    static string FormatArgument(string value, bool generatedUsings) =>
+        generatedUsings ? AttributeNodeBuilder.FormatArgument(value) : $"\"{value}\"";
 
     // A shortcut attribute like `[Html]` is usable when:
     //   - the consumer opted in, so the generator emitted the type (detected by
@@ -279,14 +298,23 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         return compilation.GetTypeByMetadataName($"StringSyntaxAttributeAnalyzer.{value}Attribute") is not null;
     }
 
-    // Prefer `[Syntax(...)]` when the generator's `global using SyntaxAttribute = ...`
-    // alias is in scope. Fall back to `[StringSyntax(...)]` when the consumer has opted
-    // out of the global usings (via StringSyntaxAnalyzer_EmitGlobalUsings=false).
-    static string ResolveAttributeName(Compilation? compilation)
+    static string SingleValueAttributeName(bool generatedUsings) =>
+        generatedUsings ? "Syntax" : "StringSyntax";
+
+    // Names from the generated namespace resolve unqualified only while the generator's
+    // global usings are in scope.
+    static string Qualify(string name, bool generatedUsings) =>
+        generatedUsings ? name : $"{AttributeNodeBuilder.GeneratedNamespace}.{name}";
+
+    // The generator's `global using SyntaxAttribute = ...` alias doubles as the signal
+    // that the rest of its global usings are in scope — including the one importing
+    // UnionSyntax, ReturnSyntax and the `Syntax` constants. Without it the fix writes
+    // `[StringSyntax("…")]` and qualifies anything from the generated namespace.
+    static bool HasGeneratedUsings(Compilation? compilation)
     {
         if (compilation is null)
         {
-            return "StringSyntax";
+            return false;
         }
 
         foreach (var tree in compilation.SyntaxTrees)
@@ -302,11 +330,11 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
                 if (directive.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword) &&
                     directive.Alias?.Name.Identifier.ValueText == "SyntaxAttribute")
                 {
-                    return "Syntax";
+                    return true;
                 }
             }
         }
 
-        return "StringSyntax";
+        return false;
     }
 }

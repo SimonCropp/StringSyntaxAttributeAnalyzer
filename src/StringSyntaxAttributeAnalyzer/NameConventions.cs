@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 // Opt-in name-based conventions: when enabled, a member or local whose name
 // matches a known convention (e.g. `url`, `pageHtml`) is treated as if it
 // already carries the corresponding `[StringSyntax]` value. Lets the analyzer

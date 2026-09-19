@@ -4,19 +4,27 @@
 // Document, Formatter pipeline — live in the provider.
 static class AttributeNodeBuilder
 {
+    // The namespace the generator emits UnionSyntaxAttribute, ReturnSyntaxAttribute and
+    // the Syntax constants into. Only imported when the consumer keeps the generator's
+    // global usings, so without them anything from here has to be written qualified.
+    public const string GeneratedNamespace = "StringSyntaxAttributeAnalyzer";
+
     public static SyntaxNode? AddParameterless(SyntaxNode host, string name)
     {
-        var attribute = Attribute(IdentifierName(name));
-        var attributes = AttributeList(SingletonSeparatedList(attribute))
-            .WithAdditionalAnnotations(Formatter.Annotation);
-
-        return host switch
+        // Shortcut attributes are generated with an AttributeUsage of
+        // Field | Parameter | Property | ReturnValue, so they can't go on the method and
+        // local-function hosts Attach otherwise accepts.
+        if (host is not (
+            PropertyDeclarationSyntax or
+            IndexerDeclarationSyntax or
+            FieldDeclarationSyntax or
+            ParameterSyntax))
         {
-            PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
-            FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
-            ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
-            _ => null
-        };
+            return null;
+        }
+
+        var attribute = Attribute(IdentifierName(name));
+        return Attach(host, AttributeList(SingletonSeparatedList(attribute)));
     }
 
     public static SyntaxNode? AddStringSyntax(
@@ -25,62 +33,62 @@ static class AttributeNodeBuilder
         string attributeName,
         bool useConstant)
     {
-        ExpressionSyntax expression = useConstant
+        var argument = AttributeArgument(ValueExpression(value, useConstant));
+        var attribute = Attribute(ParseName(attributeName))
+            .WithArgumentList(AttributeArgumentList(SingletonSeparatedList(argument)));
+
+        return Attach(host, AttributeList(SingletonSeparatedList(attribute)));
+    }
+
+    public static SyntaxNode? AddUnionSyntax(
+        SyntaxNode host,
+        string[] values,
+        string attributeName,
+        bool useConstants)
+    {
+        var arguments = values.Select(_ =>
+            AttributeArgument(ValueExpression(_, useConstants && KnownSyntaxConstants.IsKnown(_))));
+
+        var attribute = Attribute(ParseName(attributeName))
+            .WithArgumentList(AttributeArgumentList(SeparatedList(arguments)));
+
+        return Attach(host, AttributeList(SingletonSeparatedList(attribute)));
+    }
+
+    static ExpressionSyntax ValueExpression(string value, bool useConstant) =>
+        useConstant
             ? MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
                 IdentifierName("Syntax"),
                 IdentifierName(value))
             : LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value));
-        var argument = AttributeArgument(expression);
 
-        var attribute = Attribute(IdentifierName(attributeName))
-            .WithArgumentList(AttributeArgumentList(SingletonSeparatedList(argument)));
-
-        var attributes = AttributeList(SingletonSeparatedList(attribute))
-            .WithAdditionalAnnotations(Formatter.Annotation);
-
-        return host switch
-        {
-            PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
-            FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
-            ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
-            MethodDeclarationSyntax method => method.AddAttributeLists(attributes),
-            LocalFunctionStatementSyntax local => local.AddAttributeLists(attributes),
-            DelegateDeclarationSyntax del => del.AddAttributeLists(attributes),
-            _ => null
-        };
-    }
-
-    public static SyntaxNode? AddUnionSyntax(SyntaxNode host, string[] values)
+    // Attaches a new attribute list to a declaration, moving the declaration's leading
+    // trivia in front of it.
+    //
+    // AddAttributeLists alone prepends the list but leaves that trivia on the token that
+    // used to come first, which strands anything written above the member *between* the
+    // new attribute and the modifiers: a doc comment there stops being documentation
+    // (CS1587, and the member silently loses its docs), and a `#region` gets separated
+    // from what it opens. The trivia is re-attached to the node rather than to the
+    // attribute list so it lands on whichever token ends up first.
+    static SyntaxNode? Attach(SyntaxNode host, AttributeListSyntax attributes)
     {
-        var arguments = values.Select(value =>
-        {
-            ExpressionSyntax expression = KnownSyntaxConstants.IsKnown(value)
-                ? MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName("Syntax"),
-                    IdentifierName(value))
-                : LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value));
-            return AttributeArgument(expression);
-        });
+        attributes = attributes.WithAdditionalAnnotations(Formatter.Annotation);
 
-        var attributeName = AttributeHost.IsMethod(host) ? "ReturnSyntax" : "UnionSyntax";
-        var attribute = Attribute(IdentifierName(attributeName))
-            .WithArgumentList(AttributeArgumentList(SeparatedList(arguments)));
-
-        var attributes = AttributeList(SingletonSeparatedList(attribute))
-            .WithAdditionalAnnotations(Formatter.Annotation);
-
-        return host switch
+        SyntaxNode? withAttribute = host.WithoutLeadingTrivia() switch
         {
             PropertyDeclarationSyntax property => property.AddAttributeLists(attributes),
+            IndexerDeclarationSyntax indexer => indexer.AddAttributeLists(attributes),
             FieldDeclarationSyntax field => field.AddAttributeLists(attributes),
             ParameterSyntax parameter => parameter.AddAttributeLists(attributes),
             MethodDeclarationSyntax method => method.AddAttributeLists(attributes),
             LocalFunctionStatementSyntax local => local.AddAttributeLists(attributes),
-            DelegateDeclarationSyntax del => del.AddAttributeLists(attributes),
+            DelegateDeclarationSyntax declaration => declaration.AddAttributeLists(attributes),
             _ => null
         };
+
+        return withAttribute?.WithLeadingTrivia(host.GetLeadingTrivia());
     }
 
     // Emits the Rider/IntelliJ-compatible `//language=<token>` comment above the

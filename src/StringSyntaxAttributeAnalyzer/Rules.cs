@@ -466,6 +466,10 @@ static class Rules
 
         return symbol switch
         {
+            // An indexer's Name is "this[]", so the property arm renders it as
+            // `property 'Rows.this'` — which is neither what it is nor how it is written.
+            IPropertySymbol { IsIndexer: true } indexer =>
+                $"indexer '{indexer.ContainingType.ToDisplayString(memberFormat)}'",
             IPropertySymbol property => $"property '{QualifiedName(property)}'",
             IFieldSymbol field => $"field '{QualifiedName(field)}'",
             IParameterSymbol parameter => DescribeParameter(parameter),
@@ -481,7 +485,10 @@ static class Rules
     static readonly SymbolDisplayFormat memberFormat = new(
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes,
         genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
-        memberOptions: SymbolDisplayMemberOptions.IncludeContainingType);
+        memberOptions: SymbolDisplayMemberOptions.IncludeContainingType,
+        // Without this a generic renders with its CLR type arguments — `Box<String>` in a
+        // message about C# source that says `Box<string>`.
+        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
 
     static string QualifiedName(ISymbol symbol)
     {
