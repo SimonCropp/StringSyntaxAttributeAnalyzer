@@ -10,6 +10,41 @@ static class SyntaxAttributeExtensions
     public const string ReturnSyntaxAttributeName = "ReturnSyntaxAttribute";
     public const string ShortcutAttributeNamespace = "StringSyntaxAttributeAnalyzer";
 
+    // `System.Diagnostics.CodeAnalysis`, innermost first — walked outwards so the match
+    // costs no display-string allocation on a path that sees every attribute of every
+    // symbol.
+    static readonly string[] stringSyntaxNamespace = ["CodeAnalysis", "Diagnostics", "System"];
+
+    // StringSyntaxAttribute ships in the BCL only on net7+/netstandard2.1. Everywhere
+    // else it is polyfilled as an internal per-assembly type — including by this
+    // package's own generator, which emits one into every consumer that targets
+    // netstandard2.0 or net4x. So a library's `[StringSyntax("Json")]` and the
+    // consumer's own StringSyntaxAttribute are routinely *different symbols*, and
+    // comparing against the compilation's copy by identity silently ignores every
+    // annotation that crossed an assembly boundary. Match by name and namespace, the
+    // same way UnionSyntax, ReturnSyntax and the shortcuts are matched.
+    public static bool IsStringSyntax(this AttributeData attribute)
+    {
+        if (attribute.AttributeClass is not {Name: "StringSyntaxAttribute"} type)
+        {
+            return false;
+        }
+
+        var ns = type.ContainingNamespace;
+        foreach (var part in stringSyntaxNamespace)
+        {
+            if (ns is null ||
+                ns.Name != part)
+            {
+                return false;
+            }
+
+            ns = ns.ContainingNamespace;
+        }
+
+        return ns?.IsGlobalNamespace ?? false;
+    }
+
     // Names of shortcut-per-constant attributes emitted by SyntaxConstantsGenerator when
     // `StringSyntaxAnalyzer_EmitShortcutAttributes=true`. E.g. `[Html]` is recognized as
     // `[StringSyntax("Html")]`. Kept in sync with the generator's `shortcutNames` list.
@@ -95,6 +130,31 @@ static class SyntaxAttributeExtensions
         return true;
     }
 
+    // `StringSyntaxAttribute(string syntax, params object[] arguments)` lets an annotation
+    // carry more than the syntax value — `[StringSyntax("Regex", RegexOptions.IgnorePattern
+    // Whitespace)]` being the common one. Neither a shortcut attribute nor a name
+    // convention can express those extra arguments, so an annotation carrying them is not
+    // redundant however well the syntax value matches: SSA007 and SSA008 both offered to
+    // replace or delete it, and both fixes dropped the options on the floor.
+    public static bool CarriesExtraArguments(this AttributeData attribute)
+    {
+        if (attribute.ConstructorArguments.Length < 2)
+        {
+            return false;
+        }
+
+        var extra = attribute.ConstructorArguments[1];
+        if (extra.Kind != TypedConstantKind.Array)
+        {
+            return true;
+        }
+
+        // A null or empty params array carries nothing, so there is nothing to lose by
+        // replacing the annotation. IsNull is checked first for the same reason as in
+        // ExtractUnionOptions: reading Values off a null array throws.
+        return extra is {IsNull: false, Values.Length: > 0};
+    }
+
     public static ImmutableArray<string> ExtractUnionOptions(this AttributeData attribute)
     {
         if (attribute.ConstructorArguments.Length == 0)
@@ -108,6 +168,15 @@ static class SyntaxAttributeExtensions
             return [];
         }
 
+        // `params string[]` accepts null, so `[UnionSyntax(null)]` is legal C# and legal
+        // metadata. For a null array TypedConstant.Values is a *default* ImmutableArray,
+        // where even reading Length throws — which surfaced as AD0001 and took every flow
+        // involving the symbol out of analysis.
+        if (first.IsNull)
+        {
+            return [];
+        }
+
         var builder = ImmutableArray.CreateBuilder<string>(first.Values.Length);
         foreach (var element in first.Values)
         {
@@ -116,6 +185,7 @@ static class SyntaxAttributeExtensions
                 builder.Add(s);
             }
         }
+
         return builder.ToImmutable();
     }
 
@@ -126,6 +196,6 @@ static class SyntaxAttributeExtensions
             return name;
         }
 
-        return char.ToLowerInvariant(name[0]) + name.Substring(1);
+        return char.ToLowerInvariant(name[0]) + name[1..];
     }
 }

@@ -256,6 +256,70 @@ public class SyntaxConstantsGeneratorTests
         await Assert.That(text.Contains("public const string Json = nameof(Json)")).IsTrue();
     }
 
+    // netstandard2.0 and net4x default to C# 7.3, and net6/net7 to C# 10/11 — the exact
+    // targets the StringSyntaxAttribute polyfill exists to serve. The generated types
+    // previously used primary constructors, bodyless type declarations, a file-scoped
+    // namespace and `#nullable`, so none of those consumers could compile the generated
+    // file at all, and `[UnionSyntax]` / `[ReturnSyntax]` failed with CS0246.
+    [Test]
+    [Arguments(LanguageVersion.CSharp7_3)]
+    [Arguments(LanguageVersion.CSharp8)]
+    [Arguments(LanguageVersion.CSharp9)]
+    [Arguments(LanguageVersion.CSharp10)]
+    [Arguments(LanguageVersion.CSharp11)]
+    [Arguments(LanguageVersion.CSharp12)]
+    public async Task GeneratedCode_CompilesAtLanguageVersion(LanguageVersion version)
+    {
+        var (updated, generatorDiagnostics) = RunAtLanguageVersion(version);
+
+        await Assert.That(generatorDiagnostics.Length).IsEqualTo(0);
+
+        var errors = updated
+            .GetDiagnostics()
+            .Where(_ => _.Severity == DiagnosticSeverity.Error)
+            .Select(_ => $"{_.Id}: {_.GetMessage()}");
+        await Assert.That(string.Join("\n", errors)).IsEqualTo("");
+    }
+
+    [Test]
+    [Arguments(LanguageVersion.CSharp7_3, false)]
+    [Arguments(LanguageVersion.CSharp9, false)]
+    [Arguments(LanguageVersion.CSharp10, true)]
+    [Arguments(LanguageVersion.CSharp12, true)]
+    public async Task GlobalUsings_EmittedOnlyWhereTheLanguageSupportsThem(
+        LanguageVersion version,
+        bool expected)
+    {
+        // `global using` is the one emitted construct with no C# 7.3 equivalent, so it is
+        // the only output gated on language version. Older consumers write their own
+        // usings instead of failing to compile.
+        var (updated, _) = RunAtLanguageVersion(version);
+
+        var emitted = updated.SyntaxTrees.Any(_ => _.FilePath.EndsWith("Syntax.Globals.g.cs"));
+        await Assert.That(emitted).IsEqualTo(expected);
+    }
+
+    static (Compilation Updated, ImmutableArray<Diagnostic> GeneratorDiagnostics) RunAtLanguageVersion(
+        LanguageVersion version)
+    {
+        var parseOptions = new CSharpParseOptions(version);
+        var compilation = CSharpCompilation.Create(
+            "Tests",
+            [CSharpSyntaxTree.ParseText("public class Dummy {}", parseOptions)],
+            TrustedPlatformReferences.All,
+            new(OutputKind.DynamicallyLinkedLibrary));
+
+        // Shortcuts opted in so every generated file participates, not just the default two.
+        var driver = CSharpGeneratorDriver.Create(
+            generators: [new SyntaxConstantsGenerator().AsSourceGenerator()],
+            additionalTexts: [],
+            parseOptions: parseOptions,
+            optionsProvider: new OptOutOptionsProvider(emitShortcutAttributesValue: "true"));
+
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
+        return (updated, generatorDiagnostics);
+    }
+
     static GeneratorDriverRunResult RunGenerator(string source)
     {
         var compilation = BuildCompilation(source);

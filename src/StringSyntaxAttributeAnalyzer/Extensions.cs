@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 static class Extensions
 {
 
@@ -244,14 +242,61 @@ static class Extensions
          type.TypeKind == TypeKind.TypeParameter ||
          (type is IArrayTypeSymbol array && array.ElementType.IsGenericValueSlot()));
 
+    // The source-side counterpart of IsGenericValueSlot: true when the symbol's *declared*
+    // type is a type parameter, or a Task/ValueTask of one.
+    //
+    // Such a member has nowhere to put an annotation that means anything. [StringSyntax]
+    // on `Box<T>.Value` claims every Box<T> holds that syntax rather than the Box<string>
+    // at the call site, and [ReturnSyntax] on `LoadAsync<T>()` the same — so reporting
+    // SSA002 here offers a fix that changes the wrong thing. A bare-`T` return was already
+    // refused in GetSymbol; this covers the property, field, parameter and Task<T> shapes
+    // that went with it.
+    //
+    // Locals are deliberately absent: their `//language=` comment sits on one declaration
+    // in one body, so it never spans substitutions the way an attribute on a member does.
+    public static bool IsGenericValueSource(this ISymbol symbol)
+    {
+        // OriginalDefinition so a substituted `Box<string>.Value` still reads as `T`.
+        var type = symbol.OriginalDefinition switch
+        {
+            IParameterSymbol parameter => parameter.Type,
+            IPropertySymbol property => property.Type,
+            IFieldSymbol field => field.Type,
+            IMethodSymbol method => method.ReturnType,
+            _ => null
+        };
+
+        if (type is null)
+        {
+            return false;
+        }
+
+        if (type.TypeKind == TypeKind.TypeParameter)
+        {
+            return true;
+        }
+
+        return type is INamedTypeSymbol
+        {
+            IsGenericType: true,
+            TypeArguments: [{ TypeKind: TypeKind.TypeParameter }],
+            Name: "Task" or "ValueTask"
+        };
+    }
+
     // Use OriginalDefinition so a generic method's `T value` parameter reads as TypeKind
     // TypeParameter even when the call site has substituted T=string.
     public static ITypeSymbol? GetTargetType(this ISymbol symbol) =>
         symbol.OriginalDefinition switch
         {
-            IParameterSymbol p => p.Type,
-            IPropertySymbol p => p.Type,
-            IFieldSymbol f => f.Type,
+            IParameterSymbol parameter => parameter.Type,
+            IPropertySymbol property => property.Type,
+            IFieldSymbol field => field.Type,
+            // Locals belong here for the same reason the others do. Omitting them meant
+            // `object o = …; pattern == o` reported SSA005 while the identical comparison
+            // against an `object` parameter was exempt — a string held as an object is not
+            // carrying a syntax either way.
+            ILocalSymbol local => local.Type,
             _ => null
         };
 
@@ -278,18 +323,36 @@ static class Extensions
         return null;
     }
 
-    public static bool CanHostLanguageComment(this ILocalSymbol local)
+    // The statement a local is actually declared by: declarator → declaration → statement,
+    // matched exactly rather than walked up to.
+    //
+    // An ancestor walk finds *some* local declaration for almost any local. A `foreach`
+    // variable or an `out var` designation sitting inside another local's initializer
+    // would resolve to that outer statement — so the analyzer read the outer local's
+    // `//language=` comment as its own, and the codefix offered to write one there, which
+    // the value being reported never passes through. Locals with no declaration statement
+    // of their own have nowhere to host a comment, and belong in Unknown.
+    public static LocalDeclarationStatementSyntax? FindDeclarationStatement(this ILocalSymbol local)
     {
         foreach (var reference in local.DeclaringSyntaxReferences)
         {
-            if (reference.GetSyntax().FirstAncestorOrSelf<LocalDeclarationStatementSyntax>() is not null)
+            if (reference.GetSyntax() is VariableDeclaratorSyntax
+                {
+                    Parent: VariableDeclarationSyntax
+                    {
+                        Parent: LocalDeclarationStatementSyntax statement
+                    }
+                })
             {
-                return true;
+                return statement;
             }
         }
 
-        return false;
+        return null;
     }
+
+    public static bool CanHostLanguageComment(this ILocalSymbol local) =>
+        local.FindDeclarationStatement() is not null;
 
     public static IOperation UnwrapConversions(this IOperation operation)
     {

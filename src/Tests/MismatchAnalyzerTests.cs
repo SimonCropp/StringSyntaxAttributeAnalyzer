@@ -363,6 +363,73 @@ public class MismatchAnalyzerTests
         await Assert.That(diagnostics.Length).IsEqualTo(0);
     }
 
+    // A library built for netstandard2.0 or net4x carries its own internal
+    // StringSyntaxAttribute — this package's generator emits one into every such
+    // consumer. The annotation it applies is therefore a *different symbol* from the
+    // consumer's own StringSyntaxAttribute, which is why these are matched by name and
+    // namespace rather than by identity. The existing cross-assembly tests all build the
+    // library against the net10 BCL, where both sides share one symbol and identity
+    // comparison happens to work.
+    const string polyfilledLibrary =
+        """
+        namespace System.Diagnostics.CodeAnalysis
+        {
+            [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property)]
+            internal sealed class StringSyntaxAttribute(string syntax) : Attribute
+            {
+                public string Syntax { get; } = syntax;
+            }
+        }
+
+        public static class Messages
+        {
+            public static void TakeJson([System.Diagnostics.CodeAnalysis.StringSyntax("Json")] string value)
+            {
+            }
+        }
+        """;
+
+    [Test]
+    public async Task PolyfilledLibrary_MatchingValue_NoDiagnostic()
+    {
+        var consumer =
+            """
+            public class Consumer
+            {
+                [StringSyntax("Json")]
+                public string Payload { get; set; } = "";
+
+                public void Run() => Messages.TakeJson(Payload);
+            }
+            """;
+
+        var diagnostics = await GetCrossAssemblyDiagnostics(polyfilledLibrary, consumer, runGeneratorOnLibrary: false);
+
+        await Assert.That(diagnostics.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task PolyfilledLibrary_MismatchedValue_ReportsSSA001()
+    {
+        // Unrecognised, the parameter reads as unannotated and the mismatch is reported
+        // as SSA003 — "the target has no StringSyntax attribute" — offering a fix that
+        // adds an annotation the parameter already has.
+        var consumer =
+            """
+            public class Consumer
+            {
+                [StringSyntax("Xml")]
+                public string Document { get; set; } = "";
+
+                public void Run() => Messages.TakeJson(Document);
+            }
+            """;
+
+        var diagnostics = await GetCrossAssemblyDiagnostics(polyfilledLibrary, consumer, runGeneratorOnLibrary: false);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA001"]);
+    }
+
     [Test]
     public async Task StringLiteralSource_NoDiagnostic()
     {
@@ -3870,6 +3937,854 @@ public class MismatchAnalyzerTests
         await Assert.That(diagnostics.All(_ => _.Id != "SSA009")).IsTrue();
     }
 
+    const string equalityHolders =
+        """
+        public class Tagged
+        {
+            [StringSyntax("Regex")]
+            public string Pattern { get; set; } = "";
+
+            [UnionSyntax("Json", "Text")]
+            public string Body { get; set; } = "";
+
+            public string Plain { get; set; } = "";
+
+            public static bool AgainstObjectParameter(object other) => false;
+        }
+        """;
+
+    [Test]
+    public async Task Equality_UnannotatedLocal_Reports()
+    {
+        // Pinning what SSA005 actually does, against a doc page that claimed an
+        // unannotated local was Unknown and stayed silent. A local *can* host a
+        // `//language=` comment, so it is NotPresent — which is what gives the diagnostic
+        // somewhere to attach its fix. The docs were describing the wrong design.
+        var source =
+            $$"""
+            {{equalityHolders}}
+
+            public class Consumer
+            {
+                public bool Run(Tagged tagged)
+                {
+                    var input = System.Console.ReadLine();
+                    return tagged.Pattern == input;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA005"]);
+    }
+
+    [Test]
+    public async Task Equality_ObjectLocal_IsSuppressedLikeAnObjectParameter()
+    {
+        // An `object` parameter was already exempt as a generic value slot; an `object`
+        // local was not, purely because GetTargetType did not handle locals. Same slot,
+        // same reasoning — a string compared as an object is not carrying a syntax.
+        var source =
+            $$"""
+            {{equalityHolders}}
+
+            public class Consumer
+            {
+                public bool Run(Tagged tagged)
+                {
+                    object local = tagged.Plain;
+                    return (object)tagged.Pattern == local;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task Equality_UnionIncludingText_IsSuppressedLikeTheFlowRules()
+    {
+        // SSA002 exempts a union that accepts "Text" — an untagged value *is* plain text,
+        // so demanding an annotation adds noise rather than correctness. SSA005 asked for
+        // it anyway, so the same pair of declarations was fine as an argument and a
+        // diagnostic as a comparison.
+        var source =
+            $$"""
+            {{equalityHolders}}
+
+            public class Consumer
+            {
+                public bool Run(Tagged tagged) => tagged.Body == tagged.Plain;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task Equality_UnionWithoutText_StillReports()
+    {
+        // The exemption is keyed on "Text" being one of the options, not on the side being
+        // a union at all.
+        var source =
+            """
+            public class Tagged
+            {
+                [UnionSyntax("Json", "Xml")]
+                public string Body { get; set; } = "";
+
+                public string Plain { get; set; } = "";
+            }
+
+            public class Consumer
+            {
+                public bool Run(Tagged tagged) => tagged.Body == tagged.Plain;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA005"]);
+    }
+
+    // `[StringSyntax("Regex", RegexOptions.IgnorePatternWhitespace)]` carries more than the
+    // syntax value, and neither a shortcut attribute nor a name convention can express the
+    // rest. Both rules read only the first constructor argument, so both called it
+    // redundant — and both fixes silently dropped the options.
+    const string regexOptionsParameter =
+        """
+        using System.Text.RegularExpressions;
+
+        public class Holder
+        {
+            public void Use([StringSyntax("Regex", RegexOptions.IgnorePatternWhitespace)] string regex) { }
+        }
+        """;
+
+    const string bareRegexParameter =
+        """
+        using System.Text.RegularExpressions;
+
+        public class Holder
+        {
+            public void Use([StringSyntax("Regex")] string regex) { }
+        }
+        """;
+
+    [Test]
+    public async Task RedundantShortcut_WithExtraAttributeArguments_IsNotReported()
+    {
+        var diagnostics = await GetDiagnostics(regexOptionsParameter, emitShortcutAttributes: true);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task RedundantShortcut_WithoutExtraArguments_IsStillReported()
+    {
+        var diagnostics = await GetDiagnostics(bareRegexParameter, emitShortcutAttributes: true);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA007"]);
+    }
+
+    [Test]
+    public async Task RedundantByConvention_WithExtraAttributeArguments_IsNotReported()
+    {
+        var diagnostics = await GetDiagnostics(
+            regexOptionsParameter,
+            editorConfig: "stringsyntax.name_conventions = enabled");
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task RedundantByConvention_WithoutExtraArguments_IsStillReported()
+    {
+        var diagnostics = await GetDiagnostics(
+            bareRegexParameter,
+            editorConfig: "stringsyntax.name_conventions = enabled");
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA008"]);
+    }
+
+    // Nothing covered a declaration's initializer: the flow rules see arguments,
+    // assignments and member initializers, and `var x = expr;` is none of those. So a
+    // `//language=` comment was never checked against what the local was initialised with,
+    // while the same code split into a declaration and a separate assignment reported.
+    [Test]
+    [Arguments("// language=xml\n        var value = tags.Json;", "SSA001")]
+    [Arguments("// language=xml\n        var value = tags.Plain;", "SSA002")]
+    public async Task LanguageCommentIsCheckedAgainstTheInitializer(string declaration, string expected)
+    {
+        var source =
+            $$"""
+            public class Tags
+            {
+                [StringSyntax("Json")]
+                public string Json { get; set; } = "";
+
+                public string Plain { get; set; } = "";
+            }
+
+            public class Consumer
+            {
+                public void Run(Tags tags)
+                {
+                    {{declaration}}
+                    System.Console.WriteLine(value);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo([expected]);
+    }
+
+    [Test]
+    public async Task UncommentedLocal_InitializerStillSuppliesTheTag()
+    {
+        // Without a comment the initializer *supplies* the local's tag rather than being
+        // checked against it, so there is nothing to disagree with and this stays silent.
+        var source =
+            """
+            public class Tags
+            {
+                [StringSyntax("Json")]
+                public string Json { get; set; } = "";
+            }
+
+            public class Consumer
+            {
+                public void Run(Tags tags)
+                {
+                    var value = tags.Json;
+                    System.Console.WriteLine(value);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    const string reassignHolders =
+        """
+        public class Tags
+        {
+            [StringSyntax("Json")]
+            public string Json { get; set; } = "";
+
+            [StringSyntax("Xml")]
+            public string Xml { get; set; } = "";
+
+            public static void TakeXml([StringSyntax("Xml")] string value) { }
+        }
+        """;
+
+    [Test]
+    public async Task ReassignedLocal_DoesNotInheritItsInitializerTag()
+    {
+        // A local assigned again no longer holds what its initializer held, but the tag
+        // was inferred from the initializer regardless — producing a pair no single edit
+        // could satisfy: SSA003 asking for `current` to be tagged xml, and SSA001
+        // insisting it was Json.
+        var source =
+            $$"""
+            {{reassignHolders}}
+
+            public class Consumer
+            {
+                public void Run(Tags tags)
+                {
+                    var current = tags.Json;
+                    current = tags.Xml;
+                    Tags.TakeXml(current);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        // Both remaining diagnostics now ask for the same thing — tag `current` as xml —
+        // so acting on either resolves the other.
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA002", "SSA003"]);
+    }
+
+    [Test]
+    public async Task LocalAssignedOnlyOnce_StillInheritsItsInitializerTag()
+    {
+        // The inference itself is the feature — only reassignment disables it.
+        var source =
+            $$"""
+            {{reassignHolders}}
+
+            public class Consumer
+            {
+                public void Run(Tags tags)
+                {
+                    var current = tags.Json;
+                    Tags.TakeXml(current);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA001"]);
+    }
+
+    // `//language=` was read from any ancestor local declaration, scanning every comment
+    // inside it including nested lambda bodies, and matching `language=` anywhere in the
+    // text. Three separate ways for a comment to attach to a declaration it has nothing
+    // to do with.
+    const string commentHolders =
+        """
+        using System;
+        using System.Collections.Generic;
+
+        public class Holder
+        {
+            public static void TakeJson([StringSyntax("Json")] string value) { }
+            public static void Run(string query) { }
+            public static string Compute(Func<string> factory) => factory();
+            public static string Greeting() => "hi";
+        }
+        """;
+
+    [Test]
+    public async Task LanguageComment_InsideNestedLambda_DoesNotTagTheOuterLocal()
+    {
+        var source =
+            $$"""
+            {{commentHolders}}
+
+            public class Consumer
+            {
+                public void Go()
+                {
+                    var result = Holder.Compute(() =>
+                    {
+                        // language=sql
+                        var query = "select 1";
+                        Holder.Run(query);
+                        return "{}";
+                    });
+                    Holder.TakeJson(result);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        // SSA002, not SSA001: `result` carries no tag of its own, which is a fixable
+        // "annotate this local", not a claim that it holds SQL.
+        //
+        // The SSA003 is the other half of the same fix and the reason this shape is worth
+        // keeping: the comment now binds to `query`, the local it was actually written
+        // above, so passing it to an untagged `Run(string)` asks for that parameter to be
+        // tagged sql. Previously the comment was consumed by the outer declaration and the
+        // inner local had no tag at all.
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA002", "SSA003"]);
+    }
+
+    [Test]
+    public async Task LanguageMentionedInProse_DoesNotTagTheLocal()
+    {
+        var source =
+            $$"""
+            {{commentHolders}}
+
+            public class Consumer
+            {
+                public void Go()
+                {
+                    // Falls back to language=en when the header is missing
+                    var greeting = Holder.Greeting();
+                    Holder.TakeJson(greeting);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA002"]);
+    }
+
+    [Test]
+    public async Task ForeachVariableInsideLocalInitializer_IsUnknown()
+    {
+        // A foreach variable has no declaration statement of its own, so nothing can host
+        // a comment for it. Nested inside another local's initializer it inherited that
+        // local's statement, and the fix offered to tag `action`.
+        var source =
+            $$"""
+            {{commentHolders}}
+
+            public class Consumer
+            {
+                public void Go(string[] items)
+                {
+                    var action = new Action(() =>
+                    {
+                        foreach (var item in items)
+                        {
+                            Holder.TakeJson(item);
+                        }
+                    });
+                    action();
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task OutVarInsideLocalInitializer_IsUnknown()
+    {
+        // The `if (map.TryGetValue(...))` form was already silent; only the shape where an
+        // enclosing local declaration existed reported, which is the tell.
+        var source =
+            $$"""
+            {{commentHolders}}
+
+            public class Consumer
+            {
+                public void Go(Dictionary<string, string> map)
+                {
+                    var found = map.TryGetValue("k", out var entry);
+                    Holder.TakeJson(entry);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task InlineLanguageComment_StillTagsItsOwnLocal()
+    {
+        // Guard for the trivia-scoping change: the inline form lives on the `=` token's
+        // trailing trivia, so it is found by scanning the statement rather than the
+        // initializer, and that scan is what got narrowed.
+        var source =
+            $$"""
+            {{commentHolders}}
+
+            public class Consumer
+            {
+                public void Go()
+                {
+                    var payload = /*language=xml*/ "<p/>";
+                    Holder.TakeJson(payload);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA001"]);
+    }
+
+    // The lambda a parameter *reference* sits in is not necessarily the lambda that
+    // declared it. Resolving `j` against the nearest enclosing lambda bound it to the
+    // inner `XmlDocs.Any(...)` receiver, so a correct comparison reported SSA001 claiming
+    // the Json parameter was Xml.
+    const string nestedLambdaHolders =
+        """
+        using System.Collections.Generic;
+        using System.Linq;
+
+        public class Docs
+        {
+            [StringSyntax("Json")]
+            public IEnumerable<string> JsonDocs { get; set; }
+
+            [StringSyntax("Xml")]
+            public IEnumerable<string> XmlDocs { get; set; }
+
+            public static bool Matches(
+                [StringSyntax("Json")] string json,
+                [StringSyntax("Xml")] string xml) => true;
+        }
+        """;
+
+    [Test]
+    public async Task NestedLambda_BindsEachParameterToItsOwnCollection()
+    {
+        var source =
+            $$"""
+            {{nestedLambdaHolders}}
+
+            public class Consumer
+            {
+                public IEnumerable<string> Run(Docs docs) =>
+                    docs.JsonDocs.Where(j => docs.XmlDocs.Any(x => Docs.Matches(j, x)));
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task NestedLambda_StillReportsAGenuineMismatch()
+    {
+        // Same shape with the arguments swapped: `j` is Json and must not satisfy the Xml
+        // parameter. Binding each parameter correctly has to keep this firing, or the fix
+        // would just be suppression.
+        var source =
+            $$"""
+            {{nestedLambdaHolders}}
+
+            public class Consumer
+            {
+                public IEnumerable<string> Run(Docs docs) =>
+                    docs.JsonDocs.Where(j => docs.XmlDocs.Any(x => Docs.Matches(x, j)));
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA001", "SSA001"]);
+    }
+
+    // A member declared as `T` has nowhere to put an annotation that means anything:
+    // [StringSyntax] on `Box<T>.Value` claims every Box<T> holds that syntax, not the
+    // Box<string> at this call site — and the codefix wrote exactly that. The bare-`T`
+    // return case was already Unknown; these are the shapes that slipped through.
+    const string genericHolders =
+        """
+        using System.Threading.Tasks;
+
+        public class Box<T>
+        {
+            public T Value { get; set; }
+            public T Field;
+            public string Name { get; set; } = "";
+        }
+
+        public class Loader
+        {
+            public static Task<T> LoadAsync<T>() => Task.FromResult(default(T));
+            public static T Load<T>() => default(T);
+        }
+
+        public class Holder
+        {
+            public static void TakeJson([StringSyntax("Json")] string value) { }
+        }
+        """;
+
+    [Test]
+    [Arguments("public void Run(Box<string> box) => Holder.TakeJson(box.Value);")]
+    [Arguments("public void Run(Box<string> box) => Holder.TakeJson(box.Field);")]
+    [Arguments("public async Task Run() => Holder.TakeJson(await Loader.LoadAsync<string>());")]
+    [Arguments("public void Run<T>(T value) => Holder.TakeJson(value as string);")]
+    [Arguments("public void Run() => Holder.TakeJson(Loader.Load<string>());")]
+    public async Task GenericallyTypedSource_IsNotReported(string usage)
+    {
+        var source =
+            $$"""
+            {{genericHolders}}
+
+            public class Consumer
+            {
+                {{usage}}
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task GenericAssignmentTarget_IsNotReported()
+    {
+        // AnalyzeSimpleAssignment resolves its target through GetSymbol too, so the same
+        // rule applies in the other direction: SSA003 asking for `Box<T>.Value` to be
+        // tagged would annotate every substitution.
+        var source =
+            $$"""
+            {{genericHolders}}
+
+            public class Consumer
+            {
+                [StringSyntax("Json")]
+                public string Payload { get; set; } = "";
+
+                public void Run(Box<string> box) => box.Value = Payload;
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task NonGenericMemberOnGenericType_IsStillReported()
+    {
+        // The guard keys on the *declared* type, not on the containing type being generic:
+        // `Box<T>.Name` is a plain string and can carry an annotation, so suppressing it
+        // would trade one bug for a silent one.
+        var source =
+            $$"""
+            {{genericHolders}}
+
+            public class Consumer
+            {
+                public void Run(Box<string> box) => Holder.TakeJson(box.Name);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA002"]);
+    }
+
+    // Assigning to `[StringSyntax("Json")] string Payload` means the value being assigned
+    // is Json — so a setter's implicit `value` carries the property's syntax. Read as a
+    // bare parameter it has no attributes, which made the most ordinary shape there is
+    // (annotated property over an annotated backing field) report SSA002 against itself.
+    [Test]
+    public async Task PropertySetterValue_InheritsThePropertyAnnotation()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("Json")]
+                string payload = "";
+
+                [StringSyntax("Json")]
+                public string Payload
+                {
+                    get => payload;
+                    set => payload = value;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task PropertySetterValue_AnnotatedPropertyOverBareField_TagsTheField()
+    {
+        // Consequence of resolving `value` to the property, and deliberate: the field does
+        // hold a Json string, so SSA003 asking for it to say so is the same advice this
+        // rule gives anywhere else. Previously both sides read as NotPresent and nothing
+        // fired, so this is new output for an existing shape.
+        var source =
+            """
+            public class Holder
+            {
+                string payload = "";
+
+                [StringSyntax("Json")]
+                public string Payload
+                {
+                    get => payload;
+                    set => payload = value;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA003"]);
+    }
+
+    [Test]
+    public async Task InitAccessorValue_InheritsThePropertyAnnotation()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("Json")]
+                string payload = "";
+
+                [StringSyntax("Json")]
+                public string Payload
+                {
+                    get => payload;
+                    init => payload = value;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    [Test]
+    public async Task IndexerSetterValue_DoesNotBindTheIndexParameter()
+    {
+        // An indexer's set accessor has the index parameters *and* `value`. Only the last
+        // one is the assigned value; binding `index` to the indexer would be wrong.
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax("Json")]
+                string payload = "";
+
+                [StringSyntax("Json")]
+                public string this[int index]
+                {
+                    get => payload;
+                    set => payload = value;
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
+    }
+
+    // `params string[]` accepts a null array, so `[UnionSyntax(null)]` is legal C# and
+    // legal metadata. ExtractUnionOptions read `Values.Length` off the constant, and for a
+    // null array `Values` is a default ImmutableArray — so this threw, surfaced as AD0001,
+    // and left every flow involving the symbol unanalyzed.
+    [Test]
+    public async Task NullUnionSyntaxArgument_IsAnalyzed()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [UnionSyntax(null)]
+                public string Payload { get; set; } = "";
+
+                public static void Take([StringSyntax("Json")] string value) { }
+
+                public void Run() => Take(Payload);
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id).Where(_ => _ == "AD0001")).IsEmpty();
+    }
+
+    [Test]
+    public async Task NullReturnSyntaxArgument_IsAnalyzed()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                [ReturnSyntax(null)]
+                public static string Build() => "{}";
+
+                public static void Take([StringSyntax("Json")] string value) { }
+
+                public void Run() => Take(Build());
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id).Where(_ => _ == "AD0001")).IsEmpty();
+    }
+
+    // None of these three compile, but an analyzer sees them constantly: they are what a
+    // half-typed rename looks like, and IDEs re-run analyzers on every keystroke. Before
+    // the cycle guard in TryResolveLocalInitializer each one recursed until the stack ran
+    // out, and a stack overflow cannot be caught — it takes the IDE or build process with
+    // it, which is why these were verified in a separate process first.
+    //
+    // The assertion that matters is that the call returns at all. The reported id is
+    // incidental: the initializer yields no usable tag, so the local stays NotPresent and
+    // flows into the annotated parameter as an ordinary SSA002.
+    [Test]
+    public async Task SelfReferentialLocal_Terminates()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public static void Take([StringSyntax("Json")] string value) { }
+
+                public void Run()
+                {
+                    string s = s;
+                    Take(s);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA002"]);
+    }
+
+    [Test]
+    public async Task SelfReferentialLocalThroughCoalesce_Terminates()
+    {
+        var source =
+            """
+            public class Holder
+            {
+                public static void Take([StringSyntax("Json")] string value) { }
+
+                public void Run()
+                {
+                    string s = s ?? "";
+                    Take(s);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA002"]);
+    }
+
+    [Test]
+    public async Task MutuallyReferentialLocals_Terminate()
+    {
+        // The cycle spans two locals, so a self-reference check would not catch it —
+        // the guard tracks every local already being resolved on the way down.
+        var source =
+            """
+            public class Holder
+            {
+                public static void Take([StringSyntax("Json")] string value) { }
+
+                public void Run()
+                {
+                    string a = b;
+                    string b = a;
+                    Take(a);
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA002"]);
+    }
+
     static Task<ImmutableArray<Diagnostic>> GetDiagnostics(
         string source,
         string? editorConfig = null,
@@ -3916,16 +4831,27 @@ public class MismatchAnalyzerTests
 
     static Task<ImmutableArray<Diagnostic>> GetCrossAssemblyDiagnostics(
         string messagesSource,
-        string consumerSource)
+        string consumerSource,
+        bool runGeneratorOnLibrary = true)
     {
         var messagesBase = CSharpCompilation.Create(
             "Messages",
             [CSharpSyntaxTree.ParseText(messagesSource)],
             TrustedPlatformReferences.All,
             new(OutputKind.DynamicallyLinkedLibrary));
-        CSharpGeneratorDriver
-            .Create(new SyntaxConstantsGenerator())
-            .RunGeneratorsAndUpdateCompilation(messagesBase, out var messagesCompilation, out _);
+
+        // Off for a library that supplies its own StringSyntaxAttribute: the generated
+        // `Syntax` class reads its constants off whichever StringSyntaxAttribute binds,
+        // and a hand-rolled polyfill declaring only the constructor doesn't have them.
+        // A library like that doesn't use this package at all, so not running the
+        // generator over it is the accurate setup as well as the working one.
+        Compilation messagesCompilation = messagesBase;
+        if (runGeneratorOnLibrary)
+        {
+            CSharpGeneratorDriver
+                .Create(new SyntaxConstantsGenerator())
+                .RunGeneratorsAndUpdateCompilation(messagesBase, out messagesCompilation, out _);
+        }
 
         using var messagesStream = new MemoryStream();
         var emit = messagesCompilation.Emit(messagesStream);

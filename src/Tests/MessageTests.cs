@@ -34,6 +34,65 @@ public class MessageTests
     }
 
     [Test]
+    public async Task SSA002_GenericContainingType_RendersCSharpTypeNames()
+    {
+        // A message about C# source should spell types the way the source does. Without
+        // UseSpecialTypes the display format renders the CLR name, so this read
+        // `property 'Box<String>.Name'` against a declaration written `Box<string>`.
+        var source =
+            """
+            public class Box<T>
+            {
+                public string Name { get; set; } = "";
+            }
+
+            public class Target
+            {
+                public static void Consume([StringSyntax("Json")] string value) { }
+            }
+
+            public class Holder
+            {
+                public void Use(Box<string> box) => Target.Consume(box.Name);
+            }
+            """;
+
+        var diagnostic = await Single(source, "SSA002");
+
+        await Assert.That(diagnostic.GetMessage()).IsEqualTo(
+            """property 'Box<string>.Name' has no StringSyntax attribute but flows to parameter 'value' of method 'Target.Consume', which is [StringSyntax("Json")]. Fix: add [StringSyntax("Json")] to property 'Box<string>.Name' (line 3).""");
+    }
+
+    [Test]
+    public async Task SSA002_Indexer_RendersAsAnIndexer()
+    {
+        // An indexer's Name is "this[]", so the generic property rendering produced
+        // `property 'Rows.this'` — neither what it is nor how it is written.
+        var source =
+            """
+            public class Rows
+            {
+                public string this[int index] => "";
+            }
+
+            public class Target
+            {
+                public static void Consume([StringSyntax("Json")] string value) { }
+            }
+
+            public class Holder
+            {
+                public void Use(Rows rows) => Target.Consume(rows[0]);
+            }
+            """;
+
+        var diagnostic = await Single(source, "SSA002");
+
+        await Assert.That(diagnostic.GetMessage()).IsEqualTo(
+            """indexer 'Rows' has no StringSyntax attribute but flows to parameter 'value' of method 'Target.Consume', which is [StringSyntax("Json")]. Fix: add [StringSyntax("Json")] to indexer 'Rows' (line 3).""");
+    }
+
+    [Test]
     public async Task SSA001_UnionTarget_RendersUnion()
     {
         // The pipe-joined rendering read as a single syntax value literally named

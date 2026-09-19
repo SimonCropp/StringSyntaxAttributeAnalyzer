@@ -141,12 +141,17 @@ static class LinqExtensions
         return null;
     }
 
-    public static IOperation? FindEnclosingAnonymousFunction(this IOperation operation)
+    // Walks out to the lambda that *declares* `owner`, not merely the nearest one. In
+    // `JsonDocs.Where(j => XmlDocs.Any(x => Matches(j, x)))` the reference to `j` sits
+    // inside the inner lambda, so taking the nearest enclosing one resolved `j` against
+    // `XmlDocs` and reported a correct comparison as an SSA001 mismatch.
+    public static IOperation? FindEnclosingAnonymousFunction(this IOperation operation, IMethodSymbol owner)
     {
         var current = operation.Parent;
         while (current is not null)
         {
-            if (current is IAnonymousFunctionOperation)
+            if (current is IAnonymousFunctionOperation anonymous &&
+                SymbolEqualityComparer.Default.Equals(anonymous.Symbol, owner))
             {
                 return current;
             }
@@ -217,7 +222,7 @@ static class LinqExtensions
             return null;
         }
 
-        var anonymous = FindEnclosingAnonymousFunction(param);
+        var anonymous = FindEnclosingAnonymousFunction(param, lambdaMethod);
         if (anonymous is null)
         {
             return null;

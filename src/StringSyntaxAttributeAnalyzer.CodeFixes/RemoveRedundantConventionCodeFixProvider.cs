@@ -91,12 +91,22 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
         var list = attribute.FirstAncestorOrSelf<AttributeListSyntax>();
 
         SyntaxNode newRoot;
-        if (list is { Attributes.Count: 1 })
+        if (list is { Attributes.Count: 1, Parent: { } owner })
         {
-            // Removing the whole list — preserve the list's trailing trivia onto the
-            // owning declaration so we don't leave a blank line where the attribute
-            // was. RemoveNode with KeepNoTrivia handles the common case cleanly.
-            newRoot = root.RemoveNode(list, SyntaxRemoveOptions.KeepNoTrivia)!;
+            // Removing the whole list. KeepNoTrivia discards the list's leading trivia,
+            // which is where the member's doc comment lives, where a `#region` above it
+            // lives (leaving an unmatched `#endregion` — CS1028 on the next parse), and
+            // where a parameter on its own line keeps its indentation.
+            //
+            // The list's leading trivia *replaces* the following token's rather than
+            // being prepended to it: what that token carries is the indentation the
+            // removed line handed it, so merging the two would leave a blank line above
+            // members and double the indent. Replacing is also what keeps a parameter
+            // on its own line indented, since there the list's trivia is the indent.
+            var withoutList = owner.RemoveNode(list, SyntaxRemoveOptions.KeepNoTrivia)!;
+            newRoot = root.ReplaceNode(
+                owner,
+                withoutList.WithLeadingTrivia(list.GetLeadingTrivia()));
         }
         else
         {
@@ -132,7 +142,10 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
 
         // Inline form — `var x = /*language=X*/ "..."`. Find the trivia, replace
         // the containing token's trivia lists with the stripped version.
-        foreach (var trivia in declaration.DescendantTrivia())
+        // Not descending into a lambda body, matching the analyzer's reader: a directive
+        // in there belongs to the locals declared inside it, and removing it would strip
+        // a comment this declaration never carried.
+        foreach (var trivia in declaration.DescendantTrivia(_ => _ is not AnonymousFunctionExpressionSyntax))
         {
             if (!IsLanguageTrivia(trivia))
             {
@@ -243,42 +256,49 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
     static bool ContainsLanguageDirective(string text)
     {
         const string keyword = "language";
-        for (var i = 0; i <= text.Length - keyword.Length; i++)
+
+        // Anchored at the start of the comment body, matching the analyzer's TryParse.
+        // A word-boundary scan still matched prose — `// Falls back to language=en when
+        // the header is missing` reads as a directive — and here that meant deleting the
+        // comment. The two must agree: the analyzer decides a comment is a directive, and
+        // this decides which text to remove, so a looser rule on this side deletes
+        // something the analyzer never read.
+        if (!text.StartsWith("//", StringComparison.Ordinal) &&
+            !text.StartsWith("/*", StringComparison.Ordinal))
         {
-            if (!MatchesKeyword(text, i, keyword))
-            {
-                continue;
-            }
-
-            if (i > 0 && IsWordChar(text[i - 1]))
-            {
-                continue;
-            }
-
-            var pos = SkipWhitespace(text, i + keyword.Length);
-            if (pos >= text.Length || text[pos] != '=')
-            {
-                continue;
-            }
-
-            pos = SkipWhitespace(text, pos + 1);
-            var start = pos;
-            while (pos < text.Length && IsWordChar(text[pos]))
-            {
-                pos++;
-            }
-
-            if (pos > start)
-            {
-                return true;
-            }
+            return false;
         }
 
-        return false;
+        var start = SkipWhitespace(text, 2);
+        if (!MatchesKeyword(text, start, keyword))
+        {
+            return false;
+        }
+
+        var pos = SkipWhitespace(text, start + keyword.Length);
+        if (pos >= text.Length ||
+            text[pos] != '=')
+        {
+            return false;
+        }
+
+        pos = SkipWhitespace(text, pos + 1);
+        var valueStart = pos;
+        while (pos < text.Length && IsWordChar(text[pos]))
+        {
+            pos++;
+        }
+
+        return pos > valueStart;
     }
 
     static bool MatchesKeyword(string text, int index, string keyword)
     {
+        if (index + keyword.Length > text.Length)
+        {
+            return false;
+        }
+
         for (var j = 0; j < keyword.Length; j++)
         {
             if (char.ToLowerInvariant(text[index + j]) != keyword[j])

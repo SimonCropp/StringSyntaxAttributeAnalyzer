@@ -29,6 +29,13 @@ public class ConsumeTests
     }
 
     [Test]
+    public void PolyfilledLibrary_MatchingStringSyntaxBuildsClean()
+    {
+        var sample = new PolyfilledLibrarySample();
+        sample.AssignMatching();
+    }
+
+    [Test]
     public async Task GeneratedSyntaxConstants_AreAvailable()
     {
         // Compile-time: this line fails to build if the source generator did not emit
@@ -61,6 +68,20 @@ public class SyntaxStyleSample
     public void AssignSuppressedMismatch() =>
         ConsumeRegex(Format);
 #pragma warning restore SSA001
+}
+
+// Calls across an assembly boundary into a library that carries its own
+// StringSyntaxAttribute (SourceOnlyAttributeConsumer targets netstandard2.0). The
+// attribute on PolyfilledApi.TakeJson is a different symbol from the BCL one this
+// assembly uses, so the annotation is only seen when the two are matched by name and
+// namespace. Unseen, this call reports SSA003 — an error here, given WarningsAsErrors.
+public class PolyfilledLibrarySample
+{
+    [StringSyntax(Syntax.Json)]
+    public string Payload { get; set; } = "{}";
+
+    public void AssignMatching() =>
+        PolyfilledApi.TakeJson(Payload);
 }
 
 // Uses the BCL constants directly — the older, non-generated style.

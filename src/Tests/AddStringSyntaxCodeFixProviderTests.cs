@@ -184,45 +184,12 @@ public class AddStringSyntaxCodeFixProviderTests
         await Assert.That(fixedSource.Contains("[Syntax(")).IsFalse();
     }
 
-    static async Task<string> ApplyFixWithoutAlias(string source)
-    {
-        // Same shape as PrepareFixAsync but deliberately omits the
-        // `global using SyntaxAttribute = ...` alias — simulates the opt-out case.
-        var workspace = new AdhocWorkspace();
-        var projectInfo = ProjectInfo.Create(
-            ProjectId.CreateNewId(),
-            VersionStamp.Default,
-            name: "Tests",
-            assemblyName: "Tests",
-            language: LanguageNames.CSharp,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: TrustedPlatformReferences.All);
-
-        var solution = workspace.CurrentSolution.AddProject(projectInfo);
-        var documentId = DocumentId.CreateNewId(projectInfo.Id);
-        solution = solution.AddDocument(documentId, "Test.cs", source);
-
-        var document = solution.GetDocument(documentId)!;
-        var compilation = (await document.Project.GetCompilationAsync())!;
-        var diagnostics = await compilation
-            .WithAnalyzers([new MismatchAnalyzer()])
-            .GetAnalyzerDiagnosticsAsync();
-        var diagnostic = diagnostics.Single();
-
-        var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        var context = new CodeFixContext(
-            document,
-            diagnostic,
-            (action, _) => actions.Add(action),
-            Cancel.None);
-        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
-
-        var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(Cancel.None);
-        var apply = operations.OfType<ApplyChangesOperation>().Single();
-        var newDoc = apply.ChangedSolution.GetDocument(document.Id)!;
-        return (await newDoc.GetTextAsync()).ToString();
-    }
+    // The `StringSyntaxAnalyzer_EmitGlobalUsings=false` shape: the generator still
+    // emits the attribute definitions and the `Syntax` constants, but no global usings,
+    // so neither the `SyntaxAttribute` alias nor the StringSyntaxAttributeAnalyzer
+    // namespace is in scope unless the source imports it.
+    static Task<string> ApplyFixWithoutAlias(string source) =>
+        CodeFixVerify.Apply(source, new() { EmitGlobalUsings = false });
 
     [Test]
     public async Task SSA002_CustomFormatValue()
@@ -342,47 +309,8 @@ public class AddStringSyntaxCodeFixProviderTests
         await Assert.That(fixedSource.Contains("using System.Diagnostics.CodeAnalysis;")).IsFalse();
     }
 
-    static async Task<string> ApplyFixWithGlobalUsings(string source, string globalUsings)
-    {
-        var workspace = new AdhocWorkspace();
-        var projectInfo = ProjectInfo.Create(
-            ProjectId.CreateNewId(),
-            VersionStamp.Default,
-            name: "Tests",
-            assemblyName: "Tests",
-            language: LanguageNames.CSharp,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: TrustedPlatformReferences.All);
-
-        var solution = workspace.CurrentSolution.AddProject(projectInfo);
-        var globalsId = DocumentId.CreateNewId(projectInfo.Id);
-        var targetId = DocumentId.CreateNewId(projectInfo.Id);
-        solution = solution
-            .AddDocument(globalsId, "GlobalUsings.cs", globalUsings)
-            .AddDocument(targetId, "Target.cs", source);
-
-        var targetDoc = solution.GetDocument(targetId)!;
-        var compilation = (await targetDoc.Project.GetCompilationAsync())!;
-        var diagnostics = await compilation
-            .WithAnalyzers([new MismatchAnalyzer()])
-            .GetAnalyzerDiagnosticsAsync();
-        var diagnostic = diagnostics.Single();
-
-        var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        var context = new CodeFixContext(
-            targetDoc,
-            diagnostic,
-            (action, _) => actions.Add(action),
-            Cancel.None);
-        await new AddStringSyntaxCodeFixProvider()
-            .RegisterCodeFixesAsync(context);
-
-        var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(Cancel.None);
-        var apply = operations.OfType<ApplyChangesOperation>().Single();
-        var newDoc = apply.ChangedSolution.GetDocument(targetId)!;
-        return (await newDoc.GetTextAsync()).ToString();
-    }
+    static Task<string> ApplyFixWithGlobalUsings(string source, string globalUsings) =>
+        CodeFixVerify.Apply(source, new() { SupportSource = globalUsings });
 
     [Test]
     public async Task SSA002_ExactOutputShape_NoExistingUsings()
@@ -814,27 +742,8 @@ public class AddStringSyntaxCodeFixProviderTests
     static async Task Contains(string actual, string expected) =>
         await Assert.That(actual).Contains(expected);
 
-    static async Task<string> ApplyFixAtIndex(string source, int index)
-    {
-        var (document, diagnostic) = await PrepareFixAsync(source);
-
-        var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        var context = new CodeFixContext(
-            document,
-            diagnostic,
-            (action, _) => actions.Add(action),
-            Cancel.None);
-
-        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
-
-        var action = actions.ToImmutable()[index];
-        var operations = await action.GetOperationsAsync(Cancel.None);
-        var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
-
-        var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
-        var text = await newDocument.GetTextAsync();
-        return text.ToString();
-    }
+    static Task<string> ApplyFixAtIndex(string source, int index) =>
+        CodeFixVerify.Apply(source, new() { ActionIndex = index });
 
     [Test]
     public async Task SSA002_WithShortcutsOptedIn_UsesParameterlessShortcut()
@@ -943,7 +852,7 @@ public class AddStringSyntaxCodeFixProviderTests
             }
             """;
 
-        var fixedSource = await ApplyFixAndVerifyCompiles(source, "SSA007");
+        var fixedSource = await ApplyFix(source, "SSA007");
 
         await Contains(fixedSource, "[return: Html]");
         await Contains(fixedSource, "System.Obsolete");
@@ -1162,124 +1071,200 @@ public class AddStringSyntaxCodeFixProviderTests
         await Contains(fixedSource, "[Syntax(Syntax.Html)]");
     }
 
+    [Test]
+    public async Task SSA002_KeepsDocCommentAttachedToProperty()
+    {
+        // AddAttributeLists prepends the new list to the declaration, but the member's
+        // leading trivia stays on the token that used to come first — so the `///` ends
+        // up between the attribute and the modifiers, where it is no longer a doc
+        // comment (CS1587) and no longer documents the member.
+        var source =
+            """
+            public class Target
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Regex)] string value) { }
+            }
+
+            public class Holder
+            {
+                /// <summary>The pattern.</summary>
+                public string Value { get; set; } = "";
+
+                public void Use() => Target.Consume(Value);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(
+            fixedSource,
+            """
+                /// <summary>The pattern.</summary>
+                [Syntax(Syntax.Regex)]
+            """);
+    }
+
+    [Test]
+    public async Task SSA002_DelegateReturn_FixClearsTheWarning()
+    {
+        // `[ReturnSyntax]` targets Method | Delegate, so on a delegate declaration it
+        // lands on the delegate *type*. GetSyntax reads the attributes of `Invoke`,
+        // which has none, so the fix applies cleanly and changes nothing.
+        var source =
+            """
+            public delegate string Producer();
+
+            public class Target
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Json)] string value) { }
+            }
+
+            public class Holder
+            {
+                public void Use(Producer producer) => Target.Consume(producer());
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(fixedSource, "[ReturnSyntax(Syntax.Json)]");
+    }
+
+    [Test]
+    public async Task SSA002_LambdaParameterInFieldInitializer_FixTargetsTheParameter()
+    {
+        // AttributeHost.Find walks to the nearest enclosing VariableDeclaratorSyntax
+        // before it looks for a parameter, so a lambda parameter inside a field
+        // initializer resolves to the field. The attribute lands on `Compile` and the
+        // warning on `pattern` stays.
+        var source =
+            """
+            using System;
+            using System.Text.RegularExpressions;
+
+            public class Holder
+            {
+                static readonly Func<string, Regex> Compile = (string pattern) => new Regex(pattern);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(
+            fixedSource,
+            "Compile = ([Syntax(Syntax.Regex)] string pattern) => new Regex(pattern);");
+    }
+
+    [Test]
+    public async Task SSA002_Indexer_OffersAFix()
+    {
+        // AttributeHost.Find has no IndexerDeclarationSyntax case, so no action is
+        // registered and the warning is unactionable. An indexer is a property, so
+        // [StringSyntax] is legal on it.
+        var source =
+            """
+            public class Rows
+            {
+                public string this[int index] => "";
+            }
+
+            public class Target
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Json)] string value) { }
+            }
+
+            public class Holder
+            {
+                public void Use(Rows rows) => Target.Consume(rows[0]);
+            }
+            """;
+
+        var fixedSource = await ApplyFix(source);
+
+        await Contains(
+            fixedSource,
+            """
+                [Syntax(Syntax.Json)]
+                public string this[int index] => "";
+            """);
+    }
+
+    [Test]
+    public async Task SSA002_WithoutGlobalUsings_MethodFixCompiles()
+    {
+        // `ReturnSyntax` lives in the StringSyntaxAttributeAnalyzer namespace, which is
+        // only imported by the generator's global usings. The single-value property fix
+        // falls back to `[StringSyntax("…")]` in this mode; the method fix does not, and
+        // writes a name that does not resolve.
+        var source =
+            """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Target
+            {
+                public static void Consume([StringSyntax("Json")] string value) { }
+            }
+
+            public class Holder
+            {
+                public static string GetPayload() => "{}";
+
+                public void Use() => Target.Consume(GetPayload());
+            }
+            """;
+
+        var fixedSource = await CodeFixVerify.Apply(source, new() { EmitGlobalUsings = false });
+
+        await Contains(
+            fixedSource,
+            """
+                [StringSyntaxAttributeAnalyzer.ReturnSyntax("Json")]
+                public static string GetPayload() => "{}";
+            """);
+    }
+
+    [Test]
+    public async Task SSA002_PropertySetterValue_FixTargetsTheProperty()
+    {
+        // The implicit `value` parameter can carry no attribute and has no declaration, so
+        // a diagnostic reported against it has no fix site at all. The property is both
+        // where the annotation belongs and where it can be written.
+        var source =
+            """
+            public class Holder
+            {
+                [StringSyntax(StringSyntaxAttribute.Json)]
+                string payload = "";
+
+                public string Payload
+                {
+                    get => payload;
+                    set => payload = value;
+                }
+            }
+            """;
+
+        // The getter returns the same annotated field, so SSA009 fires on this property
+        // too — both rules want the annotation in the same place.
+        var fixedSource = await ApplyFix(source, "SSA002");
+
+        await Contains(
+            fixedSource,
+            """
+                [Syntax(Syntax.Json)]
+                public string Payload
+            """);
+    }
+
     static Task<string> ApplyFix(string source, string? diagnosticId = null) =>
-        ApplyFix<AddStringSyntaxCodeFixProvider>(source, diagnosticId);
+        CodeFixVerify.Apply(source, new() { DiagnosticId = diagnosticId });
 
-    // Applies the fix and asserts the resulting document has no compile errors.
-    // Stricter than plain ApplyFix — catches regressions where a codefix produces
-    // syntactically valid but semantically illegal output (e.g. a shortcut
-    // attribute at a method target whose AttributeUsage excludes Method).
-    static async Task<string> ApplyFixAndVerifyCompiles(string source, string? diagnosticId = null)
-    {
-        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
+    static Task<string> ApplyFix<TProvider>(string source, string? diagnosticId = null)
+        where TProvider : CodeFixProvider, new() =>
+        CodeFixVerify.Apply<TProvider>(source, new() { DiagnosticId = diagnosticId });
 
-        var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        var context = new CodeFixContext(
-            document,
-            diagnostic,
-            (action, _) => actions.Add(action),
-            Cancel.None);
-
-        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
-
-        var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(Cancel.None);
-        var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
-
-        var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
-        var compilation = (await newDocument.Project.GetCompilationAsync())!;
-        var compileErrors = compilation
-            .GetDiagnostics()
-            .Where(_ => _.Severity == DiagnosticSeverity.Error)
-            .ToArray();
-        await Assert.That(compileErrors.Length).IsEqualTo(0);
-        var text = await newDocument.GetTextAsync();
-        return text.ToString();
-    }
-
-    static async Task<string> ApplyFix<TProvider>(string source, string? diagnosticId = null)
-        where TProvider : CodeFixProvider, new()
-    {
-        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
-
-        var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        var context = new CodeFixContext(
-            document,
-            diagnostic,
-            (action, _) => actions.Add(action),
-            Cancel.None);
-
-        await new TProvider().RegisterCodeFixesAsync(context);
-
-        var action = actions.ToImmutable().Single();
-        var operations = await action.GetOperationsAsync(Cancel.None);
-        var applyOperation = operations.OfType<ApplyChangesOperation>().Single();
-
-        var newDocument = applyOperation.ChangedSolution.GetDocument(document.Id)!;
-        var text = await newDocument.GetTextAsync();
-        return text.ToString();
-    }
-
-    static async Task<ImmutableArray<CodeAction>> GetCodeActions(string source, string? diagnosticId = null)
-    {
-        var (document, diagnostic) = await PrepareFixAsync(source, diagnosticId);
-
-        var actions = ImmutableArray.CreateBuilder<CodeAction>();
-        var context = new CodeFixContext(
-            document,
-            diagnostic,
-            (action, _) => actions.Add(action),
-            Cancel.None);
-
-        await new AddStringSyntaxCodeFixProvider().RegisterCodeFixesAsync(context);
-        return actions.ToImmutable();
-    }
-
-    static async Task<(Document Document, Diagnostic Diagnostic)> PrepareFixAsync(string source, string? diagnosticId = null)
-    {
-        var workspace = new AdhocWorkspace();
-        var projectInfo = ProjectInfo.Create(
-            ProjectId.CreateNewId(),
-            VersionStamp.Default,
-            name: "Tests",
-            assemblyName: "Tests",
-            language: LanguageNames.CSharp,
-            compilationOptions: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary),
-            metadataReferences: TrustedPlatformReferences.All);
-
-        var solution = workspace.CurrentSolution.AddProject(projectInfo);
-        var documentId = DocumentId.CreateNewId(projectInfo.Id);
-        var generatedId = DocumentId.CreateNewId(projectInfo.Id);
-        // Mirror what SyntaxConstantsGenerator emits: the global using for
-        // StringSyntaxAttribute, and the UnionSyntaxAttribute definition. Test sources
-        // don't have to declare either. Duplicated here (rather than actually running
-        // the generator) because AdhocWorkspace fix pipelines don't pick up generators
-        // automatically from a project reference.
-        solution = solution
-            .AddDocument(generatedId, "Generated.cs", """
-                global using System.Diagnostics.CodeAnalysis;
-                global using StringSyntaxAttributeAnalyzer;
-                global using SyntaxAttribute = System.Diagnostics.CodeAnalysis.StringSyntaxAttribute;
-
-                namespace StringSyntaxAttributeAnalyzer;
-                [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Parameter | System.AttributeTargets.Property, AllowMultiple = false)]
-                sealed class UnionSyntaxAttribute(params string[] options) : System.Attribute;
-
-                [System.AttributeUsage(System.AttributeTargets.Method | System.AttributeTargets.Delegate, AllowMultiple = false)]
-                sealed class ReturnSyntaxAttribute(params string[] syntax) : System.Attribute;
-                """)
-            .AddDocument(documentId, "Test.cs", source);
-
-        var document = solution.GetDocument(documentId)!;
-        var compilation = (await document.Project.GetCompilationAsync())!;
-        var diagnostics = await compilation
-            .WithAnalyzers([new MismatchAnalyzer()])
-            .GetAnalyzerDiagnosticsAsync();
-
-        var filtered = diagnosticId is null
-            ? diagnostics
-            : diagnostics.Where(_ => _.Id == diagnosticId).ToImmutableArray();
-        return (document, filtered.Single());
-    }
-
+    static Task<ImmutableArray<CodeAction>> GetCodeActions(string source, string? diagnosticId = null) =>
+        CodeFixVerify.Actions<AddStringSyntaxCodeFixProvider>(
+            source,
+            new() { DiagnosticId = diagnosticId });
 }
