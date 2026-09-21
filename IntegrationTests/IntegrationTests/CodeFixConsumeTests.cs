@@ -29,6 +29,54 @@ public class CodeFixConsumeTests
 
         await Assert.That(diagnostic.Id).IsEqualTo("SSA002");
 
+        var fixedText = await ApplySingleFix(document, diagnostic, codeFix);
+
+        await Assert.That(fixedText.Contains("[StringSyntax(\"Regex\")]")).IsTrue();
+    }
+
+    // C# 14's `field` keyword is the property's synthesized backing field, which has no
+    // declaration an attribute could go on. The diagnostic has to name the property, or the
+    // fix has nowhere to land and is never offered. Tested here rather than in src/: the
+    // unit tests compile against the Roslyn floor (4.11), which cannot parse `field`.
+    [Test]
+    public async Task PackagedCodeFixProvider_AnnotatesTheProperty_ForFieldKeyword()
+    {
+        var (analyzer, codeFix) = await LoadAnalyzerAndCodeFixFromPackage();
+
+        var source = """
+            using System.Diagnostics.CodeAnalysis;
+
+            public class Target
+            {
+                public static void Consume([StringSyntax(StringSyntaxAttribute.Json)] string value) { }
+            }
+
+            public class Holder
+            {
+                public string Value
+                {
+                    get;
+                    set
+                    {
+                        field = value;
+                        Target.Consume(field);
+                    }
+                } = "";
+            }
+            """;
+
+        var (document, diagnostic) = await CompileAndAnalyze(source, analyzer);
+
+        await Assert.That(diagnostic.Id).IsEqualTo("SSA002");
+        await Assert.That(diagnostic.GetMessage()).StartsWith("property 'Holder.Value' has no StringSyntax attribute");
+
+        var fixedText = await ApplySingleFix(document, diagnostic, codeFix);
+
+        await Assert.That(fixedText.Contains("[StringSyntax(\"Json\")]")).IsTrue();
+    }
+
+    static async Task<string> ApplySingleFix(Document document, Diagnostic diagnostic, CodeFixProvider codeFix)
+    {
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
         var context = new CodeFixContext(
             document,
@@ -42,9 +90,7 @@ public class CodeFixConsumeTests
         var operations = await action.GetOperationsAsync(CancellationToken.None);
         var apply = operations.OfType<ApplyChangesOperation>().Single();
         var newDoc = apply.ChangedSolution.GetDocument(document.Id)!;
-        var fixedText = (await newDoc.GetTextAsync()).ToString();
-
-        await Assert.That(fixedText.Contains("[StringSyntax(\"Regex\")]")).IsTrue();
+        return (await newDoc.GetTextAsync()).ToString();
     }
 
     static async Task<(DiagnosticAnalyzer Analyzer, CodeFixProvider CodeFix)> LoadAnalyzerAndCodeFixFromPackage()

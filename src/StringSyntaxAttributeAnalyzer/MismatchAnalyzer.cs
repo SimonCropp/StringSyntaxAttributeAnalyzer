@@ -892,8 +892,8 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // `.Select(_ => new { _.Tagged })` projections.
             IPropertyReferenceOperation { Property.ContainingType.IsAnonymousType: true } => null,
             IPropertyReferenceOperation prop => prop.Property,
-            IFieldReferenceOperation field => field.Field,
-            IParameterReferenceOperation param => ResolveAccessorValue(param.Parameter),
+            IFieldReferenceOperation field => field.Field.ResolveBackingField(),
+            IParameterReferenceOperation param => param.Parameter.ResolveAccessorValue(),
             IInvocationOperation invocation => invocation.TargetMethod,
             ILocalReferenceOperation local => local.Local,
             _ => null
@@ -912,33 +912,6 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
         }
 
         return symbol;
-    }
-
-    // The implicit `value` of a set or init accessor *is* the property's value: assigning
-    // to `[StringSyntax("Json")] string Payload` means what is assigned is Json. Read as a
-    // bare parameter it carries no attributes and has no DeclaringSyntaxReferences, so the
-    // most ordinary shape there is — an annotated property over an annotated backing field
-    // — reported SSA002 against itself, with no fix site to attach anything to.
-    //
-    // Resolving to the property fixes both halves at once: the annotation becomes readable,
-    // and when the property has none the diagnostic lands on a declaration the codefix can
-    // actually write to.
-    static ISymbol ResolveAccessorValue(IParameterSymbol parameter)
-    {
-        // An indexer's set accessor takes its index parameters *before* `value`, so only
-        // the last one is the assigned value — binding `index` to the indexer would claim
-        // the index carries the indexer's syntax.
-        if (parameter.ContainingSymbol is IMethodSymbol
-            {
-                MethodKind: MethodKind.PropertySet,
-                AssociatedSymbol: IPropertySymbol property
-            } setter &&
-            parameter.Ordinal == setter.Parameters.Length - 1)
-        {
-            return property;
-        }
-
-        return parameter;
     }
 
     static SyntaxInfo GetSyntax(ISymbol? symbol, bool conventionsEnabled)

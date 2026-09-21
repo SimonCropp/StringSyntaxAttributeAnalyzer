@@ -71,6 +71,7 @@ The line between `Unknown` and `NotPresent` is **"could a fix attach here?"**, n
 - **Locals are `NotPresent`** when they are declared by a `LocalDeclarationStatement`, since the codefix can insert `// language=<token>` above it. Pattern and designation locals (`out var x`, `is string s`, `foreach` variables) have no such declaration, so `CanHostLanguageComment` sends them to `Unknown`.
 - **Anonymous-type property reads** are `Unknown` — the members are compiler-synthesised and can host no attribute. A `//language=` comment on the originating member initializer is the way to tag one, resolved separately in `GetSourceInfo`.
 - **A member typed as a single-`T` enumerable** has its `Present` downgraded to `Unknown` by `SuppressCollectionTag`: an annotation there is an *element* tag, meaningless in a scalar slot.
+- **A setter's `value` and C# 14's `field` resolve to the property** (`ResolveAccessorValue`, `ResolveBackingField`). Neither carries attributes or has a declaration of its own, so read as themselves `field = value` reported the property flowing into its own storage, with a fix that had nowhere to land. The src/ unit tests compile against the Roslyn floor (4.11), which cannot parse `field`, so that half is covered only in IntegrationTests (`FieldKeywordSample`, `PackagedCodeFixProvider_AnnotatesTheProperty_ForFieldKeyword`).
 
 Literals, interpolated strings, concatenations, `await` and other compound expressions resolve to no symbol at all and stay `Unknown`, which is what keeps every `"foo"` passed to a `[StringSyntax]` parameter quiet.
 
