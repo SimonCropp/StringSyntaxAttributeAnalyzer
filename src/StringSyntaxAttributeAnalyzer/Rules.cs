@@ -29,7 +29,7 @@ static class Rules
     // SARIF consumers surface as "learn more".
     const string helpRoot = "https://github.com/SimonCropp/StringSyntaxAttributeAnalyzer/blob/main/docs/";
 
-    static readonly DiagnosticDescriptor formatMismatch = new(
+    static DiagnosticDescriptor formatMismatch = new(
         id: "SSA001",
         title: "StringSyntax format mismatch",
         messageFormat: "{0} is {1} but flows to {2}, which is {3}. {4}.",
@@ -39,7 +39,7 @@ static class Rules
         description: "A value annotated with one syntax flows into a target annotated with a different one. Either the target's annotation is wrong, or the wrong value is being passed. Change whichever side is mistaken so both agree. There is no code fix: picking the wrong side would silently launder a real bug.",
         helpLinkUri: helpRoot + "SSA001.md");
 
-    static readonly DiagnosticDescriptor missingSourceFormat = new(
+    static DiagnosticDescriptor missingSourceFormat = new(
         id: "SSA002",
         title: "Source has no StringSyntax while target requires one",
         messageFormat: "{0} has no StringSyntax attribute but flows to {1}, which is {2}. Fix: add {3} to {0}{4}.",
@@ -49,7 +49,7 @@ static class Rules
         description: "An unannotated value flows into an annotated target, so the syntax is unverified on the way in. Add a matching annotation to the source declaration, or rename it to match a known name convention. Apply mechanically with: dotnet format analyzers --diagnostics SSA002.",
         helpLinkUri: helpRoot + "SSA002.md");
 
-    static readonly DiagnosticDescriptor droppedFormat = new(
+    static DiagnosticDescriptor droppedFormat = new(
         id: "SSA003",
         title: "Source has StringSyntax while target has none",
         messageFormat: "{0} is {1} but flows to {2}, which has no StringSyntax attribute. Fix: add {3} to {2}{4}.",
@@ -59,7 +59,7 @@ static class Rules
         description: "An annotated value flows into an unannotated target, so the syntax is lost from that point on. Add a matching annotation to the target declaration, or rename it to match a known name convention. Apply mechanically with: dotnet format analyzers --diagnostics SSA003.",
         helpLinkUri: helpRoot + "SSA003.md");
 
-    static readonly DiagnosticDescriptor equalityMismatch = new(
+    static DiagnosticDescriptor equalityMismatch = new(
         id: "SSA004",
         title: "Equality comparison between mismatched StringSyntax values",
         messageFormat: "{0} is {1} but is compared with {2}, which is {3}. {4}.",
@@ -69,7 +69,7 @@ static class Rules
         description: "Two values annotated with different syntaxes are compared for equality. Strings of different syntaxes are rarely meaningfully equal, so this is usually a mix-up of two similarly-shaped values. There is no code fix, for the same reason as SSA001.",
         helpLinkUri: helpRoot + "SSA004.md");
 
-    static readonly DiagnosticDescriptor equalityMissingFormat = new(
+    static DiagnosticDescriptor equalityMissingFormat = new(
         id: "SSA005",
         title: "Equality comparison with an unattributed value",
         messageFormat: "{0} is {1} but is compared with {2}, which has no StringSyntax attribute. Fix: add {3} to {2}{4}.",
@@ -79,7 +79,7 @@ static class Rules
         description: "An annotated value is compared with an unannotated one. Annotate the bare side so the comparison is checked, or rename it to match a known name convention. Apply mechanically with: dotnet format analyzers --diagnostics SSA005.",
         helpLinkUri: helpRoot + "SSA005.md");
 
-    static readonly DiagnosticDescriptor singletonUnion = new(
+    static DiagnosticDescriptor singletonUnion = new(
         id: "SSA006",
         title: "UnionSyntax with a single option should be StringSyntax",
         messageFormat: "[UnionSyntax(\"{0}\")] on {1} has only one option. Fix: replace it with [StringSyntax(\"{0}\")].",
@@ -89,7 +89,7 @@ static class Rules
         description: "[UnionSyntax] expresses a choice between several syntaxes; with a single option it is just [StringSyntax]. Replace it. Apply mechanically with: dotnet format analyzers --diagnostics SSA006.",
         helpLinkUri: helpRoot + "SSA006.md");
 
-    static readonly DiagnosticDescriptor redundantStringSyntax = new(
+    static DiagnosticDescriptor redundantStringSyntax = new(
         id: "SSA007",
         title: "StringSyntax can be replaced with a shortcut attribute",
         messageFormat: "The \"{0}\" annotation on {1} can be written as the shortcut attribute. Fix: replace it with [{0}].",
@@ -99,7 +99,7 @@ static class Rules
         description: "Shortcut attributes are opted in for this project, so the long form can be written as a bare [Html] / [Json] / [Regex]. Purely cosmetic — the analyzer reads both forms identically. Apply mechanically with: dotnet format analyzers --diagnostics SSA007.",
         helpLinkUri: helpRoot + "SSA007.md");
 
-    static readonly DiagnosticDescriptor redundantByConvention = new(
+    static DiagnosticDescriptor redundantByConvention = new(
         id: "SSA008",
         title: "StringSyntax annotation is redundant due to a name convention",
         messageFormat: "The \"{0}\" annotation on {1} is redundant: the name already matches the {0} convention. Fix: remove the annotation.",
@@ -109,7 +109,7 @@ static class Rules
         description: "Name conventions are opted in for this project, so the declaration's name alone already carries this syntax and the annotation restates it. Remove the annotation, or rename the declaration if the name is the part that is wrong. Apply mechanically with: dotnet format analyzers --diagnostics SSA008.",
         helpLinkUri: helpRoot + "SSA008.md");
 
-    static readonly DiagnosticDescriptor missingReturnAnnotation = new(
+    static DiagnosticDescriptor missingReturnAnnotation = new(
         id: "SSA009",
         title: "Member returns a tagged value but has no return annotation",
         messageFormat: "{0} returns a value tagged \"{1}\" but carries no return annotation. Fix: add {2} to {0}{3}.",

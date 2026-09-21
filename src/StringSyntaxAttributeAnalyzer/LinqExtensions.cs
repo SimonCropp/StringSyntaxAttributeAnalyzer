@@ -127,15 +127,16 @@ static class LinqExtensions
     // Arguments[0] is the selector.
     public static IOperation? FindSelectorArgument(this IInvocationOperation invocation)
     {
+        var arguments = invocation.Arguments;
         if (invocation.Instance is not null)
         {
-            return invocation.Arguments.Length > 0 ? invocation.Arguments[0].Value : null;
+            return arguments.Length > 0 ? arguments[0].Value : null;
         }
 
         if (invocation.TargetMethod.IsExtensionMethod &&
-            invocation.Arguments.Length > 1)
+            arguments.Length > 1)
         {
-            return invocation.Arguments[1].Value;
+            return arguments[1].Value;
         }
 
         return null;
@@ -270,12 +271,13 @@ static class LinqExtensions
     public static IOperation? GetSingleReturnExpression(this IAnonymousFunctionOperation lambda)
     {
         var block = lambda.Body;
-        if (block.Operations.Length != 1)
+        var operations = block.Operations;
+        if (operations.Length != 1)
         {
             return null;
         }
 
-        if (block.Operations[0] is IReturnOperation { ReturnedValue: { } value })
+        if (operations[0] is IReturnOperation { ReturnedValue: { } value })
         {
             return value.Unwrap();
         }

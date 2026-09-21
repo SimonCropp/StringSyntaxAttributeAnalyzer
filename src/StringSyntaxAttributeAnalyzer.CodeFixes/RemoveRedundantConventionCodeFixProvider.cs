@@ -91,7 +91,7 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
         var list = attribute.FirstAncestorOrSelf<AttributeListSyntax>();
 
         SyntaxNode newRoot;
-        if (list is { Attributes.Count: 1, Parent: { } owner })
+        if (list is {Attributes.Count: 1, Parent: { } owner})
         {
             // Removing the whole list. KeepNoTrivia discards the list's leading trivia,
             // which is where the member's doc comment lives, where a `#region` above it
@@ -198,6 +198,7 @@ public class RemoveRedundantConventionCodeFixProvider : CodeFixProvider
                 {
                     continue;
                 }
+
                 builder.Add(trivia[j]);
             }
 

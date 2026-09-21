@@ -16,7 +16,7 @@
 // are too broad to safely promote.
 static class NameConventions
 {
-    static readonly (string Value, string[] Matchers)[] conventions =
+    static (string Value, string[] Matchers)[] conventions =
     [
         ("Uri", ["uri", "url"]),
         ("Html", ["html"]),

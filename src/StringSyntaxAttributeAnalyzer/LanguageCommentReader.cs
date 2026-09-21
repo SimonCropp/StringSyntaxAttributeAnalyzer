@@ -196,8 +196,15 @@ static class LanguageCommentReader
     // Rider doc examples spell regex as `regexp`; the BCL constant is `Regex`. Bridge
     // the two so `//language=regexp` matches `[StringSyntax(StringSyntaxAttribute.Regex)]`
     // without the user having to know the naming history.
-    static string Normalize(string raw) =>
-        raw.Equals("regexp", StringComparison.OrdinalIgnoreCase) ? "Regex" : raw;
+    static string Normalize(string raw)
+    {
+        if (raw.Equals("regexp", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Regex";
+        }
+
+        return raw;
+    }
 
     // Rejoins a pipe-delimited value after normalizing each segment and discarding
     // empties (so `//language=json|` or `//language=|csv` stay well-formed). Single

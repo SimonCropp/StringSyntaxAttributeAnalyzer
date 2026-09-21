@@ -208,7 +208,7 @@ public class SyntaxConstantsGenerator :
     // The set of known constants for which shortcut attributes can be generated.
     // Kept in sync with the `Syntax` class above and with
     // `KnownShortcutAttributes` on the analyzer side.
-    static readonly string[] shortcutNames =
+    static string[] shortcutNames =
     [
         "CompositeFormat",
         "DateOnlyFormat",
@@ -238,19 +238,19 @@ public class SyntaxConstantsGenerator :
         {
             builder.Append(
                 $$"""
-                /// <summary>
-                /// Shortcut for <c>[StringSyntax("{{name}}")]</c>. Only recognized by
-                /// StringSyntaxAttributeAnalyzer — other analyzers (BCL, Roslyn) that look
-                /// for <see cref="StringSyntaxAttribute"/> will not see this attribute.
-                /// </summary>
-                [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue, AllowMultiple = false)]
-                [ExcludeFromCodeCoverage]
-                [DebuggerNonUserCode]
-                sealed class {{name}}Attribute : System.Attribute
-                {
-                }
+                  /// <summary>
+                  /// Shortcut for <c>[StringSyntax("{{name}}")]</c>. Only recognized by
+                  /// StringSyntaxAttributeAnalyzer — other analyzers (BCL, Roslyn) that look
+                  /// for <see cref="StringSyntaxAttribute"/> will not see this attribute.
+                  /// </summary>
+                  [AttributeUsage(AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.ReturnValue, AllowMultiple = false)]
+                  [ExcludeFromCodeCoverage]
+                  [DebuggerNonUserCode]
+                  sealed class {{name}}Attribute : System.Attribute
+                  {
+                  }
 
-                """);
+                  """);
         }
 
         return typesHeader + InNamespace("StringSyntaxAttributeAnalyzer", builder.ToString());
@@ -273,14 +273,17 @@ public class SyntaxConstantsGenerator :
         var typesAlreadyVisible = context.CompilationProvider.Select((compilation, _) =>
             IsTypeVisibleFromReference(compilation, "StringSyntaxAttributeAnalyzer.UnionSyntaxAttribute"));
 
-        context.RegisterSourceOutput(typesAlreadyVisible, (ctx, alreadyVisible) =>
-        {
-            if (alreadyVisible)
+        context.RegisterSourceOutput(
+            typesAlreadyVisible,
+            (ctx, alreadyVisible) =>
             {
-                return;
-            }
-            ctx.AddSource("Syntax.Types.g.cs", typesHeader + InNamespace("StringSyntaxAttributeAnalyzer", typesBody));
-        });
+                if (alreadyVisible)
+                {
+                    return;
+                }
+
+                ctx.AddSource("Syntax.Types.g.cs", typesHeader + InNamespace("StringSyntaxAttributeAnalyzer", typesBody));
+            });
 
         // Polyfill StringSyntaxAttribute when no referenced assembly exposes it
         // AND no in-compilation source defines it (e.g. via a source-only NuGet
@@ -292,14 +295,17 @@ public class SyntaxConstantsGenerator :
         var stringSyntaxAlreadyVisible = context.CompilationProvider.Select((compilation, _) =>
             IsTypeVisible(compilation, "System.Diagnostics.CodeAnalysis.StringSyntaxAttribute"));
 
-        context.RegisterSourceOutput(stringSyntaxAlreadyVisible, (ctx, alreadyVisible) =>
-        {
-            if (alreadyVisible)
+        context.RegisterSourceOutput(
+            stringSyntaxAlreadyVisible,
+            (ctx, alreadyVisible) =>
             {
-                return;
-            }
-            ctx.AddSource("Syntax.Polyfill.g.cs", polyfillHeader + InNamespace("System.Diagnostics.CodeAnalysis", polyfillBody));
-        });
+                if (alreadyVisible)
+                {
+                    return;
+                }
+
+                ctx.AddSource("Syntax.Polyfill.g.cs", polyfillHeader + InNamespace("System.Diagnostics.CodeAnalysis", polyfillBody));
+            });
 
         // `global using` is C# 10. Below that the file simply isn't emitted — a
         // netstandard2.0 or net4x consumer on the default C# 7.3 writes its own usings,
@@ -307,7 +313,7 @@ public class SyntaxConstantsGenerator :
         // and taking `[UnionSyntax]`/`[ReturnSyntax]` down with it (CS0246).
         var supportsGlobalUsings = context.ParseOptionsProvider
             .Select((options, _) =>
-                options is CSharpParseOptions { LanguageVersion: >= LanguageVersion.CSharp10 });
+                options is CSharpParseOptions {LanguageVersion: >= LanguageVersion.CSharp10});
 
         var emitGlobals = context.AnalyzerConfigOptionsProvider
             .Select((provider, _) =>
@@ -318,14 +324,16 @@ public class SyntaxConstantsGenerator :
                 !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
             .Combine(supportsGlobalUsings);
 
-        context.RegisterSourceOutput(emitGlobals, (ctx, pair) =>
-        {
-            var (emit, supported) = pair;
-            if (emit && supported)
+        context.RegisterSourceOutput(
+            emitGlobals,
+            (ctx, pair) =>
             {
-                ctx.AddSource("Syntax.Globals.g.cs", globalsHeader);
-            }
-        });
+                var (emit, supported) = pair;
+                if (emit && supported)
+                {
+                    ctx.AddSource("Syntax.Globals.g.cs", globalsHeader);
+                }
+            });
 
         var shortcutsAlreadyVisible = context.CompilationProvider.Select((compilation, _) =>
             IsTypeVisibleFromReference(compilation, "StringSyntaxAttributeAnalyzer.HtmlAttribute"));
@@ -339,14 +347,16 @@ public class SyntaxConstantsGenerator :
                 string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
             .Combine(shortcutsAlreadyVisible);
 
-        context.RegisterSourceOutput(emitShortcuts, (ctx, pair) =>
-        {
-            var (emit, alreadyVisible) = pair;
-            if (emit && !alreadyVisible)
+        context.RegisterSourceOutput(
+            emitShortcuts,
+            (ctx, pair) =>
             {
-                ctx.AddSource("Syntax.Shortcuts.g.cs", BuildShortcutAttributesBody());
-            }
-        });
+                var (emit, alreadyVisible) = pair;
+                if (emit && !alreadyVisible)
+                {
+                    ctx.AddSource("Syntax.Shortcuts.g.cs", BuildShortcutAttributesBody());
+                }
+            });
     }
 
     static bool IsTypeVisibleFromReference(Compilation compilation, string metadataName)
@@ -359,11 +369,13 @@ public class SyntaxConstantsGenerator :
             {
                 continue;
             }
+
             if (compilation.IsSymbolAccessibleWithin(type, currentAssembly))
             {
                 return true;
             }
         }
+
         return false;
     }
 
@@ -381,11 +393,13 @@ public class SyntaxConstantsGenerator :
             {
                 return true;
             }
+
             if (compilation.IsSymbolAccessibleWithin(type, currentAssembly))
             {
                 return true;
             }
         }
+
         return false;
     }
 }

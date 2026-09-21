@@ -55,13 +55,18 @@ static class AttributeNodeBuilder
         return Attach(host, AttributeList(SingletonSeparatedList(attribute)));
     }
 
-    static ExpressionSyntax ValueExpression(string value, bool useConstant) =>
-        useConstant
-            ? MemberAccessExpression(
+    static ExpressionSyntax ValueExpression(string value, bool useConstant)
+    {
+        if (useConstant)
+        {
+            return MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
                 IdentifierName("Syntax"),
-                IdentifierName(value))
-            : LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value));
+                IdentifierName(value));
+        }
+
+        return LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value));
+    }
 
     // Attaches a new attribute list to a declaration, moving the declaration's leading
     // trivia in front of it.
@@ -120,8 +125,15 @@ static class AttributeNodeBuilder
         return local.WithLeadingTrivia(existingLeading.AddRange([comment, eol]));
     }
 
-    public static string FormatArgument(string value) =>
-        KnownSyntaxConstants.IsKnown(value) ? $"Syntax.{value}" : $"\"{value}\"";
+    public static string FormatArgument(string value)
+    {
+        if (KnownSyntaxConstants.IsKnown(value))
+        {
+            return $"Syntax.{value}";
+        }
+
+        return $"\"{value}\"";
+    }
 
     // Rider docs spell regex as `regexp`. Normalizing on write means the emitted
     // comment lights up Rider's own highlighting; MismatchAnalyzer's read path maps

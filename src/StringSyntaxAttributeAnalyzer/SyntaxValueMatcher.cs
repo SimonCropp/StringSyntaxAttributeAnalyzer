@@ -51,8 +51,15 @@ static class SyntaxValueMatcher
         return false;
     }
 
-    public static string FormatValues(ImmutableArray<string> values) =>
-        values.IsDefaultOrEmpty ? "" : string.Join('|', values);
+    public static string FormatValues(ImmutableArray<string> values)
+    {
+        if (values.IsDefaultOrEmpty)
+        {
+            return "";
+        }
+
+        return string.Join('|', values);
+    }
 
     public static bool SingleValuesMatch(string? a, string? b) => SingleValueMatches(a, b);
 

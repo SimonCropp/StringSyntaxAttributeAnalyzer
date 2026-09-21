@@ -13,7 +13,7 @@ static class SyntaxAttributeExtensions
     // `System.Diagnostics.CodeAnalysis`, innermost first — walked outwards so the match
     // costs no display-string allocation on a path that sees every attribute of every
     // symbol.
-    static readonly string[] stringSyntaxNamespace = ["CodeAnalysis", "Diagnostics", "System"];
+    static string[] stringSyntaxNamespace = ["CodeAnalysis", "Diagnostics", "System"];
 
     // StringSyntaxAttribute ships in the BCL only on net7+/netstandard2.1. Everywhere
     // else it is polyfilled as an internal per-assembly type — including by this

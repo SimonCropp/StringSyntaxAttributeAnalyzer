@@ -36,11 +36,18 @@ static class KnownSyntaxConstants
     // from a Rider-style `// language=html` convention) resolve to the canonical
     // `Html` and pick up the shortcut attribute / `Syntax.Html` constant the same
     // way `"Html"` would.
-    static readonly ImmutableDictionary<string, string> canonicalByFoldedKey =
+    static ImmutableDictionary<string, string> canonicalByFoldedKey =
         Names.ToImmutableDictionary(FoldKey, name => name);
 
-    static string FoldKey(string name) =>
-        name.Length == 0 ? name : char.ToLowerInvariant(name[0]) + name.Substring(1);
+    static string FoldKey(string name)
+    {
+        if (name.Length == 0)
+        {
+            return name;
+        }
+
+        return char.ToLowerInvariant(name[0]) + name.Substring(1);
+    }
 
     public static bool TryGetCanonical(string? value, out string canonical)
     {

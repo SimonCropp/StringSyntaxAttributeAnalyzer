@@ -266,8 +266,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
     // bare string literal; unknown values (e.g. "custom-format") fall back to a literal,
     // and so does everything once the generated usings are gone — the `Syntax` class is
     // no more in scope than the attributes are. Titles mirror what the fix writes.
-    static string FormatArgument(string value, bool generatedUsings) =>
-        generatedUsings ? AttributeNodeBuilder.FormatArgument(value) : $"\"{value}\"";
+    static string FormatArgument(string value, bool generatedUsings)
+    {
+        if (generatedUsings)
+        {
+            return AttributeNodeBuilder.FormatArgument(value);
+        }
+
+        return $"\"{value}\"";
+    }
 
     // A shortcut attribute like `[Html]` is usable when:
     //   - the consumer opted in, so the generator emitted the type (detected by
@@ -303,8 +310,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
 
     // Names from the generated namespace resolve unqualified only while the generator's
     // global usings are in scope.
-    static string Qualify(string name, bool generatedUsings) =>
-        generatedUsings ? name : $"{AttributeNodeBuilder.GeneratedNamespace}.{name}";
+    static string Qualify(string name, bool generatedUsings)
+    {
+        if (generatedUsings)
+        {
+            return name;
+        }
+
+        return $"{AttributeNodeBuilder.GeneratedNamespace}.{name}";
+    }
 
     // The generator's `global using SyntaxAttribute = ...` alias doubles as the signal
     // that the rest of its global usings are in scope — including the one importing
