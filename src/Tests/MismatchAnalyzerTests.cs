@@ -4661,6 +4661,45 @@ public class MismatchAnalyzerTests
         await Assert.That(diagnostics.Select(_ => _.Id)).IsEmpty();
     }
 
+    // A collection property's annotation is an element tag, so iterating the setter's
+    // `value` has to bind the loop variable to it. The element-flow path resolved `value`
+    // as a bare parameter, so the tag was lost and the mismatch below went unreported.
+    [Test]
+    public async Task CollectionPropertySetterValue_ForeachBindsElementTags()
+    {
+        var source =
+            """
+            using System.Collections.Generic;
+
+            public class Holder
+            {
+                [StringSyntax("Json")]
+                List<string> docs = [];
+
+                [StringSyntax("Json")]
+                public List<string> Docs
+                {
+                    get => docs;
+                    set
+                    {
+                        foreach (var doc in value)
+                        {
+                            TakeXml(doc);
+                        }
+
+                        docs = value;
+                    }
+                }
+
+                static void TakeXml([StringSyntax("Xml")] string xml) { }
+            }
+            """;
+
+        var diagnostics = await GetDiagnostics(source);
+
+        await Assert.That(diagnostics.Select(_ => _.Id)).IsEquivalentTo(["SSA001"]);
+    }
+
     // `params string[]` accepts a null array, so `[UnionSyntax(null)]` is legal C# and
     // legal metadata. ExtractUnionOptions read `Values.Length` off the constant, and for a
     // null array `Values` is a default ImmutableArray — so this threw, surfaced as AD0001,

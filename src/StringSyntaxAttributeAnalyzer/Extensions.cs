@@ -34,11 +34,58 @@ static class Extensions
         operation.Unwrap() switch
         {
             IPropertyReferenceOperation prop => prop.Property,
-            IFieldReferenceOperation field => field.Field,
-            IParameterReferenceOperation param => param.Parameter,
+            IFieldReferenceOperation field => field.Field.ResolveBackingField(),
+            IParameterReferenceOperation param => param.Parameter.ResolveAccessorValue(),
             IInvocationOperation invocation => invocation.TargetMethod,
             _ => null
         };
+
+    // The implicit `value` of a set or init accessor *is* the property's value: assigning
+    // to `[StringSyntax("Json")] string Payload` means what is assigned is Json. Read as a
+    // bare parameter it carries no attributes and has no DeclaringSyntaxReferences, so the
+    // most ordinary shape there is — an annotated property over an annotated backing field
+    // — reported SSA002 against itself, with no fix site to attach anything to.
+    //
+    // Resolving to the property fixes both halves at once: the annotation becomes readable,
+    // and when the property has none the diagnostic lands on a declaration the codefix can
+    // actually write to. Applied on the element-flow path too, so `foreach (var x in value)`
+    // in a collection property's setter binds `x` to the property's element tags.
+    public static ISymbol ResolveAccessorValue(this IParameterSymbol parameter)
+    {
+        // An indexer's set accessor takes its index parameters *before* `value`, so only
+        // the last one is the assigned value — binding `index` to the indexer would claim
+        // the index carries the indexer's syntax.
+        if (parameter.ContainingSymbol is IMethodSymbol
+            {
+                MethodKind: MethodKind.PropertySet,
+                AssociatedSymbol: IPropertySymbol property
+            } setter &&
+            parameter.Ordinal == setter.Parameters.Length - 1)
+        {
+            return property;
+        }
+
+        return parameter;
+    }
+
+    // C# 14's `field` keyword reads and writes a property's synthesized backing field. That
+    // field is the property's storage, not a declaration of its own: it carries none of the
+    // property's attributes and has no syntax an attribute could be added to. Read as
+    // itself, `field = value` in the setter of an annotated property reported SSA003
+    // against the property's own storage, and a `field == value` change guard SSA005, each
+    // with a fix that could not be applied.
+    //
+    // Resolved to the property, the same way a setter's implicit `value` is, both sides of
+    // those name the same symbol and agree.
+    public static ISymbol ResolveBackingField(this IFieldSymbol field)
+    {
+        if (field.AssociatedSymbol is IPropertySymbol property)
+        {
+            return property;
+        }
+
+        return field;
+    }
 
     // Returns the declared type of a value-producing symbol: property / field /
     // parameter / local → its Type; method → ReturnType. Other symbol kinds don't
