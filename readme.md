@@ -1,6 +1,6 @@
 # <img src="/src/icon.png" height="30px"> StringSyntaxAttributeAnalyzer
 
-[![Build status](https://img.shields.io/appveyor/build/SimonCropp/StringSyntaxAttributeAnalyzer)](https://ci.appveyor.com/project/SimonCropp/StringSyntaxAttributeAnalyzer)
+[![Build status](https://github.com/SimonCropp/StringSyntaxAttributeAnalyzer/actions/workflows/build.yml/badge.svg)](https://github.com/SimonCropp/StringSyntaxAttributeAnalyzer/actions/workflows/build.yml)
 [![NuGet Status](https://img.shields.io/nuget/v/StringSyntaxAttributeAnalyzer.svg?label=StringSyntaxAttributeAnalyzer)](https://www.nuget.org/packages/StringSyntaxAttributeAnalyzer/)
 
 Roslyn analyzer that reports mismatches between [`StringSyntaxAttribute`](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.codeanalysis.stringsyntaxattribute) values when a string flows from one annotated member to another.

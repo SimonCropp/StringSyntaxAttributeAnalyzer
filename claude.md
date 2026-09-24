@@ -30,7 +30,7 @@ Filtering is `--treenode-filter`, **not** the VSTest/NUnit `--filter-method` or 
 
 Coverage output lands in `TestResults/` via `Microsoft.Testing.Extensions.CodeCoverage`.
 
-The `dotnet pack` command alone is fragile here: `ProjectDefaults` only sets `GeneratePackageOnBuild=true` when `IsPackageProject=true` *and* `Configuration=Release`. Packaging is a side-effect of a Release build, not a separate step — match the CI flow in `src/appveyor.yml` (build src Release → build IntegrationTests Release → test both `--no-build --no-restore`).
+The `dotnet pack` command alone is fragile here: `ProjectDefaults` only sets `GeneratePackageOnBuild=true` when `IsPackageProject=true` *and* `Configuration=Release`. Packaging is a side-effect of a Release build, not a separate step — match the CI flow in `.github/workflows/build.yml` (build src Release → build IntegrationTests Release → test both `--no-build --no-restore`).
 
 ## Architecture
 
