@@ -23,7 +23,7 @@
     <PackageVersion Include="MarkdownSnippets.MsBuild" Version="28.4.4" />
     <PackageVersion Include="Polyfill" Version="11.4.0" />
     <PackageVersion Include="ProjectDefaults" Version="1.0.181" />
-    <PackageVersion Include="TUnit" Version="1.69.0" />
+    <PackageVersion Include="TUnit" Version="1.69.16" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Serilog" Version="4.4.0" />
