@@ -396,15 +396,21 @@ static class Rules
         var isMethod = symbol is IMethodSymbol;
         if (values.Length == 1)
         {
-            return isMethod
-                ? $"[ReturnSyntax(\"{values[0]}\")]"
-                : $"[StringSyntax(\"{values[0]}\")]";
+            if (isMethod)
+            {
+                return $"[ReturnSyntax(\"{values[0]}\")]";
+            }
+
+            return $"[StringSyntax(\"{values[0]}\")]";
         }
 
         var options = string.Join(", ", values.Select(_ => $"\"{_}\""));
-        return isMethod
-            ? $"[ReturnSyntax({options})]"
-            : $"[UnionSyntax({options})]";
+        if (isMethod)
+        {
+            return $"[ReturnSyntax({options})]";
+        }
+
+        return $"[UnionSyntax({options})]";
     }
 
     // Where the fix lands, relative to the diagnostic: ` (line 12)` when the declaration

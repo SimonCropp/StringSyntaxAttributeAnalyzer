@@ -130,7 +130,12 @@ static class LinqExtensions
         var arguments = invocation.Arguments;
         if (invocation.Instance is not null)
         {
-            return arguments.Length > 0 ? arguments[0].Value : null;
+            if (arguments.Length > 0)
+            {
+                return arguments[0].Value;
+            }
+
+            return null;
         }
 
         if (invocation.TargetMethod.IsExtensionMethod &&

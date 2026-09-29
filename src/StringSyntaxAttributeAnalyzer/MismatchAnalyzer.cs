@@ -1278,8 +1278,15 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
     {
         public SyntaxInfo Value { get; } = value;
 
-        public SyntaxInfo Pick(KvpPosition position) =>
-            position == KvpPosition.Key ? key : Value;
+        public SyntaxInfo Pick(KvpPosition position)
+        {
+            if (position == KvpPosition.Key)
+            {
+                return key;
+            }
+
+            return Value;
+        }
     }
 
     // Position-assignment rule:
@@ -2417,9 +2424,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
 
             var returnInfo = GetSyntaxFromAttributes(
                 methodRef.Method.GetReturnTypeAttributes());
-            return returnInfo.State == SyntaxState.Present
-                ? returnInfo
-                : SyntaxInfo.Unknown;
+            if (returnInfo.State == SyntaxState.Present)
+            {
+                return returnInfo;
+            }
+
+            return SyntaxInfo.Unknown;
         }
 
         if (target is IAnonymousFunctionOperation lambda)
@@ -2445,7 +2455,12 @@ public class MismatchAnalyzer : DiagnosticAnalyzer
             // invocation or property access inside the lambda body becomes the
             // new element syntax.
             var (_, info) = GetSourceInfo(body, linqFlow, conventionsEnabled: false);
-            return info.State == SyntaxState.Present ? info : SyntaxInfo.Unknown;
+            if (info.State == SyntaxState.Present)
+            {
+                return info;
+            }
+
+            return SyntaxInfo.Unknown;
         }
 
         return SyntaxInfo.Unknown;

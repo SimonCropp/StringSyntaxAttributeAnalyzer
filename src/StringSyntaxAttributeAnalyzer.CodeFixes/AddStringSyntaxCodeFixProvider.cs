@@ -78,7 +78,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
             // custom format strings still emit as literals.
             var values = value
                 .Split('|', StringSplitOptions.RemoveEmptyEntries)
-                .Select(_ => KnownSyntaxConstants.TryGetCanonical(_, out var canonical) ? canonical : _)
+                .Select(_ =>
+                {
+                    if (KnownSyntaxConstants.TryGetCanonical(_, out var canonical))
+                    {
+                        return canonical;
+                    }
+
+                    return _;
+                })
                 .ToArray();
 
             // For a union source (multiple values), offer one fix per option — and, when
@@ -305,8 +313,15 @@ public class AddStringSyntaxCodeFixProvider : CodeFixProvider
         return compilation.GetTypeByMetadataName($"StringSyntaxAttributeAnalyzer.{value}Attribute") is not null;
     }
 
-    static string SingleValueAttributeName(bool generatedUsings) =>
-        generatedUsings ? "Syntax" : "StringSyntax";
+    static string SingleValueAttributeName(bool generatedUsings)
+    {
+        if (generatedUsings)
+        {
+            return "Syntax";
+        }
+
+        return "StringSyntax";
+    }
 
     // Names from the generated namespace resolve unqualified only while the generator's
     // global usings are in scope.

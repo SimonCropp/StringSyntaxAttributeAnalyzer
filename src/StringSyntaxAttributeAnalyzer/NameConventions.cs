@@ -60,7 +60,12 @@ static class NameConventions
             start++;
         }
 
-        return start == 0 ? name : name[start..];
+        if (start == 0)
+        {
+            return name;
+        }
+
+        return name[start..];
     }
 
     public static bool TryMatch(string? name, [NotNullWhen(true)] out string? value)
